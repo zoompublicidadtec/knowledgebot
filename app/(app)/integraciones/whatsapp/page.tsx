@@ -8,13 +8,8 @@ export const metadata = {
 
 export default async function WhatsappLinesPage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: profile } = await (supabase as any).from('profiles').select('*').eq('id', user.id).single();
+  const { getCurrentUser } = await import('@/lib/auth/actions');
+  const profile = await getCurrentUser();
 
   if (!profile) {
     redirect('/login');
