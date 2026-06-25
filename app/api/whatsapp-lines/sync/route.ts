@@ -43,7 +43,6 @@ export async function GET(request: NextRequest) {
 
     const baseUrl = getBridgeUrl();
     const headers = bridgeHeaders({});
-    const adminSupabase = createAdminClient();
 
     // First, get the full bridge status in one call (health endpoint)
     let bridgeSessions: Record<string, any> = {};
