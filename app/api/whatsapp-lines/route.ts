@@ -6,8 +6,16 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
 
-    const { getCurrentUser } = await import('@/lib/auth/actions');
-    const profile = await getCurrentUser();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { createAdminClient } = await import('@/lib/supabase/admin');
+    const adminSupabase = createAdminClient();
+    const { data: profile } = await (adminSupabase as any)
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single();
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
     const { data, error } = await (supabase as any)
@@ -36,8 +44,16 @@ export async function POST(request: NextRequest) {
        return NextResponse.json({ error: 'Missing line_key' }, { status: 400 });
     }
 
-    const { getCurrentUser } = await import('@/lib/auth/actions');
-    const profile = await getCurrentUser();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { createAdminClient } = await import('@/lib/supabase/admin');
+    const adminSupabase = createAdminClient();
+    const { data: profile } = await (adminSupabase as any)
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single();
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
     // Upsert the line

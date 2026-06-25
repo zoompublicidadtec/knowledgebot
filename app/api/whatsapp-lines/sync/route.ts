@@ -15,8 +15,15 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
-    const { getCurrentUser } = await import('@/lib/auth/actions');
-    const profile = await getCurrentUser();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const adminSupabase = createAdminClient();
+    const { data: profile } = await (adminSupabase as any)
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single();
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
     // Get all lines for this org
