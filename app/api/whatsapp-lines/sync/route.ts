@@ -27,10 +27,15 @@ export async function GET(request: NextRequest) {
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
     // Get all lines for this org
-    const { data: lines } = await (supabase as any)
+    const { data: lines, error } = await (adminSupabase as any)
       .from('whatsapp_lines')
       .select('line_key, status')
       .eq('organization_id', profile.organization_id);
+
+    if (error) {
+       console.error('API Sync Error:', error.message);
+       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     if (!lines || lines.length === 0) {
       return NextResponse.json({ synced: 0 });

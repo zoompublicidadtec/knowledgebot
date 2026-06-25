@@ -9,7 +9,6 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { createAdminClient } = await import('@/lib/supabase/admin');
     const adminSupabase = createAdminClient();
     const { data: profile } = await (adminSupabase as any)
       .from('profiles')
@@ -18,18 +17,20 @@ export async function GET(request: NextRequest) {
       .single();
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await (adminSupabase as any)
       .from('whatsapp_lines')
       .select('*')
       .eq('organization_id', profile.organization_id)
       .order('created_at', { ascending: true });
 
     if (error) {
+      console.error('API Error:', error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json(data || []);
   } catch (err: any) {
+    console.error('API Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
@@ -47,7 +48,6 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { createAdminClient } = await import('@/lib/supabase/admin');
     const adminSupabase = createAdminClient();
     const { data: profile } = await (adminSupabase as any)
       .from('profiles')
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
     // Upsert the line
-    const { data: line, error } = await (supabase as any)
+    const { data: line, error } = await (adminSupabase as any)
       .from('whatsapp_lines')
       .upsert({
         organization_id: profile.organization_id,
@@ -68,7 +68,10 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+       console.error('API Error:', error.message);
+       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     // Call bridge to start session. URL + key come from env (WHATSAPP_BRIDGE_URL / BRIDGE_API_KEY)
     // so this works in Railway where each service has its own container.
@@ -86,7 +89,7 @@ export async function POST(request: NextRequest) {
         const statusData = await statusRes.json().catch(() => ({}));
         if (statusData.status === 'connected') {
           // The session is already live — update the DB and skip QR generation.
-          await (supabase as any)
+          await (adminSupabase as any)
             .from('whatsapp_lines')
             .update({ status: 'connected', qr_code: null })
             .eq('line_key', line_key);
