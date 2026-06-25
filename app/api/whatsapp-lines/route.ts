@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getBridgeUrl, bridgeHeaders } from '@/lib/whatsapp/bridge';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(request: NextRequest) {
   try {
