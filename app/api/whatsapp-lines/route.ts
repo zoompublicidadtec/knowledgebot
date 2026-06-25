@@ -6,15 +6,8 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
 
-    // Authenticate user and get their org
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { data: profile } = await (supabase as any)
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
+    const { getCurrentUser } = await import('@/lib/auth/actions');
+    const profile = await getCurrentUser();
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
     const { data, error } = await (supabase as any)
@@ -43,10 +36,8 @@ export async function POST(request: NextRequest) {
        return NextResponse.json({ error: 'Missing line_key' }, { status: 400 });
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { data: profile } = await (supabase as any).from('profiles').select('organization_id').eq('id', user.id).single();
+    const { getCurrentUser } = await import('@/lib/auth/actions');
+    const profile = await getCurrentUser();
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
     // Upsert the line
