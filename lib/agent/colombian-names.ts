@@ -1,0 +1,63 @@
+// Base de datos de nombres normales en Colombia de la A a la Z
+const rawNamesText = `
+Aarón, Abad, Abas, Abasi, Abdall, Abdalla, Abdallah, Abdel, Abdón, Abdul, Abel, Abelardo, Abidemi, Abiel, Abigaíl, Abraham, Abrahán, Absalón, Acacio, Acael, Acevedo, Adal, Adalberto, Adán, Adar, Addo, Adela, Adelaida, Adelardo, Adelmo, Adir, Adolfo, Adom, Adonai, Adonay, Adora, Adoración, Adrián, Adriana, Adriano, Adriel, Adur, África, Ágata, Águeda, Agustín, Ahmad, Ahmed, Aída, Aimar, Ainara, Aingeru, Ainhoa, Aitor, Aiur, Akbal, Akil, Aladino, Alain, Alan, Alana, Alano, Alassane, Alba, Albaro, Alberta, Alberto, Albin, Albino, Alby, Alcides, Aldemar, Alden, Aldo, Aldon, Ale, Alec, Aleia, Alejandro, Alejo, Alessandro, Alessio, Alex, Alexander, Alexandra, Alexandre, Alexandria, Alexandru, Alexei, Alexis, Alfie, Alfonso, Alfred, Alfredo, Alí, Alice, Alicia, Alida, Alina, Alipio, Alisa, Alisson, Alistair, Allan, Allison, Allon, Alma, Alom, Alon, Alonso, Alonzo, Altea, Alvar, Álvaro, Aly, Amadeo, Amadi, Amado, Amador, Amalia, Amán, Amand, Amanda, Amando, Amara, Amarante, Amare, Amari, Amaro, Amaru, Amaury, Ámbar, Ambrosio, Amelia, Américo, Amets, Amílcar, Amin, Aminffer, Amir, Amira, Ammiel, Ammilee, Amon, Amos, Amparo, Amram, Amuyén, Amy, Ana, Ananías, Anastasia, Anastasio, Anatolio, Ander, Anderson, Andoni, Andrea, Andrés, Andrii, Andriy, Aner, Ángel, Angela, Ángeles, Angelica, Angeline, Anghel, Aníbal, Aniceto, Aniel, Anis, Anita, Annastacia, Anselmo, Antal, Antay, Antenor, Anthony, Antón, Antonella, Antoni, Antonia, Antonieta, Antonino, Antonio, Antú, Antuan, Antumi, Anuar, Anum, Anxo, Anya, Apolinar, Apolo, Aquiles, Aquilino, Arab, Araceli, Arán, Arandú, Arantza, Aratiri, Arauz, Arawi, Archibald, Archie, Arden, Arduin, Aren, Ares, Argemiro, Argo, Ari, Aria, Ariadna, Arial, Arian, Ariana, Arias, Aric, Aridai, Ariel, Aries, Arion, Aris, Aristeo, Aristides, Aristo, Aritz, Arius, Arkaitz, Arlen, Arlet, Arleth, Arley, Arlo, Arman, Armando, Armel, Armin, Armon, Arnaldo, Arnaud, Arndt, Arne, Arnel, Arnett, Arno, Arnold, Arnoldo, Aroa, Arón, Arrio, Art, Arte, Artemas, Artemio, Artemis, Arthur, Artie, Arto, Artur, Arturo, Aruwiri, Arvid, Arvin, Asa, Asael, Asaph, Asar, Asdrúbal, Ash, Asher, Ashley, Ashraf, Asier, Asim, Asiri, Aslan, Assad, Aster, Astolfo, Aston, Astu, Asunción, Ata, Atahualpa, Ataw, Athena, Atik, Atila, Atilio, Atle, Atleti, Atu, Atuq, Aubert, Aubrey, Aubry, August, Augustin, Augusto, Aura, Aurel, Aureli, Aurelia, Aureliano, Aurelio, Auron, Aurora, Austin, Ava, Avan, Avani, Averill, Avery, Avian, Avidan, Aviel, Aviram, Avis, Avner, Avra, Avrum, Awki, Axel, Aya, Ayar, Ayax, Aydan, Ayden, Aymara, Aymeri, Aymon, Ayrton, Aza, Azad, Azael, Azahar, Azar, Azarel, Azariah, Azarias, Azem, Azhar, Aziel, Azim, Aziz, Azizi, Azriel, Azucena, Azul, Azur
+Baahir, Baako, Babar, Babatunde, Babú, Bach, Badri, Badru, Baer, Baha, Bahman, Bailey, Bair, Baird, Bakari, Baker, Balam, Balan, Balasi, Balbino, Balder, Baldo, Baldomero, Balduin, Baldwin, Balfour, Baltasar, Baltazar, Balthasar, Bam, Bamidele, Bamilé, Bandile, Bann, Banner, Bao, Barack, Barak, Baran, Barasa, Bárbara, Bard, Barden, Bardo, Baris, Bark, Barker, Barley, Baruch, Basia, Beatriz, Begoña, Belén, Belisa, Bella, Benita, Bernarda, Berta, Bianca, Blanca, Bongani, Borné, Botes, Brad, Braden, Bradford, Bradley, Brady, Braidson, Brand, Brandon, Brayan, Brayden, Breyner, Brian, Brígida, Brigit, Brigitte, Bruna, Bruno
+Camila, Camilo, Candelaria, Cándida, Caridad, Carina, Carla, Carlos, Carlota, Carmela, Carmen, Carmiña, Carol, Carolina, Casandra, Casia, Casimiro, Catalina, Cayetana, Cecilia, Celeste, Celia, Celina, César, Charo, Chaska, Chat, Chela, Chila, Christian, Christopher, Clara, Clarisa, Claudia, Claudio, Clemente, Clementina, Cleofé, Clotilde, Concepcion, Conchita, Constancio, Constantino, Constanza, Consuelo, Cora, Corina, Cris, Cristian, Cristina, Cristóbal
+Dagmar, Daira, Dalia, Dalila, Dama, Damaris, Dan, Dana, Dánae, Dania, Daniel, Daniela, Danna, Daphne, Dario, Darlen, Darlena, Darlene, Darlisa, Darwin, Davi, David, Davinia, Débora, Dei, Deidamia, Delia, Delma, Demetria, Denia, Denise, Deotima, Diana, Diego, Dinora, Dioscar, Dislexis, Dolores, Dominga, Domingo, Dominica, Donatella, Dora, Dorina, Doris, Dulce, Duvan, Dylan
+Ebba, Ebenezer, Eda, Edelmira, Edén, Edgar, Edilia, Edith, Edna, Eduardo, Edunice, Edurne, Edwin, Egan, Egeria, Egle, Eglimar, Ela, Eladia, Eleanor, Electra, Elena, Eli, Elia, Eliana, Elianis, Elías, Elisa, Elisabeth, Eliú, Elizabeth, Elvia, Elvira, Ema, Emelia, Emi, Emilia, Emiliana, Emiliano, Emilio, Emily, Emma, Emmanuel, Emperatriz, Enid, Enrique, Enriqueta, Enzo, Eréndira, Erika, Ermelinda, Ernesto, Escarlata, Esmeralda, Esperanza, Espidia, Esteban, Estefanía, Esteffi, Estela, Ester, Esther, Estrella, Etna, Eudoxia, Eugenio, Eulalia, Eunice, Eustaquia, Eva, Evangelina, Evelin, Evelyn, Eymi, Ezequiel
+Fabián, Fabio, Fabiola, Fabrizia, Faina, Falcao, Fani, Fanny, Fara, Fatima, Fausta, Faustina, Febe, Federico, Felicia, Feliciana, Felipa, Felipe, Felisa, Félix, Fermín, Fernanda, Fernando, Fidel, Fidelia, Fides, Filis, Filomena, Fina, Finoa, Fiorella, Flavia, Flor, Flora, Florencia, Florida, Fortuna, Fran, Francisca, Francisco, Frida
+Gabriel, Gabriela, Gaby, Gael, Gaia, Gala, Galilea, Gaspar, Gema, Gemma, Génesis, Genoveva, Georgina, Geraldin, Geraldine, Gerardo, Germán, Gerónimo, Gertrudis, Gianna, Gigliola, Gilberto, Gilma, Gina, Ginneth, Giovanna, Giovanni, Gisela, Gisselle, Gladys, Gloria, Gonzalo, Gracia, Graciela, Gregorio, Guadalupe, Guillermo, Guiomar, Gun, Gustavo
+Hada, Hadara, Hagne, Haidee, Haimi, Harold, Hebe, Héctor, Heidy, Helena, Helga, Helvia, Henrietta, Heriberto, Herlinda, Herminia, Hilaria, Hilario, Hilda, Hortensia, Hugo, Humberto
+Iam, Ian, Iana, Ianira, Ibbie, Ida, Idaly, Idara, Idina, Idona, Ignacia, Ignacio, Iker, Ikia, Ileana, Ilenia, Ilia, Ilse, Imelda, Inés, Ingrid, Inmaculada, Inti, Iola, Irene, Iri, Irina, Irupé, Isa, Isaac, Isabel, Isabella, Isabelle, Isadora, Isamar, Isaura, Isis, Isolda, Itatí, Itzel, Iván, Ivana, Ivette, Ivon, Ivonne, Izayana, Izhi
+Jacinta, Jacobo, Jade, Jael, Jaime, Jaimis, Jair, Jairo, James, Jana, Janeth, Janina, Jaqueline, Jasbleidy, Jasmine, Javier, Jazmín, Jeanette, Jefferson, Jennifer, Jenny, Jerónima, Jerónimo, Jésica, Jessenia, Jessica, Jesús, Jhon, Jhonny, Jhonsneyder, Jineth, Joan, Joana, Joanne, Joaquín, Joaquina, Joceline, Jocelyn, Joel, Johana, Johanna, Joli, Jolith, Jonás, Jonathan, Jordana, Jorge, José, Josefa, Josefina, Juan, Juana, Juanita, Judith, Julia, Julián, Juliana, Juliet, Julieta, June, Juny, Jurema, Justina
+Kain, Karen, Karina, Karla, Kate, Katerine, Katherine, Kathleen, Kathy, Katia, Katiuska, Katy, Kay, Keila, Keira, Kelly, Kenia, Kenya, Keren, Kevin, Keyla, Kiara, Kika, Kimberly, Kira, Kristal
+Lady, Larisa, Laura, Lauren, Lavinia, Layla, Lázaro, Lea, Leandra, Leandro, Leda, Lee, Leidy, Leila, Leire, Lelila, Lena, Leocadia, Leonardo, Leonor, Leonora, Leopoldo, Leticia, Levana, Leyla, Leyre, Lía, Liam, Liana, Libia, Lidia, Lidya, Ligia, Lilia, Lilian, Liliana, Lilibeth, Lily, Lina, Linda, Liri, Liriel, Lisa, Lisbeth, Lisseth, Livia, Lola, Loly, Lorelei, Lorena, Lorenza, Loreto, Loria, Loriana, Lourdes, Luana, Lucas, Lucero, Lucho, Lucía, Luciana, Lucila, Lucrecia, Lucy, Ludmila, Luis, Luisa, Luisana, Luna, Lupe, Lux, Luz, Luzmila
+Mabel, Macarena, Madalena, Madeline, Mady, Maelys, Mafalda, Magalí, Magda, Magdalena, Magnolia, Maia, Mailén, Maira, Maite, Maitén, Maku, Malena, Malika, Malva, Manuel, Manuela, Manuelita, Mar, Mara, Marcela, Marcelina, Marcia, Marcos, Margarita, Mari, María, Marian, Mariana, Marianela, Mariangel, Maribel, Maricruz, Maricusa, Mariel, Mariela, Marilyn, Marina, Mario, Marisol, Marissa, Maritza, Marlen, Marlene, Marta, Martha, Martín, Martina, Martirio, Mary, Maryori, Mateo, Mathias, Matías, Matilde, Maura, Mauricio, Max, Maxima, Maximiliano, Máximo, Mayra, Medea, Melania, Melanie, Melchor, Melina, Melisa, Melissa, Mercedes, Mercy, Meredith, Mía, Micaela, Michaell, Michell, Michelle, Miguel, Mila, Milagros, Milena, Mimbi, Minerva, Miranda, Miriam, Mirla, Mirta, Mirtha, Mitzi, Moana, Mónica, Monserrat, Montserrat, Morela, Myriam
+Nadia, Naida, Naima, Nair, Nairo, Najwa, Nakia, Nana, Nancy, Naomi, Nara, Narda, Narel, Natalia, Nataly, Natasha, Nathalie, Natividad, Nau, Nayara, Nayaraq, Nayeli, Nazaret, Nazareth, Neda, Neferet, Nelda, Nélida, Nelly, Nelson, Nerea, Nereida, Nessa, Néstor, Nevis, Nhora, Nicolás, Nidia, Nieves, Nika, Nikole, Nila, Nildy, Nilsa, Nina, Nitzia, Noa, Noah, Noel, Noelia, Noemí, Nohemy, Nora, Norah, Noralba, Noris, Norma, Nubia, Nuria, Nydia, Nymeria
+Obdulia, Octavia, Octavio, Odalis, Odalys, Odelia, Ofelia, Oilda, Okari, Olga, Olimpia, Olivia, Omaira, Omar, Ondina, Oneida, Onelia, Onely, Oney, Orfilia, Oriana, Orla, Orlanda, Orlando, Ornella, Oscar, Otilia, Ovidio
+Pablo, Pacha, Pacífica, Palmira, Paloma, Pamela, Pandora, Panya, Paola, Paolina, Patricia, Patricio, Paula, Paulette, Paulina, Paulita, Paulo, Paz, Pedro, Penélope, Perfecta, Petronila, Pía, Pilar, Pili, Pool, Priscila, Prudencia, Purificación
+Queila, Querubina, Queta, Quetzaly, Quilla, Quimey, Quirina
+Radamel, Rafael, Rafaela, Raia, Raiza, Raizel, Ramiro, Ramón, Ramona, Raquel, Raúl, Rawa, Rayén, Rebeca, Regina, Reina, Remberto, Remedios, Renata, René, Renee, Reyna, Rhiannis, Rian, Riana, Ricardo, Rigoberto, Rita, Riuna, Riwia, Roberta, Roberto, Robinson, Rocío, Rodrigo, Rogelio, Rolando, Romana, Romina, Rosa, Rosabel, Rosalía, Rosalinda, Rosalyn, Rosana, Rosaura, Rosenda, Rosita, Roxana, Rubén, Rubí, Ruby, Rufina, Rute, Ruth, Ryan
+Sabina, Sacha, Sacnite, Saed, Sahara, Said, Saida, Salma, Salomé, Salvador, Samanta, Samantha, Samara, Samay, Samira, Samuel, Sandra, Santiago, Sara, Sarah, Sarai, Saray, Saril, Sasil, Saúl, Sayén, Scarlett, Sebastián, Sekdxij, Selena, Selene, Seline, Senobia, Serafina, Serena, Sergio, Shadia, Shara, Sharon, Sharyl, Shaya, Sheila, Shi, Shirley, Shu, Shulla, Sian, Sianny, Sibila, Sicarú, Sidney, Sika, Silvana, Silvia, Silvina, Simón, Simona, Sindy, Siobhan, Sirena, Sisa, Sissa, Sofía, Sol, Solana, Solange, Soledad, Solmara, Sonia, Soraya, Stacy, Stefanía, Stella, Stephanie, Steven, Stivens, Sugey, Suky, Sulata, Sulema, Suly, Sumailla, Sumak, Sumaq, Susan, Susana, Susy, Suyana, Suzette
+Tábata, Tabitha, Tácita, Taína, Tais, Talía, Tamara, Tamia, Tamya, Tania, Tanya, Tara, Taruka, Tatiana, Tea, Tecla, Telma, Telmo, Teodolinda, Teodora, Teófila, Teresa, Teresita, Thais, Thalía, Thanya, Thelma, Thiago, Thomas, Tiffany, Tomás, Tomasa, Triana, Trinidad, Tula
+Ula, Ulka, Ulma, Ulu, Ume, Umiña, Unai, Unax, Urko, Urpi, Urpillay, Úrsula, Urtzi, Usnavy
+Valentín, Valentina, Valeria, Valery, Vanesa, Vanessa, Vania, Vanina, Vasyl, Velia, Velma, Veneranda, Venus, Vera, Verónica, Vian, Vianey, Vicenta, Vicente, Vicky, Víctor, Victoria, Vida, Vilma, Violeta, Virgelina, Virginia, Vivian, Viviana, Volodymyr
+Wallis, Walter, Wanda, Wara, Warayana, Wendy, Westinhouse, William, Willington, Wilson, Winny
+Xabat, Xabier, Xana, Xanat, Xanthe, Xantina, Xavia, Xerac, Ximena, Xinia, Xio, Xiomara, Xuban
+Yadhira, Yadira, Yael, Yake, Yamilé, Yamilet, Yan, Yanara, Yanay, Yaneth, Yara, Yareli, Yaretzi, Yarisa, Yaro, Yasmín, Yazmín, Yeferson, Yeilimar, Yeimy, Yeison, Yelena, Yeray, Yerson, Yesenia, Yesquith, Yessica, Yetzali, Yexalen, Yimmi, Yin, Yipiti, Yisela, Yiseth, Yoe, Yolanda, Yon, Youssef, Yuli, Yuliana, Yuliet, Yumilfa, Yurak, Yurani, Yuri, Yuria, Yuriana, Yuritzi, Yvanna, Yvonne
+Zabel, Zacarías, Zahira, Zaida, Zandra, Zara, Zarina, Zayra, Zazil, Zelda, Zelma, Zenaida, Zenobia, Ziad, Zoé, Zoila, Zoraida, Zula, Zulay, Zulema, Zully, Zulma, Zuri, Zuría
+`;
+
+// Limpiamos los nombres: remover acentos, pasar a minúsculas y quitar espacios/Letras.
+export const COLOMBIAN_NAMES = new Set(
+  rawNamesText
+    .split(/[\s,]+/)
+    .map(name => {
+      return name
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, ""); // Remueve tildes/acentos
+    })
+    .filter(name => {
+      // Filtrar categorías como "letra", campos vacíos o nombres de una sola letra
+      return name.length > 1 && !name.startsWith("letra");
+    })
+);
+
+/**
+ * Valida si un nombre proporcionado contiene al menos un nombre de pila colombiano válido.
+ */
+export function isRealColombianName(name: string | null): boolean {
+  if (!name) return false;
+  const cleanName = name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  
+  // Divide el nombre (ej: "Juan Carlos Pérez" -> ["juan", "carlos", "perez"])
+  const parts = cleanName.split(/[\s-]+/);
+  
+  // Retorna true si al menos una de las partes es un nombre registrado
+  return parts.some(part => COLOMBIAN_NAMES.has(part));
+}

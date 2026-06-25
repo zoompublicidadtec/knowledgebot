@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: knowledgebot-app
+    # Host network so the Next.js app can reach the WhatsApp bridge on localhost:3004
+    network_mode: "host"
+    restart: always
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - HOSTNAME=0.0.0.0
+      - WHATSAPP_BRIDGE_URL=http://localhost:3004
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  whatsapp-bridge:
+    build:
+      context: ./wa-server
+      dockerfile: Dockerfile
+    container_name: knowledgebot-wa-bridge
+    # Host network so both containers share localhost
+    network_mode: "host"
+    restart: always
+    volumes:
+      # Persistent WhatsApp sessions survive container restarts
+      - wa_auth:/app/.wwebjs_auth
+      - wa_cache:/app/.wwebjs_cache
+    # Chrome/Puppeteer needs SYS_ADMIN for sandboxing
+    cap_add:
+      - SYS_ADMIN
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  wa_auth:
+  wa_cache:

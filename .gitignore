@@ -1,0 +1,78 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files — NEVER commit secrets
+.env*
+# The example file IS safe to commit
+!.env.example
+!.env.production.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Logs and debug artifacts (never in repo)
+*.log
+agent_calls.log
+system_prompt_debug.txt
+test_raw.log
+test_sheets.txt
+output.json
+
+# Local catalog data files (data lives in Supabase, not in repo)
+/*.csv
+/cuadernos/*.csv
+/catalog/
+/scratch/
+
+# Local one-off scripts and helpers (kept on disk, not tracked)
+/fix_*.js
+/test*.js
+/check_*.js
+/query_*.js
+/runner.js
+/update_bridge_url.js
+/update_*.js
+/set_sheet_id.js
+/copy_sheets_integration.js
+/sync_handoff.js
+
+# Graphify generated output
+graphify-out/
+
+# wa-server (WhatsApp bridge) — exclude session data and dependencies
+wa-server/node_modules
+wa-server/.wwebjs_auth
+wa-server/.wwebjs_cache

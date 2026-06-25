@@ -1,0 +1,122 @@
+🎭 Playwright Skill - Universal Executor
+
+📄 Executing file: D:\KNOWLEDGE ZOOM PUBLICIDAD\scripts\11_barrido_completo.js
+🚀 Starting automation...
+
+▶ Cargando índice...
+↻ Cargando catálogo parcial previo
+  4471 productos únicos ya en archivo
+
+=== [10/36] CONFECCIONES ===
+  [21/189] Busos: 0 decl. | 0 extr.
+  [22/189] Camiseta Polo (Nacional - Gildan): 0 decl. | 0 extr.
+  [23/189] Camiseta T-Shirt (Nacional - Gildan): 0 decl. | 0 extr.
+
+=== [11/36] DEPORTES ===
+
+=== [12/36] ECO NATURE ===
+
+=== [13/36] ECOLOGÍA (ECOPROMO) ===
+
+=== [14/36] GOLF ===
+  [33/189] Bolas: 0 decl. | 0 extr.
+  [34/189] Camisetas: 0 decl. | 0 extr.
+  [36/189] Impermeables: 0 decl. | 0 extr.
+  [38/189] Tees: 0 decl. | 0 extr.
+
+=== [15/36] GORRAS ===
+
+=== [16/36] HERRAMIENTAS ===
+
+=== [17/36] HOGAR ===
+  [55/189] Fondue: 0 decl. | 0 extr.
+  [56/189] Raclette: 0 decl. | 0 extr.
+
+=== [18/36] ILUMINACIÓN ===
+  [61/189] Láser y Apuntadores: 0 decl. | 0 extr.
+
+=== [19/36] INFANTIL ===
+
+=== [20/36] JUEGOS & ENTRETENIMIENTO ===
+
+=== [21/36] LLAVEROS ===
+
+=== [22/36] MALETINES & BOLSOS ===
+
+=== [23/36] MARCAS EXCLUSIVAS ===
+  [94/189] Callaway: 0 decl. | 0 extr.
+  [97/189] Gildan: 0 decl. | 0 extr.
+  [98/189] Lexon: 0 decl. | 0 extr.
+  [101/189] Rastal: 0 decl. | 0 extr.
+  [102/189] STYB: 0 decl. | 0 extr.
+  [104/189] TaylorMade: 0 decl. | 0 extr.
+
+=== [24/36] MASTER LINE ===
+
+=== [25/36] MEDICOS & FARMACÉUTICOS ===
+
+=== [26/36] MEMORIAS USB ===
+
+=== [27/36] MUGS, BOTILITOS, VASOS Y TERMOS ===
+
+=== [28/36] NUEVOS PRODUCTOS ===
+
+=== [29/36] OFICINA ===
+  [142/189] Todos: 471 decl. | 471 extr.
+
+=== [30/36] PARAGUAS E IMPERMEABLES ===
+  [143/189] Golf: 4 decl. | 4 extr.
+  [144/189] Impermeables y ponchos: 6 decl. | 6 extr.
+  [145/189] lujo: 3 decl. | 3 extr.
+  [146/189] Mini 21 Pulgadas: 10 decl. | 10 extr.
+  [147/189] Normales 23 a 30 pulgadas: 22 decl. | 22 extr.
+  [148/189] Todos: 48 decl. | 48 extr.
+
+=== [31/36] PHARMA Y CUIDADO PERSONAL ===
+  [149/189] Pharma: 60 decl. | 60 extr.
+  [150/189] Gel y líquidos antibacteriales: 16 decl. | 16 extr.
+  [151/189] Masajeadores: 12 decl. | 12 extr.
+  [152/189] Mentas: 0 decl. | 0 extr.
+  [153/189] Pastilleros: 9 decl. | 9 extr.
+  [154/189] Protectores Solares: 0 decl. | 0 extr.
+  [155/189] Belleza: 63 decl. | 63 extr.
+  [156/189] Todos: 132 decl. | 132 extr.
+
+=== [32/36] PRODUCTOS FÚTBOL ===
+  [157/189] Todos: 48 decl. | 48 extr.
+
+=== [33/36] PRODUCCIÓN NACIONAL ===
+  [158/189] Todos: 216 decl. | 216 extr.
+
+=== [34/36] RELOJES ===
+  [159/189] Mesa y Escritorio: 9 decl. | 9 extr.
+  [160/189] Pared: 9 decl. | 9 extr.
+  [161/189] Pulso: 4 decl. | 4 extr.
+  [162/189] Todos: 19 decl. | 19 extr.
+
+=== [35/36] TECNOLOGÍA ===
+  [163/189] Adaptadores: 24 decl. | 24 extr.
+  [164/189] Artículos Smartphone, Tablet y Computador: 166 decl. | 166 extr.
+  [165/189] Audífonos: 27 decl. | 27 extr.
+  [166/189] Cargadores y Pilas recargables: 46 decl. | 46 extr.
+  [167/189] Esterilizadores: 5 decl. | 5 extr.
+  [168/189] Organizadores de Cables: 10 decl. | 10 extr.
+  [169/189] Recreación y Aventura: 26 decl. | 26 extr.
+  [170/189] Selfie Sticks (Monopod): 0 decl. | 0 extr.
+  [171/189] Speaker y parlantes: 29 decl. | 29 extr.
+  [172/189] USB Memorias: 17 decl. | 17 extr.
+  [173/189] Produccion Nacional: 4 decl. | 4 extr.
+  [174/189] Todos: 271 decl. | 271 extr.
+
+=== [36/36] VARIEDADES ===
+  [175/189] Alcancías: 16 decl. | 16 extr.
+  [176/189] Antiestrés: 9 decl. | 9 extr.
+  [177/189] Billeteras: 1 decl. | 1 extr.
+  [178/189] Colores y Lápices: 15 decl. | 15 extr.
+  [179/189] Estuches y Monederos: 17 decl. | 17 extr.
+  [180/189] Festejo: 17 decl. | 17 extr.
+  [181/189] Gafas: 4 decl. | 4 extr.
+  [182/189] Manillas: 0 decl. | 0 extr.
+  [183/189] Mouse Pad: 4 decl. | 4 extr.
+  [184/189] Portaretrato: 4 decl. | 4 extr.
+  [185/189] Sillas: 3 decl. | 3 extr.

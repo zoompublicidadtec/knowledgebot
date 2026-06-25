@@ -1,0 +1,324 @@
+══════════════════════════════════════════════════════════════════════
+  INFORME DE CONTEO — ETAPA 1 (BARRIDO)
+  Página: https://www.catalogospromocionales.com/seccion/subcategorias.html
+  Fecha de extracción: 2026-06-24T22:48:06.356Z
+══════════════════════════════════════════════════════════════════════
+
+  Total de categorías      : 36
+  Total de subcategorías   : 189
+  Productos únicos         : 6790
+
+──────────────────────────────────────────────────────────────────────
+  DESGLOSE POR CATEGORÍA Y SUBCATEGORÍA
+  (declarados = conteo oficial del sitio | extraídos = los que se obtuvieron)
+──────────────────────────────────────────────────────────────────────
+
+  [01] PRECIO BOMBA
+       1 subcategoría(s) | 137 productos
+        ✓ Todos                                      decl: 137 extr: 137  id=434 12p
+
+  [02] ANTIESTRES
+       1 subcategoría(s) | 24 productos
+        ✓ Todos                                      decl:  24 extr:  24  id=252 2p
+
+  [03] ANTIMICROBIANOS
+       1 subcategoría(s) | 14 productos
+        ✓ Todos                                      decl:  14 extr:  14  id=430 2p
+
+  [04] ARTÍCULOS DE ESCRITURA
+       12 subcategoría(s) | 677 productos
+        ✓ Bolígrafo con resaltador                   decl:   8 extr:   8  id=? 1p
+        ✓ Ecológicos                                 decl:  66 extr:  66  id=255 6p
+        ✓ Estuches Bolígrafos                        decl:  23 extr:  23  id=256 2p
+        ✓ Lápices                                    decl:  14 extr:  14  id=257 2p
+        ✓ Metálicos                                  decl:  64 extr:  64  id=258 6p
+        ✓ Metálicos con stylus                       decl:  10 extr:  10  id=? 1p
+        ✓ Plásticos                                  decl: 127 extr: 127  id=260 11p
+        ✓ Plásticos con stylus                       decl:  16 extr:  16  id=261 2p
+        ✓ Clip Metalico                              decl:  31 extr:  31  id=399 3p
+        ✓ Portaminas                                 decl:   8 extr:   8  id=? 1p
+        ✓ Resaltadores                               decl:  34 extr:  34  id=263 3p
+        ✓ Todos                                      decl: 276 extr: 276  id=253 23p
+
+  [05] ARTÍCULOS REFLECTIVOS Y DE PRECAUCIÓN
+       1 subcategoría(s) | 14 productos
+        ✓ Todos                                      decl:  14 extr:  14  id=402 2p
+
+  [06] AUTOMÓVIL
+       1 subcategoría(s) | 37 productos
+        ✓ Todos                                      decl:  37 extr:  37  id=264 4p
+
+  [07] BAR Y VINO
+       1 subcategoría(s) | 54 productos
+        ✓ Todos                                      decl:  54 extr:  54  id=265 5p
+
+  [08] BICICLETA
+       1 subcategoría(s) | 51 productos
+        ✓ Todos                                      decl:  51 extr:  51  id=414 5p
+
+  [09] CALCULADORAS
+       1 subcategoría(s) | 4 productos
+        ✓ Todos                                      decl:   4 extr:   4  id=? 1p
+
+  [10] CONFECCIONES
+       8 subcategoría(s) | 36 productos
+        ✓ Busos                                      decl:   0 extr:   0  id=? 1p
+        ✓ Camiseta Polo (Nacional - Gildan)          decl:   0 extr:   0  id=? 1p
+        ✓ Camiseta T-Shirt (Nacional - Gildan)       decl:   0 extr:   0  id=? 1p
+        ✓ Chaquetas (Nacional - Gildan)              decl:   1 extr:   1  id=? 1p
+        ✓ Comprimidos                                decl:   1 extr:   1  id=? 1p
+        ✓ Gorras                                     decl:   6 extr:   6  id=? 1p
+        ✓ Toallas                                    decl:   9 extr:   9  id=? 1p
+        ✓ Todos                                      decl:  19 extr:  19  id=12 2p
+
+  [11] DEPORTES
+       1 subcategoría(s) | 120 productos
+        ✓ Todos                                      decl: 120 extr: 120  id=410 10p
+
+  [12] ECO NATURE
+       1 subcategoría(s) | 62 productos
+        ✓ Todos                                      decl:  62 extr:  62  id=420 6p
+
+  [13] ECOLOGÍA (ECOPROMO)
+       1 subcategoría(s) | 164 productos
+        ✓ Todos                                      decl: 164 extr: 164  id=284 14p
+
+  [14] GOLF
+       8 subcategoría(s) | 28 productos
+        ✓ Accesorios                                 decl:   3 extr:   3  id=? 1p
+        ✓ Bolas                                      decl:   0 extr:   0  id=? 1p
+        ✓ Camisetas                                  decl:   0 extr:   0  id=? 1p
+        ✓ Gorras                                     decl:   8 extr:   8  id=? 1p
+        ✓ Impermeables                               decl:   0 extr:   0  id=? 1p
+        ✓ Paraguas                                   decl:   4 extr:   4  id=? 1p
+        ✓ Tees                                       decl:   0 extr:   0  id=? 1p
+        ✓ Todos                                      decl:  13 extr:  13  id=109 2p
+
+  [15] GORRAS
+       1 subcategoría(s) | 14 productos
+        ✓ Todos                                      decl:  14 extr:  14  id=292 2p
+
+  [16] HERRAMIENTAS
+       7 subcategoría(s) | 186 productos
+        ✓ Automóvil                                  decl:  15 extr:  15  id=293 2p
+        ✓ Candados                                   decl:   2 extr:   2  id=? 1p
+        ✓ Herramientero con Linterna                 decl:  15 extr:  15  id=295 2p
+        ✓ Metros                                     decl:  29 extr:  29  id=296 3p
+        ✓ Multiusos                                  decl:  25 extr:  25  id=297 3p
+        ✓ Set Herramientas                           decl:  21 extr:  21  id=298 2p
+        ✓ Todos                                      decl:  79 extr:  79  id=15 7p
+
+  [17] HOGAR
+       13 subcategoría(s) | 929 productos
+        ✓ Artículos Cocina                           decl: 135 extr: 135  id=299 12p
+        ✓ Artículos Hogar                            decl: 253 extr: 253  id=300 22p
+        ✓ Artículos para Vinos                       decl:  27 extr:  27  id=301 3p
+        ✓ Bar                                        decl:  45 extr:  45  id=302 4p
+        ✓ Cobijas                                    decl:   2 extr:   2  id=? 1p
+        ✓ Contenedores y Portacomidas                decl:  38 extr:  38  id=304 4p
+        ✓ Destapadores                               decl:  17 extr:  17  id=305 2p
+        ✓ Fondue                                     decl:   0 extr:   0  id=? 1p
+        ✓ Raclette                                   decl:   0 extr:   0  id=? 1p
+        ✓ Set de BBQ                                 decl:  10 extr:  10  id=? 1p
+        ✓ Set de Quesos                              decl:   4 extr:   4  id=? 1p
+        ✓ Produccion Nacional                        decl:  52 extr:  52  id=309 5p
+        ✓ Todos                                      decl: 346 extr: 346  id=16 29p
+
+  [18] ILUMINACIÓN
+       5 subcategoría(s) | 101 productos
+        ✓ Láser y Apuntadores                        decl:   0 extr:   0  id=? 1p
+        ✓ Linternas LLavero                          decl:  11 extr:  11  id=? 1p
+        ✓ Metálicas                                  decl:   9 extr:   9  id=? 1p
+        ✓ Plásticas                                  decl:  31 extr:  31  id=314 3p
+        ✓ Todos                                      decl:  50 extr:  50  id=17 5p
+
+  [19] INFANTIL
+       1 subcategoría(s) | 83 productos
+        ✓ Todos                                      decl:  83 extr:  83  id=315 7p
+
+  [20] JUEGOS & ENTRETENIMIENTO
+       2 subcategoría(s) | 56 productos
+        ✓ Producción Nacional                        decl:  10 extr:  10  id=? 1p
+        ✓ Todos                                      decl:  46 extr:  46  id=18 4p
+
+  [21] LLAVEROS
+       9 subcategoría(s) | 196 productos
+        ✓ Con Destapador                             decl:  15 extr:  15  id=317 2p
+        ✓ Con Luz                                    decl:   9 extr:   9  id=? 1p
+        ✓ Especiales                                 decl:  10 extr:  10  id=? 1p
+        ✓ Metálicos                                  decl:  42 extr:  42  id=320 4p
+        ✓ Pito                                       decl:   4 extr:   4  id=? 1p
+        ✓ Portacartera                               decl:   2 extr:   2  id=? 1p
+        ✓ Plásticos                                  decl:  27 extr:  27  id=323 3p
+        ✓ Producción Nacional                        decl:   3 extr:   3  id=? 1p
+        ✓ Todos                                      decl:  84 extr:  84  id=19 7p
+
+  [22] MALETINES & BOLSOS
+       15 subcategoría(s) | 694 productos
+        ✓ Algodón                                    decl:  16 extr:  16  id=325 2p
+        ✓ Cambrel (No tejido)                        decl:  27 extr:  27  id=326 3p
+        ✓ Canguros                                   decl:  17 extr:  17  id=327 2p
+        ✓ Ejecutivos                                 decl:  24 extr:  24  id=328 2p
+        ✓ Maletínes deportivos                       decl:  40 extr:  40  id=329 4p
+        ✓ Morral (Backpack                           decl:  46 extr:  46  id=330 4p
+        ✓ Neveras (Cooler-bags)                      decl:  30 extr:  30  id=331 3p
+        ✓ Organizadores de viaje                     decl:  35 extr:  35  id=333 3p
+        ✓ Poliéster                                  decl: 133 extr: 133  id=334 12p
+        ✓ Portapasaporte                             decl:   6 extr:   6  id=? 1p
+        ✓ Trolley                                    decl:   7 extr:   7  id=? 1p
+        ✓ Tulas Deportivas                           decl:  18 extr:  18  id=337 2p
+        ✓ Yute                                       decl:   3 extr:   3  id=? 1p
+        ✓ Producción Nacional                        decl:  22 extr:  22  id=339 2p
+        ✓ Todos                                      decl: 270 extr: 270  id=107 23p
+
+  [23] MARCAS EXCLUSIVAS
+       14 subcategoría(s) | 344 productos
+        ✓ Boompods                                   decl:   6 extr:   6  id=? 1p
+        ✓ Callaway                                   decl:   0 extr:   0  id=? 1p
+        ✓ Chili                                      decl:  15 extr:  15  id=76 2p
+        ✓ Ecopromo                                   decl: 216 extr: 216  id=74 18p
+        ✓ Gildan                                     decl:   0 extr:   0  id=? 1p
+        ✓ Lexon                                      decl:   0 extr:   0  id=? 1p
+        ✓ Moptoppers                                 decl:   4 extr:   4  id=? 1p
+        ✓ Rainpro                                    decl:  20 extr:  20  id=79 2p
+        ✓ Rastal                                     decl:   0 extr:   0  id=? 1p
+        ✓ STYB                                       decl:   0 extr:   0  id=? 1p
+        ✓ Swisspeak                                  decl:   9 extr:   9  id=? 1p
+        ✓ TaylorMade                                 decl:   0 extr:   0  id=? 1p
+        ✓ Urban Travel                               decl:  52 extr:  52  id=408 5p
+        ✓ Xindao                                     decl:  22 extr:  22  id=75 2p
+
+  [24] MASTER LINE
+       5 subcategoría(s) | 102 productos
+        ✓ Llaveros                                   decl:  40 extr:  40  id=340 4p
+        ✓ Portacarteras                              decl:   1 extr:   1  id=? 1p
+        ✓ Portamensajes                              decl:   3 extr:   3  id=? 1p
+        ✓ Portarjetas                                decl:  10 extr:  10  id=? 1p
+        ✓ Todos                                      decl:  48 extr:  48  id=22 4p
+
+  [25] MEDICOS & FARMACÉUTICOS
+       1 subcategoría(s) | 86 productos
+        ✓ Todos                                      decl:  86 extr:  86  id=413 8p
+
+  [26] MEMORIAS USB
+       4 subcategoría(s) | 35 productos
+        ✓ Bolígrafos                                 decl:   1 extr:   1  id=? 1p
+        ✓ Metálicas                                  decl:   8 extr:   8  id=? 1p
+        ✓ Plasticas                                  decl:   8 extr:   8  id=? 1p
+        ✓ Todos                                      decl:  18 extr:  18  id=31 2p
+
+  [27] MUGS, BOTILITOS, VASOS Y TERMOS
+       13 subcategoría(s) | 572 productos
+        ✓ Botilitos Deportivos                       decl:  39 extr:  39  id=344 4p
+        ✓ Botilitos Metálicos                        decl:  37 extr:  37  id=345 4p
+        ✓ Botilitos Plásticos                        decl:  59 extr:  59  id=346 5p
+        ✓ Botilitos Tritan y Policarbonato           decl:   5 extr:   5  id=? 1p
+        ✓ Mug Cerámica                               decl:  10 extr:  10  id=? 1p
+        ✓ Mug Metálicos                              decl:  36 extr:  36  id=349 3p
+        ✓ Mug Plásticos                              decl:  30 extr:  30  id=350 3p
+        ✓ Mug Sublimación                            decl:  11 extr:  11  id=? 1p
+        ✓ Termos                                     decl:   6 extr:   6  id=? 1p
+        ✓ Vasos y Copas                              decl:  21 extr:  21  id=353 2p
+        ✓ Producción Nacional                        decl:  59 extr:  59  id=354 5p
+        ✓ Aislamiento Térmico (Vacuum)               decl:  34 extr:  34  id=427 3p
+        ✓ Todos                                      decl: 225 extr: 225  id=23 19p
+
+  [28] NUEVOS PRODUCTOS
+       1 subcategoría(s) | 46 productos
+        ✓ Todos                                      decl:  46 extr:  46  id=426 4p
+
+  [29] OFICINA
+       12 subcategoría(s) | 1088 productos
+        ✓ Artículos Escritorio                       decl: 292 extr: 292  id=355 25p
+        ✓ Ecológicos                                 decl:  65 extr:  65  id=356 6p
+        ✓ Libretas                                   decl:  60 extr:  60  id=357 5p
+        ✓ Memo-stick                                 decl:  13 extr:  13  id=358 2p
+        ✓ Mouse-Pad                                  decl:  12 extr:  12  id=? 1p
+        ✓ Portadocumentos y Portafolios              decl:  25 extr:  25  id=360 3p
+        ✓ Portalápices                               decl:  18 extr:  18  id=361 2p
+        ✓ Resaltadores                               decl:  34 extr:  34  id=263 3p
+        ✓ Stickies y sets                            decl:  34 extr:  34  id=363 3p
+        ✓ Tarjeteros                                 decl:  17 extr:  17  id=364 2p
+        ✓ Producción Nacional                        decl:  47 extr:  47  id=365 4p
+        ✓ Todos                                      decl: 471 extr: 471  id=24 40p
+
+  [30] PARAGUAS E IMPERMEABLES
+       6 subcategoría(s) | 93 productos
+        ✓ Golf                                       decl:   4 extr:   4  id=? 1p
+        ✓ Impermeables y ponchos                     decl:   6 extr:   6  id=? 1p
+        ✓ lujo                                       decl:   3 extr:   3  id=? 1p
+        ✓ Mini 21 Pulgadas                           decl:  10 extr:  10  id=? 1p
+        ✓ Normales 23 a 30 pulgadas                  decl:  22 extr:  22  id=369 2p
+        ✓ Todos                                      decl:  48 extr:  48  id=25 4p
+
+  [31] PHARMA Y CUIDADO PERSONAL
+       8 subcategoría(s) | 292 productos
+        ✓ Pharma                                     decl:  60 extr:  60  id=277 5p
+        ✓ Gel y líquidos antibacteriales             decl:  16 extr:  16  id=278 2p
+        ✓ Masajeadores                               decl:  12 extr:  12  id=? 1p
+        ✓ Mentas                                     decl:   0 extr:   0  id=? 1p
+        ✓ Pastilleros                                decl:   9 extr:   9  id=? 1p
+        ✓ Protectores Solares                        decl:   0 extr:   0  id=? 1p
+        ✓ Belleza                                    decl:  63 extr:  63  id=428 6p
+        ✓ Todos                                      decl: 132 extr: 132  id=13 11p
+
+  [32] PRODUCTOS FÚTBOL
+       1 subcategoría(s) | 48 productos
+        ✓ Todos                                      decl:  48 extr:  48  id=421 4p
+
+  [33] PRODUCCIÓN NACIONAL
+       1 subcategoría(s) | 216 productos
+        ✓ Todos                                      decl: 216 extr: 216  id=108 18p
+
+  [34] RELOJES
+       4 subcategoría(s) | 41 productos
+        ✓ Mesa y Escritorio                          decl:   9 extr:   9  id=? 1p
+        ✓ Pared                                      decl:   9 extr:   9  id=? 1p
+        ✓ Pulso                                      decl:   4 extr:   4  id=? 1p
+        ✓ Todos                                      decl:  19 extr:  19  id=27 2p
+
+  [35] TECNOLOGÍA
+       12 subcategoría(s) | 625 productos
+        ✓ Adaptadores                                decl:  24 extr:  24  id=373 2p
+        ✓ Artículos Smartphone, Tablet y Computador  decl: 166 extr: 166  id=374 14p
+        ✓ Audífonos                                  decl:  27 extr:  27  id=375 3p
+        ✓ Cargadores y Pilas recargables             decl:  46 extr:  46  id=376 4p
+        ✓ Esterilizadores                            decl:   5 extr:   5  id=? 1p
+        ✓ Organizadores de Cables                    decl:  10 extr:  10  id=? 1p
+        ✓ Recreación y Aventura                      decl:  26 extr:  26  id=378 3p
+        ✓ Selfie Sticks (Monopod)                    decl:   0 extr:   0  id=? 1p
+        ✓ Speaker y parlantes                        decl:  29 extr:  29  id=380 3p
+        ✓ USB Memorias                               decl:  17 extr:  17  id=381 2p
+        ✓ Produccion Nacional                        decl:   4 extr:   4  id=? 1p
+        ✓ Todos                                      decl: 271 extr: 271  id=112 23p
+
+  [36] VARIEDADES
+       15 subcategoría(s) | 537 productos
+        ✓ Alcancías                                  decl:  16 extr:  16  id=386 2p
+        ✓ Antiestrés                                 decl:   9 extr:   9  id=? 1p
+        ✓ Billeteras                                 decl:   1 extr:   1  id=? 1p
+        ✓ Colores y Lápices                          decl:  15 extr:  15  id=389 2p
+        ✓ Estuches y Monederos                       decl:  17 extr:  17  id=390 2p
+        ✓ Festejo                                    decl:  17 extr:  17  id=391 2p
+        ✓ Gafas                                      decl:   4 extr:   4  id=? 1p
+        ✓ Manillas                                   decl:   0 extr:   0  id=? 1p
+        ✓ Mouse Pad                                  decl:   4 extr:   4  id=? 1p
+        ✓ Portaretrato                               decl:   4 extr:   4  id=? 1p
+        ✓ Sillas                                     decl:   3 extr:   3  id=? 1p
+        ✓ Ventiladores y Abanicos                    decl:   5 extr:   5  id=? 1p
+        ✓ Viaje                                      decl:  96 extr:  96  id=397 8p
+        ✓ Produccion Nacional                        decl:  62 extr:  62  id=398 6p
+        ✓ Todos                                      decl: 284 extr: 284  id=28 24p
+
+══════════════════════════════════════════════════════════════════════
+  RESUMEN GLOBAL
+══════════════════════════════════════════════════════════════════════
+  Subcategorías con productos : 169
+  Subcategorías vacías        : 20
+  Productos declarados (suma) : 7806
+  Productos extraídos (suma)  : 7806
+  Productos únicos (desdup)   : 6790
+
+  NOTA: la suma de "declarados" pasa del total único porque algunos
+  productos aparecen en varias subcategorías (ej. "Todos" + subcategorías).
+  El conteo único (desduplicado por enlace) es el valor real del catálogo.

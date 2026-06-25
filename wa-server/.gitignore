@@ -1,0 +1,7 @@
+# wa-server/.gitignore
+node_modules
+.wwebjs_auth
+.wwebjs_cache
+*.log
+.env
+.env.local

@@ -1,0 +1,87 @@
+🎭 Playwright Skill - Universal Executor
+
+📄 Executing file: D:\KNOWLEDGE ZOOM PUBLICIDAD\scripts\11_barrido_completo.js
+🚀 Starting automation...
+
+▶ Cargando índice...
+↻ Cargando catálogo parcial previo
+
+=== [10/36] CONFECCIONES ===
+  [21/189] Busos: 0 decl. | 0 extr.
+  [22/189] Camiseta Polo (Nacional - Gildan): 0 decl. | 0 extr.
+  [23/189] Camiseta T-Shirt (Nacional - Gildan): 0 decl. | 0 extr.
+
+=== [11/36] DEPORTES ===
+
+=== [12/36] ECO NATURE ===
+
+=== [13/36] ECOLOGÍA (ECOPROMO) ===
+
+=== [14/36] GOLF ===
+  [33/189] Bolas: 0 decl. | 0 extr.
+  [34/189] Camisetas: 0 decl. | 0 extr.
+  [36/189] Impermeables: 0 decl. | 0 extr.
+  [38/189] Tees: 0 decl. | 0 extr.
+
+=== [15/36] GORRAS ===
+
+=== [16/36] HERRAMIENTAS ===
+
+=== [17/36] HOGAR ===
+  [51/189] Bar: 45 decl. | 45 extr.
+  [52/189] Cobijas: 2 decl. | 2 extr.
+  [53/189] Contenedores y Portacomidas: 38 decl. | 38 extr.
+  [54/189] Destapadores: 17 decl. | 17 extr.
+  [55/189] Fondue: 0 decl. | 0 extr.
+  [56/189] Raclette: 0 decl. | 0 extr.
+  [57/189] Set de BBQ: 10 decl. | 10 extr.
+  [58/189] Set de Quesos: 4 decl. | 4 extr.
+  [59/189] Produccion Nacional: 52 decl. | 52 extr.
+  [60/189] Todos: 346 decl. | 346 extr.
+
+=== [18/36] ILUMINACIÓN ===
+  [61/189] Láser y Apuntadores: 0 decl. | 0 extr.
+  [62/189] Linternas LLavero: 11 decl. | 11 extr.
+  [63/189] Metálicas: 9 decl. | 9 extr.
+  [64/189] Plásticas: 31 decl. | 31 extr.
+  [65/189] Todos: 50 decl. | 50 extr.
+
+=== [19/36] INFANTIL ===
+  [66/189] Todos: 83 decl. | 83 extr.
+
+=== [20/36] JUEGOS & ENTRETENIMIENTO ===
+  [67/189] Producción Nacional: 10 decl. | 10 extr.
+  [68/189] Todos: 46 decl. | 46 extr.
+
+=== [21/36] LLAVEROS ===
+  [69/189] Con Destapador: 15 decl. | 15 extr.
+  [70/189] Con Luz: 9 decl. | 9 extr.
+  [71/189] Especiales: 10 decl. | 10 extr.
+  [72/189] Metálicos: 42 decl. | 42 extr.
+  [73/189] Pito: 4 decl. | 4 extr.
+  [74/189] Portacartera: 2 decl. | 2 extr.
+  [75/189] Plásticos: 27 decl. | 27 extr.
+  [76/189] Producción Nacional: 3 decl. | 3 extr.
+  [77/189] Todos: 84 decl. | 84 extr.
+
+=== [22/36] MALETINES & BOLSOS ===
+  [78/189] Algodón: 16 decl. | 16 extr.
+  [79/189] Cambrel (No tejido): 27 decl. | 27 extr.
+  [80/189] Canguros: 17 decl. | 17 extr.
+  [81/189] Ejecutivos: 24 decl. | 24 extr.
+  [82/189] Maletínes deportivos: 40 decl. | 40 extr.
+  [83/189] Morral (Backpack: 46 decl. | 46 extr.
+  [84/189] Neveras (Cooler-bags): 30 decl. | 30 extr.
+  [85/189] Organizadores de viaje: 35 decl. | 35 extr.
+  [86/189] Poliéster: 133 decl. | 133 extr.
+  [87/189] Portapasaporte: 6 decl. | 6 extr.
+  [88/189] Trolley: 7 decl. | 7 extr.
+  [89/189] Tulas Deportivas: 18 decl. | 18 extr.
+  [90/189] Yute: 3 decl. | 3 extr.
+  [91/189] Producción Nacional: 22 decl. | 22 extr.
+  [92/189] Todos: 270 decl. | 270 extr.
+
+=== [23/36] MARCAS EXCLUSIVAS ===
+  [93/189] Boompods: 6 decl. | 6 extr.
+  [94/189] Callaway: 0 decl. | 0 extr.
+  [95/189] Chili: 15 decl. | 15 extr.

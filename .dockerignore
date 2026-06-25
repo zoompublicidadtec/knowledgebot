@@ -1,0 +1,23 @@
+node_modules
+.next
+out
+build
+.git
+.gitignore
+.env
+.env.local
+.env.production
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+# Logs and catalog data files should not be in the image
+*.log
+*.csv
+agent_calls.log
+system_prompt_debug.txt
+scratch
+catalog
+

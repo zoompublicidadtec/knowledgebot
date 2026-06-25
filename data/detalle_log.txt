@@ -1,0 +1,15 @@
+🎭 Playwright Skill - Universal Executor
+
+📄 Executing file: D:\KNOWLEDGE ZOOM PUBLICIDAD\scripts\20_extraccion_detalle.js
+🚀 Starting automation...
+
+▶ 6790 productos a procesar
+  [25/6790] VA-666 Chaqueta Urban Travel Wear
+  [50/6790] CP-286 Bola Antiestrés Rubber
+  [75/6790] VA-574 Sporty Bag en Cambrel Ewok
+  [100/6790] CP-263 Toalla Cool Sport Box
+  [125/6790] TE-455 Audifonos Bluetooth Aerobone
+  [150/6790] VA-1178 Maletin Compacto Soccer Cup
+  [175/6790] JU-114 Juego De Letras
+  [200/6790] SET-DAK-E Set Bolígrafo y Portaminas Dakota Eco
+  [225/6790] VA-359-2 Bolsa en Algodón Botanik (100gr)
