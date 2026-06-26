@@ -11,22 +11,33 @@ services:
     network_mode: "host"
     restart: always
     env_file:
-      - .env.local
+      - .env.production
     environment:
       - NODE_ENV=production
       - PORT=3003
       - HOSTNAME=0.0.0.0
+      - WHATSAPP_BRIDGE_URL=http://localhost:3004
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   whatsapp-bridge:
     build:
-      context: ../wa-server-knowledge
-      dockerfile: ../knowledgebot-saas/Dockerfile.whatsapp
+      context: ./wa-server
+      dockerfile: Dockerfile
     container_name: knowledgebot-wa-bridge
     network_mode: "host"
     restart: always
     volumes:
-      - ../wa-server-knowledge/wwebjs_sessions:/data/wwebjs_sessions
-      - ../wa-server-knowledge/.wwebjs_cache:/app/.wwebjs_cache
+      - ./wwebjs_sessions:/data/wwebjs_sessions
+      - ./wa-server/.wwebjs_cache:/app/.wwebjs_cache
     # Chrome needs system capabilities for sandboxing inside Docker
     cap_add:
       - SYS_ADMIN
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
