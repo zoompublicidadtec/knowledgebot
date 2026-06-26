@@ -88,12 +88,13 @@ Para lidiar con las miles de referencias de productos y sus escalas de precios, 
 
 ## 🚀 6. Mejoras y Optimizaciones (Última Actualización)
 
-*   **Integración con Context7 (`ctx7`)**: Se configuró el CLI y la skill `find-docs` para que los agentes de IA puedan buscar y leer documentación actualizada de APIs y librerías, evitando alucinaciones con código obsoleto.
-*   **Dockerización Completa**: Se creó un `Dockerfile` optimizado en múltiples etapas (multi-stage) y un `docker-compose.yml` que orquesta tanto la aplicación Next.js como el puente local de WhatsApp (`wa-server-knowledge`).
-*   **Red de Contenedores (`network_mode: "host"`)**: Se configuró la red en Docker Compose para que ambos contenedores se comuniquen perfectamente mediante `localhost`, manteniendo intacto el código del puente de WhatsApp.
-*   **Next.js Standalone**: Se configuró `output: 'standalone'` en `next.config.ts` para reducir drásticamente el tamaño de la imagen Docker de producción.
-*   **Correcciones de TypeScript**: Se resolvieron múltiples errores estrictos de tipado (e.g., `Array.from` en nombres, y casteos `as any` en funciones RPC de Supabase) para garantizar que el proceso de *build* para producción pase al 100%.
-*   **Aislamiento de Scripts**: Se excluyó la carpeta `scripts/` en `tsconfig.json` para evitar que pruebas o utilidades locales bloqueen el despliegue a producción.
+*   **Integración de RAG Multimodal ("Motor de Conocimiento")**: Se integró el sub-sistema en Python (FastAPI en el puerto `8001`) como el motor de búsqueda semántica principal. Realiza búsquedas vectoriales sobre 3072 dimensiones combinadas con un fallback inteligente de concordancia de texto si los vectores fallan.
+*   **Resiliencia ante Cuotas y Rate Limits (Gemini 429)**: Ante bloqueos de cuota o rate limits de la API Key de Gemini, el RAG degrada con gracia y formatea estáticamente los productos recuperados del catálogo local en un mensaje legible y exacto en español, garantizando que el bot de WhatsApp siga respondiendo.
+*   **Integración Resiliente en Next.js**: Se reescribió la tool `searchCatalog` en Next.js para consultar el servicio RAG FastAPI. En caso de caída de la API de Python, se captura la excepción mediante un bloque `catch` y el sistema ejecuta automáticamente la búsqueda clásica en la base de datos SQL de Supabase.
+*   **Persistencia Garantizada de Sesión (Fix de Desconexión)**: Se corrigió el volumen montado del contenedor `whatsapp-bridge` en `docker-compose.yml` para apuntar a la ruta host `../wa-server-knowledge/wwebjs_sessions` hacia `/data/wwebjs_sessions`. Esto asegura que los archivos y tokens de autenticación de las líneas de WhatsApp se almacenen físicamente en el disco del Hostinger VPS y sobrevivan a cualquier rebuild (`docker compose up --build`) o actualización del repositorio sin desconectarse.
+*   **Integración con Context7 (`ctx7`)**: Se configuró el CLI y la skill `find-docs` para buscar documentación actualizada de librerías en tiempo real.
+*   **Dockerización y Red en Host Mode**: Se configuró el docker-compose en `network_mode: "host"` para simplificar la interconexión mediante `localhost` sin exponer puertos sensibles.
+*   **TypeScript y Builds Seguros**: Se resolvieron los errores de compilación estricta y se aisló la carpeta `scripts/` para evitar bloqueos en el build final.
 
 ---
 
@@ -103,7 +104,7 @@ Para permitir que una sola organización (como ZOOM Publicidad) escale su operac
 
 ### Principios del Diseño Multi-Línea
 1. **Identidad Unificada**: Las múltiples líneas son atendidas por el mismo agente central ("Oscar"), consumiendo exactamente el mismo catálogo de productos, directrices de precios y base de conocimientos. Esto evita la fragmentación de información y elimina la necesidad de multiplicar el entrenamiento o los datos por cada número celular.
-2. **Conexión Local (No Meta API)**: Por decisión y requerimiento estricto del proyecto, la conexión de WhatsApp **NO emplea las APIs oficiales de Meta Cloud**. Todo el tráfico pasa a través del puente local (`wa-server-knowledge` con `whatsapp-web.js`), el cual soporta múltiples sesiones dinámicas. Las sesiones (`.wwebjs_auth`) se almacenan de forma persistente (o mediante un *Volume* en Railway) garantizando que no se pierda la autenticación tras reinicios.
+2. **Conexión Local (No Meta API)**: Por decisión y requerimiento estricto del proyecto, la conexión de WhatsApp **NO emplea las APIs oficiales de Meta Cloud**. Todo el tráfico pasa a través del puente local (`wa-server-knowledge` con `whatsapp-web.js`), el cual soporta múltiples sesiones dinámicas. Las sesiones se almacenan de forma persistente a través del volumen Docker persistente en el host VPS (`wwebjs_sessions`), garantizando que no se pierda la autenticación tras actualizaciones del sistema o reinicios del contenedor.
 3. **Generación de Códigos QR Inline**: El emparejamiento con WhatsApp se digitalizó por completo. En lugar de revisar la consola de comandos de Windows, el panel SaaS obtiene los códigos QR en *Base64* desde las APIs del puente y los renderiza visualmente en el navegador en tiempo real.
 
 ### Cambios Clave en la Arquitectura (Next.js 15+ y PostgreSQL)

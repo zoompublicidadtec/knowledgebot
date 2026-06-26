@@ -23,6 +23,48 @@ export function searchCatalogTool() {
         return { success: false, error: 'Debes enviar un termino de busqueda.' };
       }
 
+      // 1. Intentar buscar en el microservicio RAG (Python FastAPI)
+      try {
+        const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || 'http://127.0.0.1:8001';
+        logger.info('Querying RAG microservice', { url: RAG_SERVICE_URL, query: rawQuery });
+        
+        const response = await fetch(`${RAG_SERVICE_URL}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: rawQuery, top_k: 5 }),
+        });
+
+        if (response.ok) {
+          const data = (await response.json()) as any;
+          const matches = (data.products || []).map((prod: any) => ({
+            product_id: prod.product_id,
+            category: prod.category || '',
+            name: prod.name,
+            unit: prod.unit || 'unidad',
+            description: prod.description || '',
+            notes: prod.notes || '',
+            requires_area: prod.requires_area || false,
+            image_urls: prod.image_urls || [],
+            score: prod.score
+          }));
+
+          logger.info('RAG microservice response success', { count: matches.length });
+          
+          return {
+            success: true,
+            query: rawQuery,
+            matches,
+            rag_response: data.response,
+            note: 'Se ha realizado una búsqueda semántica usando el Motor de Conocimiento RAG. Las rutas de imágenes relativas están disponibles en `image_urls` (ej: /images/...).',
+          };
+        } else {
+          logger.warn(`RAG microservice returned status ${response.status}, falling back to database search`);
+        }
+      } catch (err: any) {
+        logger.warn('Failed to connect to RAG microservice, falling back to database search', { error: err.message || String(err) });
+      }
+
+      // 2. Fallback original a Supabase / Postgres
       // Format query for PostgreSQL to_tsquery (e.g. 'cuaderno 100 hojas' -> 'cuaderno & 100 & hojas')
       const query = rawQuery.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean).join(' & ');
 
@@ -36,7 +78,7 @@ export function searchCatalogTool() {
           return { success: false, error: `Error al buscar: ${error.message}` };
         }
 
-        logger.info('Search catalog result', { query, count: data?.length || 0 });
+        logger.info('Search catalog result (database)', { query, count: data?.length || 0 });
 
         if (!data || data.length === 0) {
           return {
@@ -55,14 +97,15 @@ export function searchCatalogTool() {
           unit: row.unit,
           description: row.description,
           notes: row.notes,
-          requires_area: row.requires_area
+          requires_area: row.requires_area,
+          image_urls: []
         }));
 
         return {
           success: true,
           query,
           matches,
-          note: 'OJO: He retornado hasta 100 resultados. Si el cliente pidio un atributo fisico (ej. "grande", "pequeña", "mediana"), TU DEBES LEER mentalmente las descripciones y medidas de estos 100 resultados y filtrar cuales aplican antes de responderle al cliente. Muestrale solo las opciones que se ajusten a su tamaño/color solicitado.',
+          note: 'OJO: He retornado hasta 100 resultados de la base de datos de fallback. Si el cliente pidio un atributo fisico (ej. "grande", "pequeña", "mediana"), TU DEBES LEER mentalmente las descripciones y medidas de estos 100 resultados y filtrar cuales aplican antes de responderle al cliente. Muestrale solo las opciones que se ajusten a su tamaño/color solicitado.',
         };
       } catch (err: any) {
         logger.error('Search catalog exception', { error: String(err) });
