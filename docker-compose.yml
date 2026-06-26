@@ -30,6 +30,8 @@ services:
     container_name: knowledgebot-wa-bridge
     network_mode: "host"
     restart: always
+    env_file:
+      - .env.production
     volumes:
       - ./wwebjs_sessions:/data/wwebjs_sessions
       - ./wa-server/.wwebjs_cache:/app/.wwebjs_cache
