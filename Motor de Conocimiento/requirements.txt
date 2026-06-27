@@ -1,0 +1,29 @@
+# ============================================================================
+# DEPENDENCIAS — Sistema RAG Multimodal CATAPROM
+# ============================================================================
+
+# Scraping
+playwright==1.49.1
+beautifulsoup4==4.12.3
+lxml==5.3.0
+httpx==0.28.1
+
+# Google AI / Gemini
+google-genai==1.14.0
+
+# Google Cloud
+google-cloud-aiplatform==1.78.0
+google-cloud-storage==2.19.0
+google-cloud-firestore==2.19.0
+
+# Data Processing
+Pillow==11.1.0
+numpy==2.2.2
+
+# Utilities
+python-dotenv==1.0.1
+tqdm==4.67.1
+
+# Web Service
+fastapi==0.138.1
+uvicorn==0.49.0

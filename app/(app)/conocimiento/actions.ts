@@ -26,10 +26,10 @@ export async function getCategories() {
   try {
     const supabase = await createClient();
     
-    // Select with synonyms first
+    // Select with synonyms and subcategories
     const { data, error } = await (supabase as any)
       .from('categories')
-      .select('id, name, group_name, synonyms')
+      .select('id, name, group_name, synonyms, subcategories(id, name, synonyms)')
       .order('name', { ascending: true });
 
     if (error) {
@@ -72,6 +72,24 @@ export async function createCategory(name: string, groupName?: string) {
     return { success: true, data };
   } catch (error: any) {
     logger.error('Error creating category', { error: error.message });
+    return { success: false, error: error.message };
+  }
+}
+
+export async function createSubcategory(categoryId: string, name: string) {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await (supabase as any)
+      .from('subcategories')
+      .insert({ category_id: categoryId, name })
+      .select()
+      .single();
+
+    if (error) throw error;
+    revalidatePath('/conocimiento');
+    return { success: true, data };
+  } catch (error: any) {
+    logger.error('Error creating subcategory', { error: error.message });
     return { success: false, error: error.message };
   }
 }
@@ -164,9 +182,19 @@ export async function getCatalog(params: {
       .from('products')
       .select('*, categories(name)', { count: 'exact' });
 
-    // Filter by Category
+    // Filter by Category or Subcategory
     if (params.categoryId && params.categoryId !== 'all') {
-      queryBuilder = queryBuilder.eq('category_id', params.categoryId);
+      // Check if the ID belongs to a category or subcategory
+      // For now, assume it's a category. If we add subcategory filtering, we can check a prefix or just do an OR.
+      // We will add subcategory filtering explicitly in Phase 2
+      // Let's allow passing categoryId as "cat-UUID" or "sub-UUID" to distinguish
+      if (params.categoryId.startsWith('sub-')) {
+        queryBuilder = queryBuilder.eq('subcategory_id', params.categoryId.replace('sub-', ''));
+      } else if (params.categoryId.startsWith('cat-')) {
+        queryBuilder = queryBuilder.eq('category_id', params.categoryId.replace('cat-', ''));
+      } else {
+        queryBuilder = queryBuilder.eq('category_id', params.categoryId);
+      }
     }
 
     // Filter by Search Query
@@ -226,6 +254,7 @@ export async function saveProduct(
   productData: {
     id?: string;
     category_id: string;
+    subcategory_id?: string;
     name: string;
     reference: string;
     description: string;
@@ -278,6 +307,7 @@ export async function saveProduct(
 
     const dbProduct = {
       category_id: productData.category_id,
+      subcategory_id: productData.subcategory_id || null,
       name: productData.name,
       reference: productData.reference || null,
       description: productData.description || null,

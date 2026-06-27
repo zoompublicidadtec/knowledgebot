@@ -14,8 +14,17 @@ create extension if not exists pg_trgm;       -- para búsquedas por similitud d
 -- ---------------------------------------------------------
 create table categories (
   id uuid primary key default uuid_generate_v4(),
-  name text not null unique,        -- ej: "Bolsas Kraft", "Llaveros Plastisol", "Sombrillas"
-  group_name text                   -- agrupador superior, ej: "Tampografía / Marcas", "Papelería"
+  name text not null unique,        -- ej: "Bolsas", "Llaveros", "Bolígrafos"
+  group_name text,                  -- agrupador superior, ej: "Tampografía / Marcas", "Papelería"
+  synonyms text                     -- sinónimos a nivel de categoría padre
+);
+
+create table subcategories (
+  id uuid primary key default uuid_generate_v4(),
+  category_id uuid not null references categories(id) on delete cascade,
+  name text not null,               -- ej: "Plana Troquelada", "Plastisol", "Metálicos"
+  synonyms text,                    -- sinónimos específicos de la subcategoría
+  unique(category_id, name)
 );
 
 -- ---------------------------------------------------------
@@ -26,6 +35,7 @@ create table categories (
 create table products (
   id uuid primary key default uuid_generate_v4(),
   category_id uuid references categories(id),
+  subcategory_id uuid references subcategories(id),
   name text not null,                -- ej: "Bolsa Kraft 2 - 15.5x23x8cm con manija"
   reference text,                    -- código si existe, ej: "S-841", "USB 16GB FULL"
   description text,                  -- medidas, materiales, detalles técnicos
@@ -35,12 +45,25 @@ create table products (
   notes text,                        -- condiciones especiales ("consultar para grabados extra", etc.)
   active boolean default true,
   search_text text,                  -- texto plano (nombre + categoría + descripción) para embeddings/búsqueda
-  embedding vector(1536)             -- embedding del search_text (opcional, solo para encontrar el producto)
+  embedding vector(3072)             -- embedding Gemini 3072D del search_text (opcional, solo para encontrar el producto)
 );
 
 create index idx_products_category on products(category_id);
+create index idx_products_subcategory on products(subcategory_id);
 create index idx_products_search_trgm on products using gin (search_text gin_trgm_ops);
 create index idx_products_search_tsv on products using gin (to_tsvector('spanish', coalesce(search_text,'')));
+
+-- ---------------------------------------------------------
+-- 2.5 ATRIBUTOS DE PRODUCTO (Fase 2)
+-- ---------------------------------------------------------
+create table product_attributes (
+  id uuid primary key default uuid_generate_v4(),
+  product_id uuid not null references products(id) on delete cascade,
+  attribute_key text not null,       -- ej: "material", "color", "capacidad", "tecnica_sugerida"
+  attribute_value text not null,     -- ej: "acero inoxidable", "rojo", "16GB", "DTF"
+  unique(product_id, attribute_key)
+);
+create index idx_product_attributes_pid on product_attributes(product_id);
 
 -- ---------------------------------------------------------
 -- 3. NIVELES DE PRECIO (price tiers)
@@ -78,11 +101,16 @@ returns table (
   category text,
   description text,
   unit text,
+  notes text,
+  requires_area boolean,
+  min_order_qty numeric,
   similarity real
 )
 language sql stable
 as $$
-  select p.id, p.name, c.name as category, p.description, p.unit,
+  select p.id, p.name, c.name as category, p.description, p.unit, p.notes,
+         (p.unit = 'm2' or p.unit = 'metro') as requires_area,
+         p.min_order_qty,
          similarity(p.search_text, query) as similarity
   from products p
   join categories c on c.id = p.category_id

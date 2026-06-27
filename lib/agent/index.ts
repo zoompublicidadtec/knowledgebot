@@ -12,6 +12,7 @@ import { searchCatalogTool } from './tools/search-catalog';
 import { getProductPriceTool } from './tools/get-product-price';
 import { saveContactInfoTool } from './tools/save-contact-info';
 import { requestHumanHandoffTool } from './tools/request-human-handoff';
+import { calculateCustomPriceTool } from './tools/calculate-custom-price';
 import { logger } from '@/lib/logger';
 import type { AgentConfig } from '@/lib/database.types';
 
@@ -140,6 +141,9 @@ export async function runAgentForMessage(params: {
         searchCatalog: searchCatalogTool(),
         getProductPrice: getProductPriceTool(),
         saveContactInfo: saveContactInfoTool(toolContext),
+        queryKnowledgeBase: queryKnowledgeBaseTool(toolContext),
+        requestHumanHandoff: requestHumanHandoffTool(toolContext),
+        calculateCustomPrice: calculateCustomPriceTool(),
       },
       stopWhen: stepCountIs(10),
       maxSteps: 10,

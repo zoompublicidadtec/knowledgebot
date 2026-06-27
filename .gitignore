@@ -76,3 +76,14 @@ graphify-out/
 wa-server/node_modules
 wa-server/.wwebjs_auth
 wa-server/.wwebjs_cache
+
+# Python virtual env
+Motor de Conocimiento/.venv/
+
+
+__pycache__/
+*.pyc
+catalogo_catalogospromocionales/
+catalogo.tar.gz
+Motor de Conocimiento/data/checkpoints/
+Motor de Conocimiento/data/embeddings/

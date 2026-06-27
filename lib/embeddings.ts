@@ -1,52 +1,60 @@
 import { logger } from '@/lib/logger';
 
 /**
- * Generates a text embedding vector using the configured OpenAI-compatible API.
+ * Generates a text embedding vector using Google Gemini Embedding API.
  *
  * Env vars:
- *   EMBEDDINGS_BASE_URL  — e.g. https://api.openai.com/v1
- *   EMBEDDINGS_API_KEY   — API key for the embeddings provider
- *   EMBEDDINGS_MODEL     — e.g. text-embedding-3-small (produces 1536d)
+ *   GEMINI_API_KEY  — Google AI Studio API key (same one used for chat)
+ *
+ * Uses outputDimensionality=1536 so vectors are compatible with the existing
+ * Supabase HNSW index (pgvector has a hard limit of 2000 dimensions for HNSW).
+ * The full Gemini model produces 3072D but we truncate to 1536D here.
  */
 
-const BASE_URL = (process.env.EMBEDDINGS_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
-const API_KEY = process.env.EMBEDDINGS_API_KEY || '';
-const MODEL = process.env.EMBEDDINGS_MODEL || 'text-embedding-3-small';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_EMBEDDING_MODEL = 'gemini-embedding-exp-03-07';
+const GEMINI_EMBED_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_EMBEDDING_MODEL}:embedContent?key=${GEMINI_API_KEY}`;
 
 /**
- * Embed a single text string. Returns a number[] of the dimensionality
- * specified by the model (1536 for text-embedding-3-small).
+ * Embed a single text string using Gemini Embedding API.
+ * Returns a number[] of 1536 dimensions (compatible with Supabase vector(1536) + HNSW).
  *
  * Throws a descriptive error if the API key is missing — callers should
  * catch it and degrade gracefully (the catalog tools do not depend on this).
  */
 export async function embedText(text: string): Promise<number[]> {
-  if (!API_KEY) {
+  if (!GEMINI_API_KEY) {
     throw new Error(
-      'EMBEDDINGS_API_KEY no configurada. La base de conocimiento documental no esta disponible; usa searchCatalog/getProductPrice para el catalogo.'
+      'GEMINI_API_KEY no configurada. La base de conocimiento documental no esta disponible; usa searchCatalog/getProductPrice para el catalogo.'
     );
   }
 
-  const res = await fetch(`${BASE_URL}/embeddings`, {
+  const res = await fetch(GEMINI_EMBED_URL, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ input: text, model: MODEL }),
+    body: JSON.stringify({
+      model: `models/${GEMINI_EMBEDDING_MODEL}`,
+      content: {
+        parts: [{ text }],
+      },
+      taskType: 'RETRIEVAL_QUERY',
+      outputDimensionality: 1536,
+    }),
   });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    logger.error('Embedding API error', { status: res.status, body: errText, model: MODEL });
-    throw new Error(`Embedding API returned ${res.status}: ${errText}`);
+    logger.error('Gemini Embedding API error', { status: res.status, body: errText });
+    throw new Error(`Gemini Embedding API returned ${res.status}: ${errText}`);
   }
 
-  const data = (await res.json()) as { data?: { embedding: number[] }[] };
-  const embedding = data?.data?.[0]?.embedding;
+  const data = (await res.json()) as { embedding?: { values: number[] } };
+  const embedding = data?.embedding?.values;
 
   if (!embedding || !Array.isArray(embedding)) {
-    throw new Error('Embedding API returned no embedding data');
+    throw new Error('Gemini Embedding API returned no embedding data');
   }
 
   return embedding;

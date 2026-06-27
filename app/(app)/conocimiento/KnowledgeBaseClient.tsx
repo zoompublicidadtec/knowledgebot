@@ -15,6 +15,7 @@ import {
   Tag, 
   Check, 
   Info,
+  CaretDown,
   Sliders,
   WarningCircle,
   CurrencyDollar,
@@ -33,17 +34,25 @@ import {
   saveCategorySynonyms
 } from './actions';
 
+interface Subcategory {
+  id: string;
+  name: string;
+  synonyms?: string | null;
+}
+
 interface Category {
   id: string;
   name: string;
   group_name: string | null;
   synonyms?: string | null;
+  subcategories?: Subcategory[];
   requiresMigration?: boolean;
 }
 
 interface Product {
   id: string;
   category_id: string;
+  subcategory_id?: string;
   name: string;
   reference: string | null;
   description: string | null;
@@ -96,6 +105,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
 
   // Catalog Filters / Paging
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -116,6 +126,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
   const [name, setName] = useState('');
   const [reference, setReference] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [subcategoryId, setSubcategoryId] = useState('');
   const [description, setDescription] = useState('');
   const [unit, setUnit] = useState('unidad');
   const [priceIncludesIva, setPriceIncludesIva] = useState(false);
@@ -203,6 +214,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
       setName(details.product.name);
       setReference(details.product.reference || '');
       setCategoryId(details.product.category_id || '');
+      setSubcategoryId(details.product.subcategory_id || '');
       setDescription(details.product.description || '');
       setUnit(details.product.unit);
       setPriceIncludesIva(details.product.price_includes_iva || false);
@@ -250,6 +262,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     setName('');
     setReference('');
     setCategoryId(categories[0]?.id || '');
+    setSubcategoryId('');
     setDescription('');
     setUnit('unidad');
     setPriceIncludesIva(false);
@@ -320,6 +333,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
       const res = await saveProduct({
         id: productId || undefined,
         category_id: categoryId,
+        subcategory_id: subcategoryId || undefined,
         name,
         reference,
         description,
@@ -538,30 +552,71 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
               </button>
               <div className="h-px bg-white/5 my-2" />
               <div className="max-h-[500px] overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                {categories.map((cat) => (
-                  <div key={cat.id} className="group flex items-center justify-between rounded-lg hover:bg-white/5 transition-all">
-                    <button
-                      onClick={() => { setSelectedCategoryId(cat.id); setPage(1); }}
-                      className={`flex-1 text-left px-3 py-2 rounded-l-lg text-sm transition-all truncate block ${
-                        selectedCategoryId === cat.id
-                          ? 'bg-primary-500/10 text-primary-400 font-medium'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                      title={`${cat.name} ${cat.synonyms ? `(${cat.synonyms})` : ''}`}
-                    >
-                      {cat.name}
-                    </button>
-                    {!dbNeedsMigration && (
-                      <button
-                        onClick={() => handleEditCategorySynonymsClick(cat)}
-                        className="px-2 py-2 rounded-r-lg text-slate-500 hover:text-primary-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all"
-                        title="Configurar sinónimos de categoría"
-                      >
-                        <Tag size={14} />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                {categories.map((cat) => {
+                  const isExpanded = expandedCategories[cat.id];
+                  const hasSubcategories = cat.subcategories && cat.subcategories.length > 0;
+                  const isSelected = selectedCategoryId === `cat-${cat.id}` || selectedCategoryId === cat.id;
+
+                  return (
+                    <div key={cat.id} className="space-y-0.5">
+                      <div className="group flex items-center justify-between rounded-lg hover:bg-white/5 transition-all">
+                        <div className="flex flex-1 items-center overflow-hidden">
+                          {hasSubcategories ? (
+                            <button
+                              onClick={() => setExpandedCategories(p => ({ ...p, [cat.id]: !p[cat.id] }))}
+                              className="p-1.5 text-slate-500 hover:text-white transition-colors"
+                            >
+                              {isExpanded ? <CaretDown size={14} weight="bold" /> : <CaretRight size={14} weight="bold" />}
+                            </button>
+                          ) : (
+                            <div className="w-[26px]"></div>
+                          )}
+                          <button
+                            onClick={() => { setSelectedCategoryId(`cat-${cat.id}`); setPage(1); }}
+                            className={`flex-1 text-left py-2 pr-2 text-sm transition-all truncate block ${
+                              isSelected
+                                ? 'text-primary-400 font-medium'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                            title={`${cat.name} ${cat.synonyms ? `(${cat.synonyms})` : ''}`}
+                          >
+                            {cat.name}
+                          </button>
+                        </div>
+                        
+                        {!dbNeedsMigration && (
+                          <button
+                            onClick={() => handleEditCategorySynonymsClick(cat)}
+                            className="px-2 py-2 rounded-r-lg text-slate-500 hover:text-primary-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0"
+                            title="Configurar sinónimos de categoría"
+                          >
+                            <Tag size={14} />
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Subcategories */}
+                      {isExpanded && hasSubcategories && (
+                        <div className="pl-8 pr-1 space-y-0.5 pb-1">
+                          {cat.subcategories!.map(sub => (
+                            <div key={sub.id} className="group flex items-center justify-between rounded-md hover:bg-white/5 transition-all">
+                              <button
+                                onClick={() => { setSelectedCategoryId(`sub-${sub.id}`); setPage(1); }}
+                                className={`flex-1 text-left px-2 py-1.5 text-[13px] transition-all truncate ${
+                                  selectedCategoryId === `sub-${sub.id}`
+                                    ? 'text-primary-400 font-medium bg-primary-500/10 rounded-md'
+                                    : 'text-slate-500 hover:text-slate-300'
+                                }`}
+                              >
+                                {sub.name}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -590,7 +645,12 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                 >
                   <option value="all">Todas las Categorías</option>
                   {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    <optgroup key={cat.id} label={cat.name}>
+                      <option value={`cat-${cat.id}`}>General ({cat.name})</option>
+                      {cat.subcategories?.map(sub => (
+                        <option key={sub.id} value={`sub-${sub.id}`}>↳ {sub.name}</option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
                 {selectedCategoryId !== 'all' && !dbNeedsMigration && (
@@ -1115,7 +1175,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                   </div>
                   <select
                     value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
+                    onChange={(e) => { setCategoryId(e.target.value); setSubcategoryId(''); }}
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-primary-500 transition-all"
                   >
                     <option value="">Seleccionar categoría...</option>
@@ -1124,6 +1184,22 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                     ))}
                   </select>
                 </div>
+
+                {categoryId && categories.find(c => c.id === categoryId)?.subcategories && categories.find(c => c.id === categoryId)!.subcategories!.length > 0 && (
+                  <div className="space-y-1 animate-fade-in">
+                    <label className="text-xs font-semibold text-slate-300">Subcategoría</label>
+                    <select
+                      value={subcategoryId}
+                      onChange={(e) => setSubcategoryId(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-primary-500 transition-all"
+                    >
+                      <option value="">Ninguna / General</option>
+                      {categories.find(c => c.id === categoryId)?.subcategories?.map((sub) => (
+                        <option key={sub.id} value={sub.id}>{sub.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-300">Unidad de medida</label>
