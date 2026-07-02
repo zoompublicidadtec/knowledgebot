@@ -135,6 +135,7 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
   const [startX, setStartX] = useState(0);
   const [scrollLeftVal, setScrollLeftVal] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   const filteredConversations = selectedLine === 'Todas' 
     ? conversations 
@@ -169,6 +170,7 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
 
   useEffect(() => {
     setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    setIsMounted(true);
   }, []);
 
   useEffect(() => { setConversations(initialConversations); }, [initialConversations]);
@@ -418,7 +420,7 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
                     <span className="truncate max-w-[110px] font-mono opacity-70">{conv.contacts?.wa_phone}</span>
                     <div className="flex items-center gap-1 opacity-70">
                       <Clock size={11} />
-                      <span>{new Date(conv.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                      <span>{isMounted ? new Date(conv.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}</span>
                     </div>
                   </div>
 
