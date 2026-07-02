@@ -1,0 +1,499 @@
+- Manilla VIP | Description: Manilla tipo VIP para eventos
+- Pad Mouse Ergonómico | Description: Precios 2025
+- Pad Mouse Plano | Description: Precios 2025
+- Llavero Plastisol | Description: Llavero en plastisol. Tamaño máximo incluido 6x4cm; medidas mayores o troqueles especiales tienen costo adicional.
+- Llavero Manilla con Jinsus | Description: Llavero tipo manilla, medidas 1.5cm de ancho, 21cm de largo total, armado 10.5cm.
+- Servicio de Tampografía sobre Llavero (cliente suministra el llavero) | Description: Marcación 1 tinta sobre llavero liso provisto por el cliente.
+- Manilla Plastisol | Description: Manilla en plastisol con marcación.
+- Servicio de Tampografía sobre Manilla Lisa (cliente suministra la manilla) | Description: Marcación 1 tinta sobre manilla lisa provista por el cliente.
+- Manilla Cerrada Silicona Grabada | Description: null
+- Manilla Cerrada Silicona Impresa | Description: null
+- Botón 2,5 cm | Description: Botón publicitario tamaño 2,5 cm
+- Botón 3,2 cm | Description: Botón publicitario tamaño 3,2 cm
+- Botón 4,5 cm | Description: Botón publicitario tamaño 4,5 cm
+- Botón 5,5 cm | Description: Botón publicitario tamaño 5,5 cm
+- Botón 6,5 cm | Description: Botón publicitario tamaño 6,5 cm
+- Botón 7,5 cm | Description: Botón publicitario tamaño 7,5 cm
+- Botón 8,5 cm | Description: Botón publicitario tamaño 8,5 cm
+- Carnet en Rígido | Description: null
+- Abanico Publicitario | Description: Abanico personalizado con impresión.
+- Caja Blanca | Description: Complemento opcional para abanicos.
+- Caja Personalizada | Description: Complemento opcional para abanicos.
+- Bolsa Plástica Individual | Description: Complemento opcional para abanicos.
+- Bolsa en tela blanca | Description: Complemento opcional para abanicos.
+- Bolsa en tela blanca con marca a 1 cara | Description: Complemento opcional para abanicos.
+- Bolsa en tela negra con marca a 1 cara | Description: Complemento opcional para abanicos.
+- Aromatización (fresa, coco, talco o chicle) | Description: Complemento opcional para abanicos.
+- Abanico sin impresión, tela blanca | Description: Abanico en blanco, sin marcar.
+- Billetera Financiera | Description: null
+- Retablo 21.5x14 cm | Description: Retablo pintado.
+- Retablo 20x30 cm | Description: Retablo pintado.
+- Retablo 21.5x28 cm | Description: Retablo pintado.
+- Retablo 21.5x33 cm | Description: Retablo pintado.
+- Retablo 25x35 cm | Description: Retablo pintado.
+- Retablo 30x30 cm | Description: Retablo pintado.
+- Retablo 30x40 cm | Description: Retablo pintado.
+- Retablo 30x45 cm | Description: Retablo pintado.
+- Retablo 30x50 cm | Description: Retablo pintado.
+- Retablo 35x50 cm | Description: Retablo pintado.
+- Retablo 40x40 cm | Description: Retablo pintado.
+- Retablo 40x45 cm | Description: Retablo pintado.
+- Retablo 40x50 cm | Description: Retablo pintado.
+- Retablo 50x50 cm | Description: Retablo pintado.
+- Retablo 60x60 cm | Description: Retablo pintado.
+- Retablo 60x90 cm | Description: Retablo pintado.
+- Retablo 50x70 cm | Description: Retablo pintado.
+- Retablo 50x100 cm | Description: Retablo pintado.
+- Retablo 70x100 cm | Description: Retablo pintado.
+- Retablo 100x100 cm | Description: Retablo pintado.
+- Retablo 70x120 cm | Description: Retablo pintado.
+- Retablo 50x150 cm | Description: Retablo pintado.
+- Sello fechador autoentintable placa (40x50mm) | Description: Referencia S-837D
+- Sello fechador autoentintable placa (24x24mm) | Description: Referencia S-524D
+- Sello fechador autoentintable placa (32x32mm) | Description: Referencia S-530D
+- Sello fechador autoentintable placa (38x38mm) | Description: Referencia S-538D
+- Sello fechador autoentintable placa (42x42mm) | Description: Referencia S-542D
+- Sello fechador autoentintable placa (24x24mm) | Description: Referencia R-524D
+- Almohadilla 45x65mm | Description: Referencia S-1
+- Almohadilla 57x88mm | Description: Referencia S-2
+- Almohadilla 70x110mm | Description: Referencia S-3
+- Almohadilla 128x178mm | Description: Referencia S-4
+- Almohadilla 128x178mm sin tinta | Description: Referencia S-4 DRY
+- Almohadilla 79x155mm sin tinta | Description: Referencia S-5 DRY
+- Almohadilla Azor 100x170mm | Description: Referencia AZR01
+- Almohadilla Big 168x247mm | Description: Referencia BG-001
+- Huellero dactilar redondo Artesco | Description: Referencia AR16314700
+- Fechador manual 3mm | Description: Referencia D-5
+- Numerador manual 4mm | Description: Referencia N-46
+- Numerador autoentintable 4mm | Description: Referencia S-400
+- Tinta 28ml | Description: Referencia S-61/65
+- Tinta Supreme 28ml | Description: Referencia SR-1/7
+- Tinta Neón 28ml | Description: Referencia SRN1/6
+- Premium Ink (indeleble) 15ml | Description: Referencia Sl-61
+- Premium Ink (indeleble) 60ml | Description: Referencia Sl-71
+- Tinta Textil 28ml | Description: Referencia ST-1
+- Tinta invisible 28ml | Description: Referencia SU-01K
+- Tinta spektra 30cc | Description: Referencia Spk01
+- Sello Seco Portable (45x25mm/Ø38mm) | Description: Referencia EM-6/5
+- Sello imprentilla 47x18mm | Description: Referencia S-883
+- Kit Sello lacre (17mm) | Description: Referencia WS-01
+- Vela de lacre x1 | Description: Referencia LB-01
+- Repuesto S-841 | Description: Referencia S-821-7
+- Retablo 100x150 cm | Description: Retablo pintado.
+- Retablo 100x200 cm | Description: Retablo pintado.
+- Bolsa Yute - 30 cm ancho x 30 cm alto, fuelle 15 cm | Description: 30 cm ancho x 30 cm alto, fuelle 15 cm
+- Bolsa Yute - 34 cm ancho x 30 cm alto, fuelle 15 cm | Description: 34 cm ancho x 30 cm alto, fuelle 15 cm
+- Bolsa Yute - 34 cm ancho x 43 cm alto, fuelle 19 cm | Description: 34 cm ancho x 43 cm alto, fuelle 19 cm
+- Bolsa Yute - 10 cm ancho x 35 cm alto, fuelle 10 cm, con manijas en el mismo material | Description: 10 cm ancho x 35 cm alto, fuelle 10 cm, con manijas en el mismo material
+- Bolsa Yute - 19 cm ancho x 24 cm alto, fuelle 9 cm | Description: 19 cm ancho x 24 cm alto, fuelle 9 cm
+- Bolsa Yute - 33 cm ancho x 43 cm alto, fuelle 15 cm | Description: 33 cm ancho x 43 cm alto, fuelle 15 cm
+- Bolsa Yute - 48 cm ancho x 45 cm alto, fuelle 19 cm | Description: 48 cm ancho x 45 cm alto, fuelle 19 cm
+- Bolsa Yute - 44 cm ancho x 35 cm alto, fuelle 19 cm | Description: 44 cm ancho x 35 cm alto, fuelle 19 cm
+- Bolsa Yute Pequeña 7 cm x 9 cm | Description: 7 cm x 9 cm
+- Bolsa Yute Pequeña 9 cm x 12 cm | Description: 9 cm x 12 cm
+- Bolsa Yute Pequeña 13 cm x 18 cm | Description: 13 cm x 18 cm
+- Bolsa Yute Pequeña 17 cm x 23 cm | Description: 17 cm x 23 cm
+- Bolsa Yute Pequeña 20 cm x 30 cm | Description: 20 cm x 30 cm
+- Sello autoentintable placa (10x26mm) | Description: Referencia S-841
+- Sello autoentintable placa (14x38mm) | Description: Referencia S-842
+- Sello autoentintable placa (18x47mm) | Description: Referencia S-843
+- Sello autoentintable placa (22x58mm) | Description: Referencia S-844
+- Sello autoentintable placa (25x70mm) | Description: Referencia S-845
+- Sello Handy autoentintable placa (14x38mm) | Description: Referencia S-722
+- Sello Handy autoentintable placa (18x47mm) | Description: Referencia S-723
+- Sello autoentintable placa (6x12mm) | Description: Referencia S-820
+- Sello autoentintable placa (24x41mm) | Description: Referencia S-826
+- Sello autoentintable placa (30x50mm) | Description: Referencia S-827
+- Sello autoentintable placa (33x56mm) | Description: Referencia S-828
+- Sello autoentintable placa (40x64mm) | Description: Referencia S-829
+- Sello autoentintable placa (38x75mm) | Description: Referencia S-830
+- Sello autoentintable placa (45x30mm) | Description: Referencia S-836
+- Sello autoentintable placa (40x50mm) | Description: Referencia S-837
+- Sello autoentintable placa (12x12mm) | Description: Referencia S-510
+- Sello autoentintable placa (20x20mm) | Description: Referencia S-520
+- Sello autoentintable placa (32x32mm) | Description: Referencia S-530
+- Sello autoentintable placa (38x38mm) | Description: Referencia S-538
+- Sello autoentintable placa (42x42mm) | Description: Referencia S-542
+- Sello autoentintable placa (Ø12mm) | Description: Referencia R-512
+- Sello autoentintable placa (Ø24mm) | Description: Referencia R-524
+- Sello autoentintable placa (Ø32mm) | Description: Referencia R-532
+- Sello autoentintable placa (Ø38mm) | Description: Referencia R-538
+- Sello autoentintable placa (Ø42mm) | Description: Referencia R-542
+- Sello autoentintable placa (Ø52mm) | Description: Referencia R-552
+- Sello Elite (Ø42mm) | Description: Referencia EL-42
+- Sello fechador autoentintable 3mm | Description: Referencia S-300
+- Sello fechador autoentintable 3mm 4 en 1 | Description: Referencia S-303
+- Fechador/numerador autoentintable (5x49mm) | Description: Referencia S-310A/B
+- Sello fechador autoentintable placa (24x41mm) | Description: Referencia S-826D
+- Sello fechador autoentintable placa (30x50mm) | Description: Referencia S-827D
+- Sello fechador autoentintable placa (33x56mm) | Description: Referencia S-828D
+- Sello fechador autoentintable placa (40x64mm) | Description: Referencia S-829D
+- Sello fechador autoentintable placa (38x75mm) | Description: Referencia S-830D
+- Sello 9x9 | Description: Sello cuadrado o redondo personalizado.
+- Sello 10x10 | Description: Sello cuadrado o redondo personalizado.
+- Sello 12x12 | Description: Sello cuadrado o redondo personalizado.
+- Sello 14x14 | Description: Sello cuadrado o redondo personalizado.
+- Sello 10Ø | Description: Sello cuadrado o redondo personalizado.
+- Sello Ø5 | Description: Sello cuadrado o redondo personalizado.
+- Sello 5x3 | Description: Sello rectangular personalizado.
+- Sello 6x3 | Description: Sello rectangular personalizado.
+- Sello 6x4 | Description: Sello rectangular personalizado.
+- Sello 8x2 | Description: Sello rectangular personalizado.
+- Sello 8x3 | Description: Sello rectangular personalizado.
+- Sello 8x5 | Description: Sello rectangular personalizado.
+- Sello 9x6 | Description: Sello rectangular personalizado.
+- Sello 10x5 | Description: Sello rectangular personalizado.
+- Sello 10x6 | Description: Sello rectangular personalizado.
+- Sello 10x8 | Description: Sello rectangular personalizado.
+- Sello 12x6 | Description: Sello rectangular personalizado.
+- Sello 14x4 | Description: Sello rectangular personalizado.
+- Sello 14x6 | Description: Sello rectangular personalizado.
+- Sello 14x8 | Description: Sello rectangular personalizado.
+- Sello 15x10 | Description: Sello rectangular personalizado.
+- Bolsa Kraft 2 (15.5x23x8 cm con manija) | Description: Bolsa de papel kraft Celinther.
+- Repuesto S-842 | Description: Referencia S-822-7
+- Repuesto S-843 | Description: Referencia S-823-3
+- Repuesto S-844 | Description: Referencia S-824-7
+- Repuesto S-845 | Description: Referencia S-825-7
+- Repuesto S-510/R512 | Description: Referencia S-510-7
+- Repuesto S-300 | Description: Referencia S-300-7
+- Sello Kiddie Stamp preentintado (46x13mm) | Description: Referencia KS-12
+- Sello Kiddie Stamp Textil preentintado (46x13mm) | Description: Referencia KS-12-T
+- Tinta Flash preentintado 10ml | Description: Referencia FI-10
+- Tinta Flash Textil preentintado 10ml | Description: Referencia FIF-10
+- Tinta Flash Textil preentintado Blanca 10ml | Description: Referencia FIF-10W
+- Sello lacre Ø2,4cm | Description: Referencia SL-01
+- Sello 2x2 | Description: Sello cuadrado o redondo personalizado.
+- Sello 3x3 | Description: Sello cuadrado o redondo personalizado.
+- Sello 4x4 | Description: Sello cuadrado o redondo personalizado.
+- Sello 5x5 | Description: Sello cuadrado o redondo personalizado.
+- Sello 6x6 | Description: Sello cuadrado o redondo personalizado.
+- Sello 7x7 | Description: Sello cuadrado o redondo personalizado.
+- Sello 8x8 | Description: Sello cuadrado o redondo personalizado.
+- Bolsa Ecológica Plana Troquelada 35 Ancho x 44 Alto cm | Description: null
+- Bolsa Ecológica Plana Troquelada 26 Ancho x 35 Alto cm | Description: null
+- Bolsa Ecológica Plana Troquelada 23 Ancho x 30 Alto cm | Description: null
+- Bolsa Ecológica Plana Troquelada 30 Ancho x 40 Alto cm | Description: null
+- Bolsa Ecológica Plana Troquelada 30 Ancho x 25 Alto cm | Description: null
+- Bolsa Ecológica Plana Troquelada 35 Ancho x 30 Alto cm | Description: null
+- Bolsa Ecológica Plana Troquelada 18 Ancho x 22 Alto cm | Description: null
+- Bolsa Ecológica Troquelada Fuelle Abajo 18 Ancho x 20 Alto x 8 Fuelle cm | Description: null
+- Bolsa Ecológica Troquelada Fuelle Abajo 30 Ancho x 40 Alto x 10 Fuelle cm | Description: null
+- Bolsa Kraft 3 y 3A (19x31x11 cm con manija) | Description: Bolsa de papel kraft Celinther.
+- Bolsa Kraft 8 (29x28.5x15.5 cm con manija) | Description: Bolsa de papel kraft Celinther.
+- Bolsa Kraft 4 y 5 (28x24.5x10 cm con manija) | Description: Bolsa de papel kraft Celinther.
+- Bolsa Kraft 6 y 7 (38x24.5x9 cm con manija) | Description: Bolsa de papel kraft Celinther.
+- Bolsa Kraft 8A (29x28.5x18.5 cm) | Description: Bolsa de papel kraft Celinther.
+- Troquel Mini (14x20 cm) | Description: Bolsa tipo Bolsatex.
+- Troquel Junior (25x30 cm) | Description: Bolsa tipo Bolsatex.
+- Troquel Medium (28x36x8 cm) | Description: Bolsa tipo Bolsatex.
+- Troquel Jumbo (35x45 cm) | Description: Bolsa tipo Bolsatex.
+- Manija Sellada (40x40 cm) | Description: Bolsa tipo Bolsatex.
+- Manija Fuelle (40x40x15 cm) | Description: Bolsa tipo Bolsatex.
+- Manija Lienzo (38x40 cm) | Description: Bolsa tipo Bolsatex.
+- Tula Cambrel (32x42 cm) | Description: Bolsa tipo Bolsatex.
+- Tula Tafeta (32x42 cm) | Description: Bolsa tipo Bolsatex.
+- Cubrevestido (60x100 cm) | Description: Bolsa tipo Bolsatex.
+- Bolsa Ecológica Bolsas Tres Fuelles 22 Ancho x 25 Alto x 8 Fuelle cm | Description: null
+- Bolsa Ecológica Bolsas Tres Fuelles 33 Ancho x 28 Alto x 12 Fuelle cm | Description: null
+- Bolsa Ecológica Bolsas Tres Fuelles 23 Ancho x 30 Alto x 10 Fuelle cm | Description: null
+- Bolsa Ecológica Bolsas Tres Fuelles 25 Ancho x 40 Alto x 10 Fuelle cm | Description: null
+- Bolsa Ecológica Bolsas Tres Fuelles 30 Ancho x 40 Alto x 12 Fuelle cm | Description: null
+- Bolsa Ecológica Bolsas Tres Fuelles 30 Ancho x 45 Alto x 12 Fuelle cm | Description: null
+- Bolsa Ecológica Bolsas Tres Fuelles 40 Ancho x 40 Alto x 12 Fuelle cm | Description: null
+- Bolsa Ecológica Bolsas Tres Fuelles 28 Ancho x 43 Alto x 12 Fuelle cm | Description: null
+- Bolsa Ecológica Plana Con Manija 30 Ancho x 28 Alto cm | Description: null
+- Bolsa Ecológica Plana Con Manija 30 Ancho x 37 Alto cm | Description: null
+- Bolsa Ecológica Plana Con Manija 30 Ancho x 40 Alto cm | Description: null
+- Bolsa Ecológica Plana Con Manija 38 Ancho x 40 Alto cm | Description: null
+- Bolsa Ecológica Plana Troquelada 34 Ancho x 50 Alto cm | Description: null
+- Bolsa Eco Activa - Cambrel - Bolsa tela cambré para colgar dentro del vehículo,... | Description: Bolsa tela cambré para colgar dentro del vehículo, 18x26 cm, cordón.
+- Bolsa Eco Activa - Cambrel - Bolsa tela no tejida cambré 70g, 25x32 cm, manija ... | Description: Bolsa tela no tejida cambré 70g, 25x32 cm, manija mismo material.
+- Bolsa Eco Activa - Cambrel - Bolsa tela no tejida cambré 70g, 30x37 cm, manija ... | Description: Bolsa tela no tejida cambré 70g, 30x37 cm, manija mismo material.
+- Bolsa Ecológica Troquelada Fuelle Abajo 26 Ancho x 34 Alto x 10 Fuelle cm | Description: null
+- Bolsa Ecológica Plana con Manijas Fuelle Abajo 35 Ancho x 40 Alto x 10 Fuelle cm | Description: null
+- Bolsa Ecológica Plana con Manijas Fuelle Abajo 40 Ancho x 30 Alto x 10 Fuelle cm | Description: null
+- Bolsa Ecológica Plana con Manijas Fuelle Abajo 22 Ancho x 20 Alto x 8 Fuelle cm | Description: null
+- Bolsa Ecológica Tula Morral 32 Ancho x 37 Alto cm | Description: null
+- Bolsa Ecológica Tula Morral 25 Ancho x 32 Alto cm | Description: null
+- Bolsa Ecológica Tula Morral 35 Ancho x 45 Alto cm | Description: null
+- Bolsa Ecológica Bolsa Tipo Caramelo 28 Ancho x 32 Alto cm | Description: null
+- Bolsa Ecológica Bolsa Tipo Caramelo 14 Ancho x 22 Alto cm | Description: null
+- Bolsa Ecológica Bolsa Tipo Caramelo 32 Ancho x 40 Alto cm | Description: null
+- Bolsa Ecológica Bolsa Tipo Tula (cordón arriba) 35 Ancho x 45 Alto cm | Description: null
+- Bolsa Ecológica Bolsa Tipo Tula (cordón arriba) 32 Ancho x 37 Alto cm | Description: null
+- Bolsa Ecológica Bolsa Tipo Tula (cordón arriba) 15 Ancho x 22 Alto cm | Description: null
+- Bolsa Ecológica Bolsa Manija Caramelo 55 Ancho x 37 Alto x 10 Fuelle cm | Description: null
+- Bolsa Ecológica Bolsa Manija Caramelo 22 Ancho x 25 Alto cm | Description: null
+- Bolsa Organza 5x7 cm | Description: null
+- Bolsa Organza 7x9 cm | Description: null
+- Bolsa Organza 10x12 cm | Description: null
+- Bolsa Organza 12x15 cm | Description: null
+- Bolsa Organza 14x20 cm | Description: null
+- Bolsa Organza 17x26 cm | Description: null
+- Bolsa Organza 20x30 cm | Description: null
+- Bolsa Satín 5.5x8 cm | Description: null
+- Bolsa Satín 6.5x10 cm | Description: null
+- Bolsa Satín 9x11 cm | Description: null
+- Bolsa Satín 10x14 cm | Description: null
+- Bolsa Satín 14x20 cm | Description: null
+- Bolsa Satín 15x25 cm | Description: null
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 34x40 cm, manija mismo material 75 cm.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 28x35 cm, manija mismo material 75 cm.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 40x40 cm, manija mismo material 75 cm.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 34x40 cm, cordones en algodón a ambos lados.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 7x15 cm, doble cordón superior en cinta satinada o cordón brillante.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 10x18 cm, doble cordón superior en cinta satinada o cordón brillante.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 15x23 cm, doble cordón superior en algodón a ambos lados.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 20x30 cm, doble cordón superior en algodón a ambos lados.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 18x26 cm, doble cordón en algodón.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 25x35 cm, doble cordón superior en algodón a ambos lados.
+- Bolsa Eco Activa - Algodón - Bolsa tela algodón orgánico 100% natural, color cr... | Description: Bolsa tela algodón orgánico 100% natural, color crudo, 40x40 cm, doble cordón superior en algodón a ambos lados.
+- Bolsa Eco Activa - Cambrel - Bolsa base playera en cambré 70g, 51x40 cm, base i... | Description: Bolsa base playera en cambré 70g, 51x40 cm, base interior 13 cm, manija 60 cm.
+- Bolsa Eco Activa - Cambrel - Tula tela cambré para colgar a la espalda, 34x40 c... | Description: Tula tela cambré para colgar a la espalda, 34x40 cm, cordón para espalda.
+- Sombrilla Francesco | Description: null
+- Sombrilla Gaspar | Description: null
+- Sombrilla Grace | Description: null
+- Sombrilla Hans | Description: null
+- Sombrilla Harry | Description: null
+- Sombrilla HH - 8 BP | Description: null
+- Sombrilla HH - 8 | Description: null
+- Sombrilla Holly | Description: null
+- Sombrilla Jack - A | Description: null
+- Sombrilla Jacke | Description: null
+- Sombrilla Jane - A | Description: null
+- Sombrilla Jane - B | Description: null
+- Sombrilla Jane - B (duplicado #2) | Description: null
+- Sombrilla Jane - D | Description: null
+- Sombrilla Julio | Description: null
+- Sombrilla Julio  - A | Description: null
+- Sombrilla Loro | Description: null
+- Sombrilla Loto - B | Description: null
+- Sombrilla Loto - G | Description: null
+- Sombrilla Malak | Description: null
+- Sombrilla Marco | Description: null
+- Sombrilla Megan | Description: null
+- Sombrilla Milan | Description: null
+- Sombrilla Otoño | Description: null
+- Sombrilla Pia - A | Description: null
+- Sombrilla Pia - B | Description: null
+- Sombrilla Pia - B (duplicado #2) | Description: null
+- Sombrilla Piero | Description: null
+- Sombrilla Print - P | Description: null
+- Sombrilla Print - PU | Description: null
+- Sombrilla Sabina | Description: null
+- Sombrilla Salma | Description: null
+- Sombrilla Sara - A | Description: null
+- Sombrilla Sarahi | Description: null
+- Sombrilla Sarahi (duplicado #2) | Description: null
+- Sombrilla Simon - A | Description: null
+- Sombrilla Simon - B | Description: null
+- Sombrilla Simon sin filtro | Description: null
+- Sombrilla Sofia | Description: null
+- Sombrilla Sprint - N | Description: null
+- Sombrilla Tamara | Description: null
+- Sombrilla Tapon | Description: null
+- Sombrilla Tommy | Description: null
+- Sombrilla Ulises | Description: null
+- Bolsa Eco Activa - Cambrel - Bolsa tela no tejida cambré 70g, 38x40 cm, manija ... | Description: Bolsa tela no tejida cambré 70g, 38x40 cm, manija mismo material.
+- Bolsa Eco Activa - Cambrel - Bolsa tela cambré 70g sellada por ultrasonido, 28x... | Description: Bolsa tela cambré 70g sellada por ultrasonido, 28x35 cm, base interna plegable.
+- Bolsa Eco Activa - Cambrel - Bolsa tela cambré 70g sellada por ultrasonido, 28x... | Description: Bolsa tela cambré 70g sellada por ultrasonido, 28x35 cm.
+- Bolsa Eco Activa - Cambrel - Bolsa tipo fuelle tela no tejida cambré 70g, 40x40... | Description: Bolsa tipo fuelle tela no tejida cambré 70g, 40x40 cm, fuelle 10 cm.
+- Bolsa Eco Activa - Cambrel - Bolsa tela no tejida cambré 70g, 32x37 cm, fuelle ... | Description: Bolsa tela no tejida cambré 70g, 32x37 cm, fuelle 20 cm, manija desde la base, cartón de base forrado y gancho, capacidad 25kg.
+- Bolsa Eco Activa - Cambrel - Bolsa tipo fuelle tela no tejida cambré 70g, 10x35... | Description: Bolsa tipo fuelle tela no tejida cambré 70g, 10x35 cm, fuelle 10 cm.
+- Bolsa Eco Activa - Cambrel - Portadocumentos en cambré 70g, 38x32 cm, manija de... | Description: Portadocumentos en cambré 70g, 38x32 cm, manija de mano y cremallera superior.
+- Bolsa Eco Activa - Semipermeable - Bolsa tela semi-impermeable para colgar a la espal... | Description: Bolsa tela semi-impermeable para colgar a la espalda, 34x40 cm, cordón para espalda.
+- 23 HHM 2-1 (incluye forro) + Automatica | Description: null
+- 23 HHM 2-2 (incluye forro)  + Automatica | Description: null
+- 23 HHM 2-3 (incluye forro)  + Automatica | Description: null
+- Sombrilla 493 | Description: null
+- Sombrilla 2434 | Description: null
+- Sombrilla 3026T | Description: null
+- Sombrilla Abel | Description: null
+- Sombrilla Abigail | Description: null
+- Sombrilla Agata | Description: null
+- Sombrilla Alixe | Description: null
+- Sombrilla Amapola - A | Description: null
+- Sombrilla Agata - B | Description: null
+- Sombrilla Anabelle - A | Description: null
+- Sombrilla Angie | Description: null
+- Sombrilla Apolo | Description: null
+- Sombrilla Asli | Description: null
+- Sombrilla Baston Big | Description: null
+- Sombrilla Betta + forro | Description: null
+- Sombrilla Bonnie -A | Description: null
+- Sombrilla Bonnie -B | Description: null
+- Sombrilla Brenda | Description: null
+- Sombrilla Bruno | Description: null
+- Sombrilla Charlotte | Description: null
+- Sombrilla China -A | Description: null
+- Sombrilla China -B | Description: null
+- Sombrilla Cloe -B | Description: null
+- Sombrilla Coala | Description: null
+- Sombrilla Cupido - B | Description: null
+- Sombrilla Datoka | Description: null
+- Sombrilla Dant | Description: null
+- Sombrilla Donato | Description: null
+- Sombrilla Douglas | Description: null
+- Sombrilla Eva  -A | Description: null
+- Sombrilla Eva  -BO | Description: null
+- Sombrilla Evan | Description: null
+- Sombrilla Fiona  -A | Description: null
+- Sombrilla Fiona  -AG | Description: null
+- Sombrilla Fiona  -B | Description: null
+- Sombrilla Fiona  -BG | Description: null
+- Capa Niño Ref. 801 | Description: null
+- Abrigo Impermeable  Ref. 881 | Description: null
+- Capa Niño Ref. CAP-320 | Description: null
+- CapaMilitar Ref. CAP-320 | Description: null
+- Capa plastica Ref. LW - 80518 | Description: null
+- Overol Impermeable (chaqueta y pantalon) Ref. LW - QX99 | Description: null
+- Capa  Ref. QX - 611 | Description: null
+- Capa Niño Ref. TH-655 | Description: null
+- Parasol Ref. Sol 36 | Description: null
+- Parasol Ref. Akira 42 | Description: null
+- Parasol Ref. Akira 48 | Description: null
+- Parasol Ref. Akira 52 (2,32 ancho x 2,60alto) | Description: null
+- Parasol Ref. Square 42 | Description: null
+- Parasol Ref. Square 48 | Description: null
+- Parasol Ref. Square 54 | Description: null
+- REFERENCIA | Description: null
+- POLO DAMA COLOR | Description: null
+- POLO DAMA BLANCO | Description: null
+- POLO HOMBRE COLOR | Description: null
+- POLO HOMBRE BLANCO | Description: null
+- POLO HOMBRE XXL COLOR | Description: null
+- POLO HOMBRE XXL BLANCO | Description: null
+- POLO MANGA LARGA COLOR | Description: null
+- POLO MANGA LARGA BLANCA | Description: null
+- TSHIRT COLOR | Description: null
+- TSHIRT BLANCA | Description: null
+- TSHIRT XXL COLOR | Description: null
+- TSHIRT XXL BLANCA | Description: null
+- TSHIRT NIÑO COLOR | Description: null
+- TSHIRT NIÑO BLANCA | Description: null
+- POLO NIÑO BLANCO | Description: null
+- TSHIRT MANGA LARGA COLOR | Description: null
+- TSHIRT MANGA LARGA BLANCA | Description: null
+- TSHIRT MANGA LARGA XXL COLOR | Description: null
+- TSHIRT MANGA LARGA XXL BLANCA | Description: null
+- BUSO CUELLO REDONDO PARCHADO | Description: null
+- HOODIE IVA INCLUIDO | Description: null
+- HOODIE XXL IVA INCLUIDO | Description: null
+- HOODIE NIÑO IVA INCLUIDO | Description: null
+- PIEL DE DURAZNO ADULTO IVA INCLUIDO | Description: null
+- PIEL DE DURAZNO NIÑO IVA INCLUIDO | Description: null
+- GORRA MALLA | Description: null
+- GORRA ACRILICA | Description: null
+- IMPRESION Y CALANDRA (ANCHO 1,50 M) | Description: null
+- SOLO PAPEL (1,60 M) | Description: null
+- IMPRESION, CALANDRA Y TELA CERRO SPORT ANCHO 1,50 M) | Description: null
+- IMPRESION, CALANDRA,   TELA SATIN LICRADO ANCHO 1,50 M) | Description: null
+- Sombrilla Vera | Description: null
+- Sombrilla Victoria - A | Description: null
+- Sombrilla Victoria - B | Description: null
+- Sombrilla Win - A | Description: null
+- Sombrilla Zoe | Description: null
+- Impermeable con Careta 16HA13-2 | Description: null
+- IMPRESION, CALANDRA,CONFECCION  TELA SATIN LICRADO ANCHO 1,50 M) | Description: null
+- IMPRESION, CALANDRA, CONFECCION  TELA PLUTON ANCHO 1,50 M) | Description: null
+- IMPRESION, CALANDRA, CONFECCION  TELA COBIJA ANCHO 1,50 M) | Description: null
+- Llavero En Acrilico Marcado Dtf Uv 1 Cara | Description: null
+- Llavero En Acrilico Marcado Dtf Uv 2 Caras | Description: null
+- Llavero En Acrilico Marcado Rigido 1 Cara | Description: null
+- Llavero En Acrilico Marcado Rigido 2 Caras | Description: null
+- Pines En Acrilico Marcado Dtf Uv | Description: null
+- Pines En Acrilico Marcado Rigido | Description: null
+- Pines Metalico Marcado Dtf Uv | Description: null
+- Banderín tamaño XS (50x120 cm) | Description: null
+- Banderín tamaño S (75x170 cm) | Description: null
+- Banderín tamaño M (95x205 cm) | Description: null
+- Banderín tamaño L (110x265 cm) | Description: null
+- Banderín tamaño XL (120x360 cm) | Description: null
+- Cinta Portacarnet Cinta Premium Sublimada 2 cm | Description: null
+- Cinta Portacarnet Cinta Premium Sublimada 2,5 cm | Description: null
+- Cinta Portacarnet Cinta Sublimada Satín 1,6 cm | Description: null
+- Cinta Portacarnet Cinta Sublimada Satín 2 cm | Description: null
+- Cinta Portacarnet Cinta Sublimada Satín 2,5 cm | Description: null
+- Memoria USB 512MB-4GB FULL | Description: null
+- Memoria USB 4 GB FULL | Description: null
+- Memoria USB 8 GB FULL | Description: null
+- IMPRESION, CALANDRA Y TELA PLUTON ANCHO 1,50 M) | Description: null
+- IMPRESION, CALANDRA,  TELA COBIJA ANCHO 1,50 M) | Description: null
+- IMPRESION, CALANDRA, CONFECCION Y TELA CERRO SPORT ANCHO 1,50 M) | Description: null
+- Vinilo Brillante/Mate Laminado Tornasol + Semicorte 60cm ancho | Description: null
+- Banner | Description: null
+- Banner Laminado | Description: null
+- Panaflex | Description: null
+- Panaflex Laminado | Description: null
+- Película Frosted | Description: null
+- Vinilo Brillante/Mate Fotoluminiscente 60cm | Description: null
+- Vinilo Brillante/Mate Laminado Fotoluminiscente + Semicorte 60cm | Description: null
+- Vinilo Microperforado | Description: null
+- Roll Up 2x1m con Impresión Banner | Description: null
+- Roll Up 2x1m con Impresión Tela | Description: null
+- Araña 2x1m con Impresión Banner | Description: null
+- Araña 2x1m con Impresión Tela | Description: null
+- Impresión Vinilo Laminado + Poli cal 10 - 1 cara | Description: null
+- Impresión Vinilo Laminado + Poli cal 20 - 1 cara | Description: null
+- Impresión Vinilo Laminado + Poli cal 30 - 1 cara | Description: null
+- Impresión Vinilo Laminado + Poli cal 40 - 1 cara | Description: null
+- Impresión Vinilo Laminado + Poli cal 60 - 1 cara | Description: null
+- Impresión Vinilo Laminado + Poli cal 80 - 1 cara | Description: null
+- DTF UV | Description: null
+- DTF Textil | Description: null
+- Tarjetas Brillantes | Description: null
+- Tarjetas Mate UV | Description: null
+- Tarjetas Imanadas Brillantes | Description: null
+- Memoria USB 16 GB FULL | Description: null
+- Memoria USB 32 GB FULL | Description: null
+- Memoria USB 64 GB FULL | Description: null
+- Mug Sencillo | Description: null
+- Mug Mágico | Description: null
+- Mug Interno Color | Description: null
+- Mug Tintero | Description: null
+- Mug Tintero Interno Color | Description: null
+- Mug con Cuchara | Description: null
+- Gorra Dril Bordada | Description: null
+- Gorra Dril 5 Paneles Bordada | Description: null
+- Gorra Unicolor DTF Textil | Description: null
+- Gorra Dril 5 Paneles DTF Textil | Description: null
+- Gorra Frente Blanco Sublimada | Description: null
+- Chaqueta | Description: null
+- Chaleco | Description: null
+- Rompevientos | Description: null
+- Bordado Adicional Grande | Description: null
+- Bordado Adicional Pequeño | Description: null
+- Programa de bordado (cargo adicional) | Description: null
+- Vinilo Brillante/Mate sin laminar | Description: null
+- Vinilo Brillante/Mate Semicorte sin laminar | Description: null
+- Vinilo Brillante/Mate Laminado | Description: null
+- Vinilo Brillante/Mate Laminado + Semicorte | Description: null
+- Vinilo Brillante/Mate Laminado Escarcha | Description: null
+- Vinilo Brillante/Mate Laminado Escarcha + Semicorte | Description: null
+- Vinilo Brillante/Mate Tornasol 60cm de ancho | Description: null
+- Despunte Imán Adicional | Description: null
+- Despunte Normal Adicional | Description: null
+- Troquel Adicional | Description: null
+- Volante Carta 4x4 (full color ambas caras) | Description: null
+- Volante Carta 4x0 (full color 1 cara) | Description: null
+- Volante Media Carta 4x4 (full color ambas caras) | Description: null
+- Volante Media Carta 4x0 (full color 1 cara) | Description: null
+- Volante 1/4 de Carta 4x4 (full color ambas caras) | Description: null
+- Volante 1/4 de Carta 4x0 (full color 1 cara) | Description: null
+- Talonario Media Carta (Original + 1 Copia) | Description: null
+- Talonario 1/4 de Carta (Original + 1 Copia) | Description: null
+- Cuaderno Argollado - Base 80 hojas (precio por unidad, sin adicionales) | Description: null
+- Cuaderno Argollado - Base 100 hojas (precio por unidad, sin adicionales) | Description: null
+- Cuaderno Argollado - Base 120 hojas (precio por unidad, sin adicionales) | Description: null
+- Adicional: 1 inserto (impresión interna) | Description: null
+- Adicional: 2 insertos (impresión interna) | Description: null
+- Adicional: 3 insertos (impresión interna) | Description: null
+- Adicional: 4 insertos (impresión interna) | Description: null
+- Adicional: 8 insertos (impresión interna) | Description: null
+- Adicional: Filtro UV | Description: null
+- Adicional: Guardas para Argollado | Description: null
+- Adicional: Guardas para Cosido | Description: null
+- Adicional: Cosido | Description: null
+- Adicional: Diseño | Description: null
+- CÓMO ARMAR EL PRECIO DE UN CUADERNO | Description: Para cotizar un cuaderno: 1) Identificar tamaño (1/2 Carta, 1/2 Octavo o Carta) y volumen del pedido (20, 50, 100, 200, 300, 500 o 1000). 2) Tomar el precio BASE según número de hojas (80, 100 o 120) para ese tamaño y volumen - esto es obligatorio. 3) Sumar insertos si el cliente quiere fotos/diseños internos (1, 2, 3, 4 u 8 insertos). 4) Sumar Filtro UV si lo solicita. 5) Sumar Guardas para Argollado O Guardas para Cosido (son alternativos, no se suman los dos). 6) Sumar Cosido si aplica. 7) Sumar Diseño si el volumen es 20-200 cuadernos (no hay valor confirmado para 300, 500 y 1000). El precio final del cuaderno es la SUMA de todos los componentes elegidos, multiplicada por la cantidad de cuadernos del lote.

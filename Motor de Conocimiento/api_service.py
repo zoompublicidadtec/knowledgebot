@@ -82,6 +82,7 @@ def normalize_image_path(absolute_path: str) -> str:
 @app.post("/query", response_model=QueryResponse)
 async def query_rag(request: QueryRequest):
     try:
+        print(f"[API DEBUG] Request query: '{request.query}', top_k parameter: {request.top_k}")
         # Ejecutar consulta en el motor RAG
         # Habilitar use_local=True ya que usamos los embeddings locales indexados
         raw_result = rag_query_engine.query(
@@ -90,6 +91,7 @@ async def query_rag(request: QueryRequest):
             top_k=request.top_k or 5,
             custom_filters=request.filters
         )
+        print(f"[API DEBUG] Query engine returned {len(raw_result.get('sources', []))} sources")
         
         # Cargar catálogo completo para recuperar imágenes y metadatos adicionales
         products_file = PRODUCTS_JSON_DIR / "all_products.json"

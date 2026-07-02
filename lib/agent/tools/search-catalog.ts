@@ -2,6 +2,114 @@ import { tool, jsonSchema } from 'ai';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
 
+function removeAccentsSimple(t: string): string {
+  return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Categorías hermanas cotizables para redirección automática cuando una
+// búsqueda trae <2 productos con precio válido. Cumplen la misma función.
+const SISTER_CATEGORY: Record<string, string> = {
+  mug: 'termo',
+  mugs: 'termo',
+  pocillo: 'termo',
+  pocillos: 'termo',
+  taza: 'termo',
+  tazas: 'termo',
+  'pocillo pal tinto': 'termo',
+  gorra: 'Gorra Mesh',
+  gorras: 'Gorra Mesh',
+  cachucha: 'Gorra Mesh',
+  cachuchas: 'Gorra Mesh',
+};
+
+/**
+ * Dado un conjunto de matches, consulta en Supabase todos sus price_tiers
+ * y los anota con has_pricing (si tiene al menos un precio válido), max_price
+ * (el precio unitario máximo de su tabla) y marca con is_most_expensive = true
+ * al producto con el valor unitario más costoso de todo el grupo.
+ */
+async function annotateMatchesWithPricing(supabase: any, matches: any[]): Promise<any[]> {
+  if (!matches || matches.length === 0) return matches;
+
+  try {
+    const ids = matches.map(m => m.product_id).filter(Boolean);
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+    
+    const uuidsInInput = ids.filter(isUUID);
+    const refsInInput = ids.filter(id => !isUUID(id));
+
+    let resolvedUuids: string[] = [...uuidsInInput];
+    const refToUuidMap = new Map<string, string>();
+
+    if (refsInInput.length > 0) {
+      const { data: prods } = await (supabase as any)
+        .from('products')
+        .select('id, reference')
+        .in('reference', refsInInput)
+        .limit(1000);
+      
+      for (const p of (prods || [])) {
+        refToUuidMap.set(p.reference, p.id);
+        resolvedUuids.push(p.id);
+      }
+    }
+
+    const { data: tiers } = await (supabase as any)
+      .from('price_tiers')
+      .select('product_id, price')
+      .in('product_id', resolvedUuids)
+      .limit(5000);
+
+    const isSane = (p: any) => { const n = Number(p); return Number.isFinite(n) && n > 0 && n < 1e9; };
+
+    const uuidMaxPrice = new Map<string, number>();
+    for (const t of (tiers || [])) {
+      if (isSane(t.price)) {
+        const val = Number(t.price);
+        const current = uuidMaxPrice.get(t.product_id) || 0;
+        if (val > current) {
+          uuidMaxPrice.set(t.product_id, val);
+        }
+      }
+    }
+
+    let maxFoundPrice = -1;
+    let mostExpensiveMatchIndex = -1;
+
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      let uuid = m.product_id;
+      if (!isUUID(uuid)) {
+        uuid = refToUuidMap.get(uuid) || '';
+      }
+
+      m.has_pricing = false;
+      m.max_price = 0;
+      m.is_most_expensive = false;
+
+      if (uuid && uuidMaxPrice.has(uuid)) {
+        const price = uuidMaxPrice.get(uuid)!;
+        m.has_pricing = true;
+        m.max_price = price;
+        
+        if (price > maxFoundPrice) {
+          maxFoundPrice = price;
+          mostExpensiveMatchIndex = i;
+        }
+      }
+    }
+
+    if (mostExpensiveMatchIndex !== -1) {
+      matches[mostExpensiveMatchIndex].is_most_expensive = true;
+    }
+
+    return matches;
+  } catch (err) {
+    logger.error('Error in annotateMatchesWithPricing', { error: String(err) });
+    return matches;
+  }
+}
+
 export function searchCatalogTool() {
   return tool({
     description:
@@ -23,39 +131,97 @@ export function searchCatalogTool() {
         return { success: false, error: 'Debes enviar un termino de busqueda.' };
       }
 
+      const supabase = createAdminClient();
+
       // 1. Intentar buscar en el microservicio RAG (Python FastAPI)
       try {
         const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || 'http://127.0.0.1:8001';
         logger.info('Querying RAG microservice', { url: RAG_SERVICE_URL, query: rawQuery });
-        
+
         const response = await fetch(`${RAG_SERVICE_URL}/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: rawQuery, top_k: 5 }),
+          body: JSON.stringify({ query: rawQuery, top_k: 15 }),
         });
 
         if (response.ok) {
           const data = (await response.json()) as any;
-          const matches = (data.products || []).map((prod: any) => ({
+          let products = (data.products || []).slice();
+
+          let matches = products.map((prod: any) => ({
             product_id: prod.product_id,
             category: prod.category || '',
             name: prod.name,
             unit: prod.unit || 'unidad',
+            price: prod.price || '',
             description: prod.description || '',
             notes: prod.notes || '',
             requires_area: prod.requires_area || false,
             image_urls: prod.image_urls || [],
-            score: prod.score
+            score: prod.score,
+            has_pricing: false,
+            max_price: 0,
+            is_most_expensive: false,
           }));
 
-          logger.info('RAG microservice response success', { count: matches.length });
-          
+          matches = await annotateMatchesWithPricing(supabase, matches);
+
+          // REDIRECCIÓN AUTOMÁTICA: si la categoría trae <2 productos con precio válido
+          const pricedCount = matches.filter((m: any) => m.has_pricing).length;
+          if (pricedCount < 2) {
+            const sister = SISTER_CATEGORY[rawQuery.toLowerCase().trim()] || SISTER_CATEGORY[removeAccentsSimple(rawQuery.toLowerCase().trim())];
+            if (sister) {
+              try {
+                const sisterResp = await fetch(`${RAG_SERVICE_URL}/query`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ query: sister, top_k: 15 }),
+                });
+                if (sisterResp.ok) {
+                  const sisterData = (await sisterResp.json()) as any;
+                  const sisterProds = (sisterData.products || []).slice();
+                  const existingIds = new Set(matches.map((m: any) => m.product_id));
+                  
+                  const sisterMatches = sisterProds
+                    .filter((sp: any) => !existingIds.has(sp.product_id))
+                    .map((sp: any) => ({
+                      product_id: sp.product_id,
+                      category: sp.category || '',
+                      name: sp.name,
+                      unit: sp.unit || 'unidad',
+                      price: sp.price || '',
+                      description: sp.description || '',
+                      notes: sp.notes || '',
+                      requires_area: sp.requires_area || false,
+                      image_urls: sp.image_urls || [],
+                      score: sp.score,
+                      has_pricing: false,
+                      max_price: 0,
+                      is_most_expensive: false,
+                    }));
+
+                  if (sisterMatches.length > 0) {
+                    matches = [...matches, ...sisterMatches];
+                    matches = await annotateMatchesWithPricing(supabase, matches);
+                    logger.info('Auto-redirect to sister category', { from: rawQuery, to: sister, added: sisterMatches.length });
+                  }
+                }
+              } catch {}
+            }
+          }
+
+          // Reordenar: primero los cotizables (con precio), luego el resto.
+          matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)) || ((b.score || 0) - (a.score || 0)));
+
+          const cotizables = matches.filter((m: any) => m.has_pricing).length;
+          logger.info('RAG microservice response success', { count: matches.length, cotizables });
+
           return {
             success: true,
             query: rawQuery,
             matches,
             rag_response: data.response,
-            note: 'Se ha realizado una búsqueda semántica usando el Motor de Conocimiento RAG. Las rutas de imágenes relativas están disponibles en `image_urls` (ej: /images/...).',
+            note: 'Se ha realizado una búsqueda semántica usando el Motor de Conocimiento RAG. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente, redactadas en un párrafo fluido o máximo 2 bullets, y sin mencionar precios bajos o "el mejor precio". IMPORTANTE: Prioriza SIEMPRE los productos con has_pricing=true. Si presentas un producto con has_pricing=false, advierte al cliente que necesitas confirmar disponibilidad/precio. EXIGENCIA DE VARIEDAD Y GAMA: Si los resultados contienen productos de diferentes materiales (cerámica, plástico, metal, etc.), presenta un abanico variado al cliente (por ejemplo, una opción Premium en metal/térmica, una Estándar en cerámica y una Económica en plástico) en lugar de ofrecer tres productos del mismo material. NUEVA REGLA COMERCIAL DE FASE 1 (PRODUCTO MÁS CARO OBLIGATORIO): En la Fase 1 del embudo comercial, estás OBLIGADO a que una de las 3 opciones propuestas (la Opción Premium) sea el producto de mayor valor económico de toda la familia buscada. Para lograr esto sin equivocarte, busca en la lista de matches el producto que tenga marcado is_most_expensive = true. Ese producto DEBE ser presentado obligatoriamente como la Opción Premium. Las otras 2 opciones (Estándar y Económica) pueden ser seleccionadas libremente entre los demás matches que tengan has_pricing = true.',
           };
         } else {
           logger.warn(`RAG microservice returned status ${response.status}, falling back to database search`);
@@ -65,12 +231,9 @@ export function searchCatalogTool() {
       }
 
       // 2. Fallback original a Supabase / Postgres
-      // Format query for PostgreSQL to_tsquery (e.g. 'cuaderno 100 hojas' -> 'cuaderno & 100 & hojas')
       const query = rawQuery.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean).join(' & ');
 
       try {
-        const supabase = createAdminClient();
-        // Pedirle a Supabase hasta 100 resultados para categorias grandes como bolsas
         const { data, error } = await (supabase as any).rpc('search_products', { query: query, limit_n: 100 });
 
         if (error) {
@@ -85,12 +248,11 @@ export function searchCatalogTool() {
             success: true,
             query,
             matches: [],
-            note: 'No se encontraron productos con ese nombre. MODO ENTRENAMIENTO: Explicale literalmente al usuario el problema. Dile: "Busque \'' + query + '\' en la base de datos pero no obtuve ningun resultado. ¿Podrias revisar el nombre exacto en el Excel o darme otro termino?"'
+            note: 'No se encontraron productos con ese término. Dile amablemente al cliente que te de un poco mas de detalles sobre el producto que busca o pregúntale si se refiere a otro artículo y trata de obtener mas informacion con 2 o 3 preguntas simples pero contundentes que te ayuden a descartar u obtener el producto que necesita o algo similar que pueda estar buscando el cliente para poder ayudarle.'
           };
         }
 
-        // Devolver maximo los primeros 100 resultados
-        const matches = data.slice(0, 100).map((row: any) => ({
+        let matches = data.slice(0, 100).map((row: any) => ({
           product_id: row.id,
           category: row.category,
           name: row.name,
@@ -98,14 +260,22 @@ export function searchCatalogTool() {
           description: row.description,
           notes: row.notes,
           requires_area: row.requires_area,
-          image_urls: []
+          image_urls: [],
+          has_pricing: false,
+          max_price: 0,
+          is_most_expensive: false,
         }));
+
+        matches = await annotateMatchesWithPricing(supabase, matches);
+
+        // Reordenar
+        matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)));
 
         return {
           success: true,
           query,
           matches,
-          note: 'OJO: He retornado hasta 100 resultados de la base de datos de fallback. Si el cliente pidio un atributo fisico (ej. "grande", "pequeña", "mediana"), TU DEBES LEER mentalmente las descripciones y medidas de estos 100 resultados y filtrar cuales aplican antes de responderle al cliente. Muestrale solo las opciones que se ajusten a su tamaño/color solicitado.',
+          note: 'OJO: He retornado hasta 100 resultados de la base de datos de fallback. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente, redactadas en un párrafo fluido o máximo 2 bullets, y sin mencionar precios bajos o "el mejor precio". NUEVA REGLA COMERCIAL DE FASE 1 (PRODUCTO MÁS CARO OBLIGATORIO): En la Fase 1 del embudo comercial, estás OBLIGADO a que una de las 3 opciones propuestas (la Opción Premium) sea el producto de mayor valor económico de toda la familia buscada. Para lograr esto sin equivocarte, busca en la lista de matches el producto que tenga marcado is_most_expensive = true. Ese producto DEBE ser presentado obligatoriamente como la Opción Premium. Las otras 2 opciones (Estándar y Económica) pueden ser seleccionadas libremente entre los demás matches que tengan has_pricing = true.',
         };
       } catch (err: any) {
         logger.error('Search catalog exception', { error: String(err) });

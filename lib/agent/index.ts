@@ -145,8 +145,8 @@ export async function runAgentForMessage(params: {
         requestHumanHandoff: requestHumanHandoffTool(toolContext),
         calculateCustomPrice: calculateCustomPriceTool(),
       },
-      stopWhen: stepCountIs(10),
-      maxSteps: 10,
+      stopWhen: stepCountIs(30),
+      maxSteps: 30,
       temperature: 0.4,
     } as any);
 
@@ -165,6 +165,6 @@ export async function runAgentForMessage(params: {
       orgId,
       conversationId,
     });
-    return 'Lo siento, estoy teniendo problemas técnicos. Un momento por favor, te paso con un humano.';
+    return 'dame un momento por favor voy a revisar';
   }
 }

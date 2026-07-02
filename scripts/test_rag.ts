@@ -1,46 +1,22 @@
-import { createClient } from '@supabase/supabase-js';
-import * as fs from 'fs';
-import * as path from 'path';
-import { pipeline } from '@xenova/transformers';
-
-const envPath = path.resolve(process.cwd(), '.env.local');
-if (fs.existsSync(envPath)) {
-  const envConfig = fs.readFileSync(envPath, 'utf8');
-  for (const line of envConfig.split('\n')) {
-    const match = line.match(/^([^#=]+)=(.*)$/);
-    if (match) process.env[match[1].trim()] = match[2].trim();
-  }
-}
-
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-
 async function run() {
-  const query = process.argv[2] || "precio de 100 llaveros tipo manilla en material plastisol color blanco con 2 tintas y grabado pequeo de 7x80mm";
-  
-  const extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2');
-  const output = await extractor(query, { pooling: 'mean', normalize: true });
-  const embedding = Array.from(output.data);
-
-  const { data: orgData } = await supabase.from('organizations').select('id').limit(1);
-  const orgId = orgData![0].id;
-
-  const { data, error } = await supabase.rpc('match_knowledge_chunks', {
-    query_embedding: embedding,
-    match_threshold: 0.1, // lowered to find everything
-    match_count: 30,
-    target_organization_id: orgId
-  });
-
-  if (error) {
-    console.error('Error querying:', error);
-    return;
+  const query = "boligrafo mecanismo push";
+  try {
+    const response = await fetch("http://127.0.0.1:8001/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, top_k: 5 }),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      console.log("RAG matches:");
+      for (const p of data.products || []) {
+        console.log(`- ID: ${p.product_id} | Name: ${p.name} | Description: ${p.description}`);
+      }
+    } else {
+      console.error("RAG status:", response.status);
+    }
+  } catch (err: any) {
+    console.error("Failed:", err.message);
   }
-
-  console.log('Top 5 matches for:', query);
-  data.forEach((d: any, i: number) => {
-    console.log(`\nMatch ${i+1} (Similitud: ${d.similarity.toFixed(2)}):`);
-    console.log(d.content);
-  });
 }
-
-run().catch(console.error);
+run();

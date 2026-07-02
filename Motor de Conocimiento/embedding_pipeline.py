@@ -20,7 +20,7 @@ from google import genai
 from google.genai import types
 
 from config import (
-    GOOGLE_API_KEY, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS,
+    GOOGLE_API_KEY, OPENROUTER_API_KEY, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS,
     EMBEDDING_TASK_TYPE_DOCUMENT, EMBEDDING_TASK_INSTRUCTION,
     EMBEDDING_MAX_TOKENS, EMBEDDING_BATCH_SIZE,
     EMBEDDING_RATE_LIMIT_DELAY, EMBEDDING_IMAGE_RESIZE_MAX_DIM,
@@ -34,10 +34,12 @@ from utils import (
 logger = setup_logger("embedding", "embedding_audit.log")
 
 # ============================================================================
-# 1. CLIENTE GEMINI
+# 1. CLIENTE GEMINI / OPENROUTER
 # ============================================================================
 
-client = genai.Client(api_key=GOOGLE_API_KEY)
+client = None
+if not (OPENROUTER_API_KEY and OPENROUTER_API_KEY.startswith("sk-or-")):
+    client = genai.Client(api_key=GOOGLE_API_KEY)
 
 
 # ============================================================================
@@ -132,6 +134,41 @@ def prepare_image_bytes(image_path: str) -> Optional[bytes]:
 # 3. GENERACIÓN DE EMBEDDINGS
 # ============================================================================
 
+def call_openrouter_embeddings_api(text: str) -> list[float]:
+    import urllib.request
+    import json
+    
+    url = "https://openrouter.ai/api/v1/embeddings"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": EMBEDDING_MODEL,
+        "input": text
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            res_data = response.read().decode("utf-8")
+            data = json.loads(res_data)
+            if "data" in data and len(data["data"]) > 0:
+                return data["data"][0]["embedding"]
+            raise ValueError(f"OpenRouter empty/invalid response: {data}")
+    except urllib.error.HTTPError as e:
+        error_content = e.read().decode("utf-8")
+        if e.code == 429:
+            raise RuntimeError(f"OpenRouter 429 RESOURCE_EXHAUSTED: {error_content}")
+        raise RuntimeError(f"OpenRouter HTTP Error {e.code}: {error_content}")
+    except Exception as e:
+        raise RuntimeError(f"OpenRouter Error: {e}")
+
+
 def generate_multimodal_embedding(
     text: str,
     image_bytes: Optional[bytes] = None,
@@ -149,6 +186,14 @@ def generate_multimodal_embedding(
     Returns:
         Vector de 3072 dimensiones o None si falla.
     """
+    # Si usamos OpenRouter, llamamos a la API de OpenRouter (que solo soporta texto para embeddings)
+    if OPENROUTER_API_KEY and OPENROUTER_API_KEY.startswith("sk-or-"):
+        try:
+            return call_openrouter_embeddings_api(text)
+        except Exception as e:
+            logger.error(f"[EMBED] Error en OpenRouter: {e}")
+            raise
+
     try:
         # Construir contenido multimodal
         contents = [text]
@@ -198,6 +243,13 @@ def generate_query_embedding(query_text: str) -> Optional[list[float]]:
     Genera embedding para una consulta de búsqueda.
     Usa task_type RETRIEVAL_QUERY para óptima recuperación.
     """
+    if OPENROUTER_API_KEY and OPENROUTER_API_KEY.startswith("sk-or-"):
+        try:
+            return call_openrouter_embeddings_api(query_text)
+        except Exception as e:
+            logger.error(f"[QUERY EMBED] Error en OpenRouter: {e}")
+            raise
+
     try:
         result = client.models.embed_content(
             model=EMBEDDING_MODEL,
@@ -326,31 +378,44 @@ def run_embedding_pipeline(products_file: Optional[str] = None) -> list[dict]:
                 logger.debug(f"[SKIP] Embedding ya existe: {pid}")
                 continue
             
-            try:
-                datapoint = process_product_embedding(product)
-                
-                if datapoint:
-                    # Eliminar duplicado si existe
-                    all_datapoints = [dp for dp in all_datapoints if dp["id"] != pid]
-                    all_datapoints.append(datapoint)
-                    processed_ids.add(pid)
-                    checkpoint.mark_processed(f"embed:{pid}")
-                    batch_has_new = True
+            retries = 0
+            max_429_retries = 10
+            success = False
+            while not success and retries < max_429_retries:
+                try:
+                    datapoint = process_product_embedding(product)
                     
-                    audit_log.append(generate_audit_record(
-                        pid, "embedding_generated", "SUCCESS",
-                        {"dimensions": len(datapoint["embedding"])}
-                    ))
-                    logger.info(f"[EMBED] ✓ {pid} — vector {len(datapoint['embedding'])}d")
-                else:
-                    checkpoint.mark_failed(f"embed:{pid}", "Empty embedding")
-                    
-            except Exception as e:
-                logger.error(f"[EMBED] ✗ {pid}: {e}")
-                checkpoint.mark_failed(f"embed:{pid}", str(e))
-                audit_log.append(generate_audit_record(
-                    pid, "embedding_generated", "FAILED", {"error": str(e)}
-                ))
+                    if datapoint:
+                        # Eliminar duplicado si existe
+                        all_datapoints = [dp for dp in all_datapoints if dp["id"] != pid]
+                        all_datapoints.append(datapoint)
+                        processed_ids.add(pid)
+                        checkpoint.mark_processed(f"embed:{pid}")
+                        batch_has_new = True
+                        
+                        audit_log.append(generate_audit_record(
+                            pid, "embedding_generated", "SUCCESS",
+                            {"dimensions": len(datapoint["embedding"])}
+                        ))
+                        logger.info(f"[EMBED] [OK] {pid} — vector {len(datapoint['embedding'])}d")
+                    else:
+                        checkpoint.mark_failed(f"embed:{pid}", "Empty embedding")
+                    success = True
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg or "Quota exceeded" in error_msg:
+                        retries += 1
+                        wait_time = 60 * retries
+                        logger.warning(f"[RATE LIMIT] 429 RESOURCE_EXHAUSTED para {pid}. Reintento {retries}/{max_429_retries} - Esperando {wait_time}s...")
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"[EMBED] [ERROR] {pid}: {e}")
+                        checkpoint.mark_failed(f"embed:{pid}", str(e))
+                        audit_log.append(generate_audit_record(
+                            pid, "embedding_generated", "FAILED", {"error": str(e)}
+                        ))
+                        success = True
         
         # Guardar progreso al final de cada batch si hubo cambios
         if batch_has_new:

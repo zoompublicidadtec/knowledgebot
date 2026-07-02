@@ -1,0 +1,25 @@
+import './load-env';
+import { createAdminClient } from '../lib/supabase/admin';
+import catalog = require('../Motor de Conocimiento/data/products/all_products.json');
+(async () => {
+  const s = createAdminClient();
+  // Traer todos los references de Supabase de una vez
+  const { data: all } = await (s as any).from('products').select('id, name, reference').limit(600);
+  const refs = new Set((all||[]).map((r:any)=>r.reference).filter(Boolean));
+  const names = (all||[]).map((r:any)=>({name:r.name.toLowerCase(), id:r.id}));
+  console.log('Supabase productos con reference:', refs.size, '| total filas traídas:', (all||[]).length);
+
+  // Para cada categoría clave del catálogo RAG, ver cuántos product_id coinciden con reference de Supabase
+  const cats = ['MUGS, BOTILITOS, VASOS Y TERMOS','GORRAS','OFICINA','LLAVEROS'];
+  for (const cat of cats) {
+    const prods = (catalog as any[]).filter(p=>p.category===cat).slice(0, 8);
+    console.log('\n=== ' + cat + ' ===');
+    for (const p of prods) {
+      const byRef = refs.has(p.product_id);
+      // match por nombre tambien
+      const pName = p.name.toLowerCase();
+      const byName = names.find(n => n.name === pName || n.name.includes(pName.split('-')[0].trim().slice(0,15)));
+      console.log('  RAG_id=' + JSON.stringify(p.product_id) + ' | refMatch=' + byRef + ' | nameMatch=' + (byName?'YES('+byName.id.slice(0,8)+')':'no') + ' | name=' + p.name);
+    }
+  }
+})();
