@@ -20,13 +20,13 @@ export default async function ConversationsIndexPage() {
 
   return (
     <div className="animate-fade-in h-[calc(100vh-140px)] min-h-[450px] grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Sidebar (List) */}
-      <div className="lg:col-span-1 glass rounded-2xl overflow-hidden h-full">
+      {/* Sidebar (List) - en móvil ocupa toda la pantalla como WhatsApp */}
+      <div className="col-span-1 lg:col-span-1 glass rounded-2xl overflow-hidden h-full">
         <ConversationList list={list || []} />
       </div>
 
-      {/* Main chat window - Empty state */}
-      <div className="lg:col-span-3 glass rounded-2xl flex flex-col items-center justify-center text-center p-6 h-full">
+      {/* Main chat window - Empty state (solo desktop) */}
+      <div className="hidden lg:flex lg:col-span-3 glass rounded-2xl flex-col items-center justify-center text-center p-6 h-full">
         <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: 'rgba(99, 102, 241, 0.1)' }}>
           <ChatCircleDots size={32} className="text-primary-400" />
         </div>
