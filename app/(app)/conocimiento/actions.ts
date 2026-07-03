@@ -33,23 +33,20 @@ export async function getCategories() {
       .order('name', { ascending: true });
 
     if (error) {
-      // Fallback if column 'synonyms' doesn't exist yet in the DB
-      if (error.code === 'PGRST100' || error.message.includes('column') || error.message.includes('synonyms')) {
-        const { data: fallbackData, error: fallbackError } = await (supabase as any)
-          .from('categories')
-          .select('id, name, group_name')
-          .order('name', { ascending: true });
-        
-        if (fallbackError) throw fallbackError;
-        
-        // Return categories mapping with synonyms null and a flag indicating missing migration
-        return (fallbackData || []).map((cat: any) => ({ 
-          ...cat, 
-          synonyms: null, 
-          requiresMigration: true 
-        }));
-      }
-      throw error;
+      // Fallback if column 'synonyms' or table 'subcategories' doesn't exist yet in the DB
+      const { data: fallbackData, error: fallbackError } = await (supabase as any)
+        .from('categories')
+        .select('id, name, group_name')
+        .order('name', { ascending: true });
+      
+      if (fallbackError) throw fallbackError;
+      
+      // Return categories mapping with synonyms null and a flag indicating missing migration
+      return (fallbackData || []).map((cat: any) => ({ 
+        ...cat, 
+        synonyms: null, 
+        requiresMigration: true 
+      }));
     }
     return data || [];
   } catch (error: any) {
