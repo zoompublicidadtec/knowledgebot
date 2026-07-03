@@ -164,6 +164,13 @@ Para permitir que una sola organización (como ZOOM Publicidad) escale su operac
 *   **Idempotencia en Webhooks Multi-sesión**: El webhook principal intercepta los mensajes de todas las sesiones de Puppeteer y les inyecta el `line_key`. Utiliza sentencias `upsert` atadas al `wa_message_id` para garantizar que la concurrencia de 8 líneas nunca genere mensajes duplicados o errores de integridad referencial.
 *   **Interfaz Operativa Central**: Se creó un panel unificado para conectar/desconectar líneas dinámicamente. Adicionalmente, el asesor cuenta con un filtro persistente (`localStorage`) en el listado de conversaciones que separa los chats por la línea de origen, optimizando el manejo de grandes volúmenes de clientes.
 
+### 🔌 Procedimiento de Reconexión de WhatsApp (sin reiniciar el servidor)
+El puente (`wa-server`, puerto `3004`) está diseñado para **sobrevivir a desconexiones** sin intervención manual: al detectar la desconexión, borra la sesión local corrupta y **regenera un QR automáticamente** que aparece en el panel (Integraciones → WhatsApp). El flujo correcto de recuperación, en orden de complejidad creciente, es:
+1. **QR automático**: simplemente esperar y escanear el nuevo QR que aparece en el panel.
+2. **Forzar inicio de sesión** (si el QR no aparece): `POST http://localhost:3004/api/sessions/<line_key>/start` con header `x-bridge-key`, luego `GET /api/sessions/<line_key>/qr` para obtener el QR en base64.
+3. **Logout completo** (sesión corrupta, "conectado en otro lado"): `POST http://localhost:3004/api/sessions/<line_key>/logout` → destruye y limpia la sesión del volumen → luego paso 2.
+**Importante**: jamás es necesario reiniciar el contenedor Docker ni el VPS; el volumen `wwebjs_sessions` persiste la autenticación incluso tras rebuilds. **Distinción clave**: si el bot recibe mensajes pero no los procesa/responde, el problema NO es la conexión de WhatsApp sino la entrega al webhook de la app web (ruta `/api/webhooks/whatsapp`). El 3 de julio de 2026 se documentó un incidente donde un cambio de HTTPS en Nginx (Certbot añadió `return 404;` en el bloque del puerto 80) hizo que el bridge recibiera 404 al entregar mensajes, simulando una "desconexión" del bot. El fix fue añadir un `location /api/webhooks/` con `proxy_pass` directo en el bloque `:80` de Nginx, separándolo del redirect HTTPS (los redirects 301 convierten POST en GET y rompen el webhook).
+
 ---
 
 ## ✅ 9. ESTADO ACTUAL: BOT 100% FUNCIONAL — LISTO PARA PRODUCCIÓN

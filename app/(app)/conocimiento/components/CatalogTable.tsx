@@ -119,8 +119,8 @@ export function CatalogTable(props: CatalogTableProps) {
     <>
       {/* Desktop table */}
       <div className="hidden sm:block glass rounded-2xl border border-white/5 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] custom-scrollbar">
+          <table className="w-full text-left text-sm min-w-[1000px]">
             <thead>
               <tr className="border-b border-white/5 bg-white/2" style={{ color: 'rgba(148,163,184,0.6)' }}>
                 <th className="p-4 w-10">
