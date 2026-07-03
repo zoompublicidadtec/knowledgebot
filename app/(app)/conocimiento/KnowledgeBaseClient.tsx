@@ -1,38 +1,39 @@
 'use client';
 
 import React, { useState, useEffect, useTransition } from 'react';
-import { 
-  BookBookmark, 
-  Plus, 
-  Trash, 
-  Pencil, 
-  Copy, 
-  MagnifyingGlass, 
-  CaretLeft, 
-  CaretRight, 
-  X, 
-  FolderPlus, 
-  Tag, 
-  Check, 
+import {
+  BookBookmark,
+  Plus,
+  Trash,
+  Pencil,
+  Copy,
+  MagnifyingGlass,
+  X,
+  FolderPlus,
+  Tag,
+  Check,
   Info,
-  CaretDown,
   Sliders,
   WarningCircle,
   CurrencyDollar,
-  Sparkle
 } from '@phosphor-icons/react';
-import { 
-  getCatalog, 
-  getCategories, 
-  createCategory, 
-  getProductDetails, 
-  saveProduct, 
-  deleteProduct,
+import {
+  getCatalog,
+  getCategories,
+  createCategory,
+  getProductDetails,
+  saveProduct,
   getGlosario,
   saveGlosarioItem,
   deleteGlosarioItem,
-  saveCategorySynonyms
+  saveCategorySynonyms,
+  hardDeleteProduct,
+  updateTierPrice,
 } from './actions';
+import { CatalogTable, type CatalogProduct, type SortField, type SortDir } from './components/CatalogTable';
+import { BulkActionsBar } from './components/BulkActionsBar';
+import { ImportExportPanel } from './components/ImportExportPanel';
+import { CategoryTree, type TreeCategory } from './components/CategoryTree';
 
 interface Subcategory {
   id: string;
@@ -105,7 +106,6 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
 
   // Catalog Filters / Paging
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -113,6 +113,12 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
   const [totalCount, setTotalCount] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
+
+  // New: sorting, page size, selection (hitos 1 & 2)
+  const [sort, setSort] = useState<SortField>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Product Form (Drawer)
   const [showDrawer, setShowDrawer] = useState(false);
@@ -163,9 +169,11 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     try {
       const res = await getCatalog({
         page,
-        limit: 10,
+        limit: pageSize,
         search: debouncedSearch,
         categoryId: selectedCategoryId,
+        sort,
+        sortDir,
       });
       setProducts(res.products as Product[]);
       setTotalPages(res.totalPages);
@@ -181,7 +189,8 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     if (activeTab === 'catalog') {
       loadProductsList();
     }
-  }, [page, debouncedSearch, selectedCategoryId, activeTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, debouncedSearch, selectedCategoryId, activeTab, sort, sortDir, pageSize]);
 
   // Load Glossary
   const loadGlossaryList = async () => {
@@ -358,16 +367,64 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     });
   };
 
-  // Handle Soft Delete Product
-  const handleDeleteProductClick = async (id: string, name: string) => {
-    if (confirm(`¿Estás seguro de que deseas desactivar el producto "${name}"? Dejará de cotizarse automáticamente en WhatsApp.`)) {
-      const res = await deleteProduct(id);
-      if (res.success) {
-        loadProductsList();
-      } else {
-        alert('Error al desactivar el producto: ' + res.error);
-      }
+  // ─── HARD DELETE (permanente) ───
+  const handleHardDeleteProductClick = async (prod: Product) => {
+    const label = prod.name + (prod.reference ? ` (${prod.reference})` : '');
+    if (!confirm(`¿ELIMINAR DEFINITIVAMENTE "${label}"?\n\nSe borrará el producto y TODOS sus rangos de precio de forma permanente. Esta acción NO se puede deshacer.`)) return;
+    const res = await hardDeleteProduct(prod.id);
+    if (res.success) {
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(prod.id); return n; });
+      loadProductsList();
+    } else {
+      alert('Error al eliminar: ' + res.error);
     }
+  };
+
+  // ─── SELECTION HANDLERS ───
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+  const toggleSelectAll = (ids: string[]) => {
+    setSelectedIds(prev => {
+      const allSelected = ids.length > 0 && ids.every(i => prev.has(i));
+      const n = new Set(prev);
+      if (allSelected) ids.forEach(i => n.delete(i));
+      else ids.forEach(i => n.add(i));
+      return n;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // ─── SORT HANDLER ───
+  const handleSortChange = (field: SortField) => {
+    if (field === sort) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSort(field);
+      setSortDir(field === 'active' ? 'desc' : 'asc');
+    }
+    setPage(1);
+  };
+
+  // ─── INLINE PRICE SAVE ───
+  const handleInlinePriceSave = async (tierId: string, newPrice: number): Promise<boolean> => {
+    const res = await updateTierPrice(tierId, newPrice);
+    if (res.success) {
+      loadProductsList();
+      return true;
+    }
+    alert('Error al guardar precio: ' + res.error);
+    return false;
+  };
+
+  // ─── REFRESH CATEGORIES (used by CategoryTree mutations) ───
+  const refreshCategories = async () => {
+    const cats = await getCategories();
+    setCategories(cats);
   };
 
   // ─── CATEGORY SYNONYMS HANDLERS ───
@@ -535,90 +592,18 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
 
       {/* ─── TAB 1: CATALOG ─── */}
       {activeTab === 'catalog' && (
+        <>
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fade-in">
-          {/* LEFT: Category Sidebar (Desktop Only) */}
-          <div className="hidden lg:block space-y-3">
-            <h3 className="text-xs font-semibold text-slate-400 tracking-wider uppercase pl-2">Categorías</h3>
-            <div className="glass rounded-xl border border-white/5 p-2 space-y-1">
-              <button
-                onClick={() => { setSelectedCategoryId('all'); setPage(1); }}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                  selectedCategoryId === 'all'
-                    ? 'bg-primary-500/10 text-primary-400 font-medium'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                Todos los Productos ({totalCount})
-              </button>
-              <div className="h-px bg-white/5 my-2" />
-              <div className="max-h-[500px] overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                {categories.map((cat) => {
-                  const isExpanded = expandedCategories[cat.id];
-                  const hasSubcategories = cat.subcategories && cat.subcategories.length > 0;
-                  const isSelected = selectedCategoryId === `cat-${cat.id}` || selectedCategoryId === cat.id;
-
-                  return (
-                    <div key={cat.id} className="space-y-0.5">
-                      <div className="group flex items-center justify-between rounded-lg hover:bg-white/5 transition-all">
-                        <div className="flex flex-1 items-center overflow-hidden">
-                          {hasSubcategories ? (
-                            <button
-                              onClick={() => setExpandedCategories(p => ({ ...p, [cat.id]: !p[cat.id] }))}
-                              className="p-1.5 text-slate-500 hover:text-white transition-colors"
-                            >
-                              {isExpanded ? <CaretDown size={14} weight="bold" /> : <CaretRight size={14} weight="bold" />}
-                            </button>
-                          ) : (
-                            <div className="w-[26px]"></div>
-                          )}
-                          <button
-                            onClick={() => { setSelectedCategoryId(`cat-${cat.id}`); setPage(1); }}
-                            className={`flex-1 text-left py-2 pr-2 text-sm transition-all truncate block ${
-                              isSelected
-                                ? 'text-primary-400 font-medium'
-                                : 'text-slate-400 hover:text-white'
-                            }`}
-                            title={`${cat.name} ${cat.synonyms ? `(${cat.synonyms})` : ''}`}
-                          >
-                            {cat.name}
-                          </button>
-                        </div>
-                        
-                        {!dbNeedsMigration && (
-                          <button
-                            onClick={() => handleEditCategorySynonymsClick(cat)}
-                            className="px-2 py-2 rounded-r-lg text-slate-500 hover:text-primary-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0"
-                            title="Configurar sinónimos de categoría"
-                          >
-                            <Tag size={14} />
-                          </button>
-                        )}
-                      </div>
-                      
-                      {/* Subcategories */}
-                      {isExpanded && hasSubcategories && (
-                        <div className="pl-8 pr-1 space-y-0.5 pb-1">
-                          {cat.subcategories!.map(sub => (
-                            <div key={sub.id} className="group flex items-center justify-between rounded-md hover:bg-white/5 transition-all">
-                              <button
-                                onClick={() => { setSelectedCategoryId(`sub-${sub.id}`); setPage(1); }}
-                                className={`flex-1 text-left px-2 py-1.5 text-[13px] transition-all truncate ${
-                                  selectedCategoryId === `sub-${sub.id}`
-                                    ? 'text-primary-400 font-medium bg-primary-500/10 rounded-md'
-                                    : 'text-slate-500 hover:text-slate-300'
-                                }`}
-                              >
-                                {sub.name}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+          {/* LEFT: Category Sidebar (Desktop Only) — now full management tree */}
+          <div className="hidden lg:block">
+            <CategoryTree
+              categories={categories as unknown as TreeCategory[]}
+              selectedCategoryId={selectedCategoryId}
+              totalCount={totalCount}
+              onSelect={(id) => { setSelectedCategoryId(id); setPage(1); }}
+              onCategoriesChanged={refreshCategories}
+              onManageSynonyms={!dbNeedsMigration ? (cat) => handleEditCategorySynonymsClick(cat as unknown as Category) : undefined}
+            />
           </div>
 
           {/* RIGHT: Search, Actions, Table */}
@@ -676,170 +661,66 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
               </button>
             </div>
 
-            {/* Desktop Products Table */}
-            <div className="hidden sm:block glass rounded-2xl border border-white/5 overflow-hidden">
-              {loadingProducts ? (
-                <div className="p-12 text-center text-slate-400">
-                  <div className="animate-spin inline-block w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full mb-3"></div>
-                  <p className="text-sm">Buscando en el catálogo...</p>
-                </div>
-              ) : products.length === 0 ? (
-                <div className="p-12 text-center text-slate-400">
-                  <WarningCircle size={40} className="mx-auto text-slate-500 mb-3" />
-                  <p className="text-sm">No se encontraron productos. Crea uno nuevo o cambia los filtros.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-white/5 bg-white/2" style={{ color: 'rgba(148,163,184,0.6)' }}>
-                        <th className="p-4 font-semibold">Producto</th>
-                        <th className="p-4 font-semibold">Referencia</th>
-                        <th className="p-4 font-semibold">Categoría</th>
-                        <th className="p-4 font-semibold">Unidad</th>
-                        <th className="p-4 font-semibold">Estado</th>
-                        <th className="p-4 font-semibold text-right">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {products.map((prod) => (
-                        <tr key={prod.id} className={`hover:bg-white/2 transition-colors ${!prod.active ? 'opacity-50' : ''}`}>
-                          <td className="p-4">
-                            <div>
-                              <div className="font-semibold text-white">{prod.name}</div>
-                              <div className="text-xs text-slate-400 mt-0.5 line-clamp-1 max-w-[300px]" title={prod.description || ''}>
-                                {prod.description || 'Sin descripción técnica'}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-4 text-slate-300 font-mono text-xs">{prod.reference || '-'}</td>
-                          <td className="p-4 text-slate-400">
-                            {(prod as any).categories?.name || 'Sin Categoría'}
-                          </td>
-                          <td className="p-4 text-slate-400 capitalize">{prod.unit}</td>
-                          <td className="p-4">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              prod.active 
-                                ? 'bg-emerald-500/10 text-emerald-400' 
-                                : 'bg-rose-500/10 text-rose-400'
-                            }`}>
-                              {prod.active ? 'Activo' : 'Inactivo'}
-                            </span>
-                          </td>
-                          <td className="p-4 text-right space-x-1 whitespace-nowrap">
-                            <button
-                              onClick={() => handleEditProduct(prod)}
-                              className="inline-flex items-center p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all"
-                              title="Editar ficha y precios"
-                            >
-                              <Pencil size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteProductClick(prod.id, prod.name)}
-                              className="inline-flex items-center p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-950/20 transition-all"
-                              title="Desactivar producto"
-                            >
-                              <Trash size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Mobile Responsive Cards */}
-            <div className="block sm:hidden space-y-3">
-              {loadingProducts ? (
-                <div className="p-12 text-center text-slate-400 glass rounded-2xl">
-                  <div className="animate-spin inline-block w-6 h-6 border-3 border-primary-500 border-t-transparent rounded-full mb-3"></div>
-                  <p className="text-xs">Buscando productos...</p>
-                </div>
-              ) : products.length === 0 ? (
-                <div className="p-12 text-center text-slate-400 glass rounded-2xl">
-                  <WarningCircle size={32} className="mx-auto text-slate-500 mb-2" />
-                  <p className="text-xs">No se encontraron productos.</p>
-                </div>
-              ) : (
-                products.map((prod) => (
-                  <div 
-                    key={prod.id} 
-                    className={`glass p-4 rounded-xl border border-white/5 space-y-3 transition-opacity ${!prod.active ? 'opacity-50' : ''}`}
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        <h4 className="font-semibold text-sm text-white">{prod.name}</h4>
-                        <span className="text-[10px] bg-slate-800 text-slate-300 font-mono px-1.5 py-0.5 rounded">
-                          {prod.reference || 'Sin Ref'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1 line-clamp-2">{prod.description || 'Sin descripción'}</p>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Cat: {(prod as any).categories?.name || '-'}</span>
-                      <span>Unidad: {prod.unit}</span>
-                    </div>
-                    <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                        prod.active 
-                          ? 'bg-emerald-500/10 text-emerald-400' 
-                          : 'bg-rose-500/10 text-rose-400'
-                      }`}>
-                        {prod.active ? 'Activo' : 'Inactivo'}
-                      </span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEditProduct(prod)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded bg-white/5 text-xs text-slate-300 hover:text-white"
-                        >
-                          <Pencil size={12} />
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProductClick(prod.id, prod.name)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-950/20 text-xs text-rose-400 hover:text-rose-300"
-                        >
-                          <Trash size={12} />
-                          Apagar
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-2">
-                <span className="text-xs" style={{ color: 'rgba(148,163,184,0.4)' }}>
-                  Página {page} de {totalPages} ({totalCount} ítems)
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setPage(prev => Math.max(prev - 1, 1))}
-                    disabled={page === 1}
-                    className="p-2 rounded-lg bg-slate-900 border border-white/10 text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-all"
-                  >
-                    <CaretLeft size={16} />
-                  </button>
-                  <button
-                    onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
-                    disabled={page === totalPages}
-                    className="p-2 rounded-lg bg-slate-900 border border-white/10 text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-all"
-                  >
-                    <CaretRight size={16} />
-                  </button>
-                </div>
+            {/* Page size selector + results summary */}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Mostrar:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); setSelectedIds(new Set()); }}
+                  className="px-2 py-1 rounded-lg bg-slate-900 border border-white/10 text-slate-200 text-xs focus:outline-none focus:border-primary-500"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span>por página</span>
               </div>
+              {totalCount > 0 && (
+                <span className="text-[11px]" style={{ color: 'rgba(148,163,184,0.5)' }}>
+                  {totalCount.toLocaleString('es-CO')} producto(s) en total
+                </span>
+              )}
+            </div>
+
+            {/* Bulk actions bar — appears when rows are selected */}
+            {selectedIds.size > 0 && (
+              <BulkActionsBar
+                selectedIds={selectedIds}
+                onClear={clearSelection}
+                onDone={loadProductsList}
+                categories={categories.map(c => ({ id: c.id, name: c.name }))}
+              />
             )}
+
+            {/* Unified catalog table (desktop table + mobile cards) */}
+            <CatalogTable
+              products={products as unknown as CatalogProduct[]}
+              totalCount={totalCount}
+              page={page}
+              totalPages={totalPages}
+              loading={loadingProducts}
+              sort={sort}
+              sortDir={sortDir}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+              onToggleSelectAll={toggleSelectAll}
+              onSortChange={handleSortChange}
+              onPageChange={(p) => { setPage(p); setSelectedIds(new Set()); }}
+              onEdit={(prod) => handleEditProduct(prod as unknown as Product)}
+              onHardDelete={(prod) => handleHardDeleteProductClick(prod as unknown as Product)}
+              onInlinePriceSave={handleInlinePriceSave}
+            />
           </div>
         </div>
-      )}
 
-      {/* ─── TAB 2: GLOSSARY ─── */}
+        {/* Import / Export Excel (full-width, below the grid) */}
+        <ImportExportPanel
+          categoryId={selectedCategoryId}
+          onDone={loadProductsList}
+        />
+      </>
+      )}
       {activeTab === 'glossary' && (
         <div className="space-y-4 animate-fade-in">
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
