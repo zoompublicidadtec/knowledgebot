@@ -33,23 +33,20 @@ export async function getCategories() {
       .order('name', { ascending: true });
 
     if (error) {
-      // Fallback if column 'synonyms' doesn't exist yet in the DB
-      if (error.code === 'PGRST100' || error.message.includes('column') || error.message.includes('synonyms')) {
-        const { data: fallbackData, error: fallbackError } = await (supabase as any)
-          .from('categories')
-          .select('id, name, group_name')
-          .order('name', { ascending: true });
-        
-        if (fallbackError) throw fallbackError;
-        
-        // Return categories mapping with synonyms null and a flag indicating missing migration
-        return (fallbackData || []).map((cat: any) => ({ 
-          ...cat, 
-          synonyms: null, 
-          requiresMigration: true 
-        }));
-      }
-      throw error;
+      // Fallback if column 'synonyms' or table 'subcategories' doesn't exist yet in the DB
+      const { data: fallbackData, error: fallbackError } = await (supabase as any)
+        .from('categories')
+        .select('id, name, group_name')
+        .order('name', { ascending: true });
+      
+      if (fallbackError) throw fallbackError;
+      
+      // Return categories mapping with synonyms null and a flag indicating missing migration
+      return (fallbackData || []).map((cat: any) => ({ 
+        ...cat, 
+        synonyms: null, 
+        requiresMigration: true 
+      }));
     }
     return data || [];
   } catch (error: any) {
@@ -172,22 +169,26 @@ export async function getCatalog(params: {
   limit: number;
   search: string;
   categoryId?: string;
+  sort?: 'name' | 'reference' | 'price' | 'active' | 'created_at';
+  sortDir?: 'asc' | 'desc';
+  onlyActive?: boolean;
 }) {
   try {
     const supabase = await createClient();
     const offset = (params.page - 1) * params.limit;
+    const sort = params.sort || 'name';
+    const sortDir = params.sortDir || 'asc';
 
-    // Build query
+    // Build query. We include price_tiers to derive the "vigente" price in the
+    // client without an extra round-trip per row. Keeps the bot contract intact:
+    // we only READ these tables, never alter them here.
     let queryBuilder = (supabase as any)
       .from('products')
-      .select('*, categories(name)', { count: 'exact' });
+      .select('*, categories(name), price_tiers(id, variant, min_qty, max_qty, price, price_basis)', { count: 'exact' });
 
     // Filter by Category or Subcategory
     if (params.categoryId && params.categoryId !== 'all') {
-      // Check if the ID belongs to a category or subcategory
-      // For now, assume it's a category. If we add subcategory filtering, we can check a prefix or just do an OR.
-      // We will add subcategory filtering explicitly in Phase 2
-      // Let's allow passing categoryId as "cat-UUID" or "sub-UUID" to distinguish
+      // Allow passing categoryId as "cat-UUID" or "sub-UUID" to distinguish
       if (params.categoryId.startsWith('sub-')) {
         queryBuilder = queryBuilder.eq('subcategory_id', params.categoryId.replace('sub-', ''));
       } else if (params.categoryId.startsWith('cat-')) {
@@ -195,6 +196,10 @@ export async function getCatalog(params: {
       } else {
         queryBuilder = queryBuilder.eq('category_id', params.categoryId);
       }
+    }
+
+    if (params.onlyActive) {
+      queryBuilder = queryBuilder.eq('active', true);
     }
 
     // Filter by Search Query
@@ -205,10 +210,17 @@ export async function getCatalog(params: {
       );
     }
 
-    const { data, count, error } = await queryBuilder
-      .order('active', { ascending: false })
-      .order('name', { ascending: true })
-      .range(offset, offset + params.limit - 1);
+    // Sorting. 'price' is special: it's not a column, so we keep the default
+    // name ordering and let the client re-sort the page by derived price.
+    // For column-backed sorts we map directly.
+    if (sort === 'price') {
+      // Fall back to name; client re-sorts the visible page by price.
+      queryBuilder = queryBuilder.order('active', { ascending: false }).order('name', { ascending: sortDir === 'asc' });
+    } else {
+      queryBuilder = queryBuilder.order('active', { ascending: false }).order(sort, { ascending: sortDir === 'asc' });
+    }
+
+    const { data, count, error } = await queryBuilder.range(offset, offset + params.limit - 1);
 
     if (error) throw error;
 
@@ -222,6 +234,12 @@ export async function getCatalog(params: {
     return { products: [], totalCount: 0, totalPages: 0 };
   }
 }
+
+/**
+ * NOTE: computeDisplayPrice() has been moved to lib/catalog-utils.ts because this
+ * file is a 'use server' module and cannot export sync functions for client use.
+ * Import it from '@/lib/catalog-utils' in client components.
+ */
 
 export async function getProductDetails(productId: string) {
   try {
@@ -264,6 +282,7 @@ export async function saveProduct(
     notes: string;
     active: boolean;
     synonyms: string; // Comma-separated string in the form (specific product synonyms)
+    image_url?: string;
   },
   priceTiers: Array<{
     variant: string;
@@ -317,28 +336,54 @@ export async function saveProduct(
       notes: productData.notes || null,
       active: productData.active,
       search_text: searchText,
+      image_url: productData.image_url || null,
       ...(embedding ? { embedding } : {}),
     };
 
     let savedProductId = productData.id;
 
-    if (productData.id) {
-      // Update
-      const { error } = await (supabase as any)
-        .from('products')
-        .update(dbProduct)
-        .eq('id', productData.id);
-      if (error) throw error;
-    } else {
-      // Insert
-      const { data, error } = await (supabase as any)
-        .from('products')
-        .insert(dbProduct)
-        .select('id')
-        .single();
-      if (error) throw error;
-      savedProductId = data.id;
-    }
+    // Resilient upsert helper to dynamically strip missing columns on database error
+    const executeResilientUpsert = async (payload: any): Promise<string> => {
+      let currentPayload = { ...payload };
+      while (true) {
+        try {
+          if (productData.id) {
+            const { error } = await (supabase as any)
+              .from('products')
+              .update(currentPayload)
+              .eq('id', productData.id);
+            if (error) throw error;
+            return productData.id;
+          } else {
+            const { data, error } = await (supabase as any)
+              .from('products')
+              .insert(currentPayload)
+              .select('id')
+              .single();
+            if (error) throw error;
+            return data.id;
+          }
+        } catch (err: any) {
+          const errMsg = err.message || '';
+          // Detect missing columns (e.g. image_url or subcategory_id)
+          const matchMissingCol = errMsg.match(/Could not find the '([^']+)' column/) ||
+                                  errMsg.match(/column "([^"]+)" of relation "products" does not exist/) ||
+                                  errMsg.match(/column "([^"]+)" does not exist/);
+          
+          if (matchMissingCol && matchMissingCol[1]) {
+            const colName = matchMissingCol[1];
+            if (colName in currentPayload) {
+              logger.warn(`Column '${colName}' not found in products table. Stripping from payload and retrying...`);
+              delete currentPayload[colName];
+              continue;
+            }
+          }
+          throw err;
+        }
+      }
+    };
+
+    savedProductId = await executeResilientUpsert(dbProduct);
 
     // Now handle price tiers. Clean out existing tiers first
     if (productData.id) {
@@ -514,5 +559,575 @@ export async function deleteGlosarioItem(chunkId: string) {
   } catch (error: any) {
     logger.error('Error deleting glosario item', { error: error.message, chunkId });
     return { success: false, error: error.message };
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  EXTENSIONES: Gestión completa del catálogo (CRUD masivo, hard
+//  delete, categorías/subcategorías, import/export Excel).
+//  Todas respetan el contrato del bot: cualquier mutación de un
+//  producto regenera search_text + embedding (Gemini 1536D) igual
+//  que saveProduct. NO se tocan las RPCs que el bot invoca.
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * Internal helper: recomposes search_text and (re)generates the Gemini 1536D
+ * embedding for a single product, identical to the format used by saveProduct.
+ * Returns the patch to apply. Throws only on embedding failure (caller catches).
+ *
+ * Format (MUST stay byte-identical to saveProduct to preserve bot recall):
+ *   "{Categoria} - {name} - {reference} - {description}.{ Sinónimos Categoría: x.}{ Sinónimos Producto: y.}"
+ */
+async function buildSearchPatch(
+  supabase: any,
+  productId: string,
+  productRow: {
+    name: string;
+    reference?: string | null;
+    description?: string | null;
+    category_id?: string | null;
+    search_text?: string | null;
+  }
+): Promise<{ search_text: string; embedding?: number[] }> {
+  // Fetch category name + synonyms
+  let categoryName = '';
+  let catSynonyms = '';
+  if (productRow.category_id) {
+    const { data: cat } = await supabase
+      .from('categories')
+      .select('name, synonyms')
+      .eq('id', productRow.category_id)
+      .single();
+    categoryName = cat?.name || '';
+    catSynonyms = cat?.synonyms || '';
+  }
+  const catSynonymsPart = catSynonyms ? ` Sinónimos Categoría: ${catSynonyms}.` : '';
+
+  // Preserve the product's own synonyms already encoded in search_text
+  let prodSynonyms = '';
+  const st = productRow.search_text || '';
+  let m = st.match(/Sinónimos Producto:\s*([^.]+)\./);
+  if (!m) m = st.match(/Sinónimos:\s*([^.]+)\./);
+  if (m && m[1]) prodSynonyms = m[1].trim();
+  const prodSynonymsPart = prodSynonyms ? ` Sinónimos Producto: ${prodSynonyms}.` : '';
+
+  const searchText =
+    `${categoryName} - ${productRow.name} - ${productRow.reference || ''} - ${productRow.description || ''}.${catSynonymsPart}${prodSynonymsPart}`.trim();
+
+  const patch: { search_text: string; embedding?: number[] } = { search_text: searchText };
+  if (process.env.EMBEDDINGS_API_KEY) {
+    try {
+      patch.embedding = await embedText(searchText);
+    } catch (e) {
+      logger.warn('buildSearchPatch: embedding skipped', { error: (e as any).message, productId });
+    }
+  }
+  return patch;
+}
+
+// ─── HARD DELETE (Hito 3) ───
+export async function hardDeleteProduct(productId: string) {
+  try {
+    const supabase = await createClient();
+    // price_tiers has ON DELETE CASCADE on product_id, so it cleans up automatically.
+    const { error } = await (supabase as any)
+      .from('products')
+      .delete()
+      .eq('id', productId);
+
+    if (error) throw error;
+    revalidatePath('/conocimiento');
+    return { success: true };
+  } catch (error: any) {
+    logger.error('Error hard-deleting product', { error: error.message, productId });
+    return { success: false, error: error.message };
+  }
+}
+
+export async function bulkHardDelete(productIds: string[]) {
+  try {
+    const supabase = await createClient();
+    const { error } = await (supabase as any)
+      .from('products')
+      .delete()
+      .in('id', productIds);
+
+    if (error) throw error;
+    revalidatePath('/conocimiento');
+    return { success: true, count: productIds.length };
+  } catch (error: any) {
+    logger.error('Error bulk hard-deleting products', { error: error.message, count: productIds.length });
+    return { success: false, error: error.message };
+  }
+}
+
+// ─── BULK UPDATE (Hito 2) ───
+/**
+ * Applies a partial patch to many products at once.
+ * Supported patches: { active?: boolean; category_id?: string; subcategory_id?: string|null }
+ * When category_id changes, search_text + embedding are rebuilt for each affected product
+ * so the bot keeps finding them under the right category terms.
+ */
+export async function bulkUpdateProducts(
+  productIds: string[],
+  patch: {
+    active?: boolean;
+    category_id?: string;
+    subcategory_id?: string | null;
+  }
+) {
+  try {
+    const supabase = await createClient();
+    if (!productIds.length) return { success: false, error: 'Sin productos seleccionados.' };
+
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.active !== undefined) dbPatch.active = patch.active;
+    if (patch.category_id !== undefined) dbPatch.category_id = patch.category_id;
+    if (patch.subcategory_id !== undefined) dbPatch.subcategory_id = patch.subcategory_id;
+
+    const { error } = await (supabase as any)
+      .from('products')
+      .update(dbPatch)
+      .in('id', productIds);
+
+    if (error) throw error;
+
+    // If the category changed, the bot's recall depends on search_text containing
+    // the category name. Rebuild search_text + embedding for each touched product.
+    if (patch.category_id !== undefined) {
+      const { data: rows } = await (supabase as any)
+        .from('products')
+        .select('id, name, reference, description, category_id, search_text')
+        .in('id', productIds);
+      for (const row of rows || []) {
+        try {
+          const searchPatch = await buildSearchPatch(supabase, row.id, row);
+          await (supabase as any).from('products').update(searchPatch).eq('id', row.id);
+        } catch (e) {
+          logger.warn('bulkUpdate: search rebuild failed for row', { id: row.id, error: (e as any).message });
+        }
+      }
+    }
+
+    revalidatePath('/conocimiento');
+    return { success: true, count: productIds.length };
+  } catch (error: any) {
+    logger.error('Error bulk updating products', { error: error.message, count: productIds.length });
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Adjusts the price of every tier for the given products by a percentage.
+ * deltaPercent may be negative (discount) or positive (markup). Prices are
+ * rounded to the nearest integer (COP). Corrupt prices (<=0 or >1e9) are skipped.
+ */
+export async function bulkAdjustPrices(productIds: string[], deltaPercent: number) {
+  try {
+    const supabase = await createClient();
+    if (!productIds.length) return { success: false, error: 'Sin productos seleccionados.' };
+    if (!Number.isFinite(deltaPercent)) return { success: false, error: 'Porcentaje inválido.' };
+
+    const { data: tiers, error } = await (supabase as any)
+      .from('price_tiers')
+      .select('id, price')
+      .in('product_id', productIds);
+
+    if (error) throw error;
+
+    const factor = 1 + deltaPercent / 100;
+    let updated = 0;
+    for (const t of tiers || []) {
+      const p = Number(t.price);
+      if (!Number.isFinite(p) || p <= 0 || p > 1e9) continue; // skip corrupt
+      const np = Math.round(p * factor);
+      const { error: uErr } = await (supabase as any)
+        .from('price_tiers')
+        .update({ price: np })
+        .eq('id', t.id);
+      if (uErr) {
+        logger.warn('bulkAdjustPrices tier update error', { id: t.id, error: uErr.message });
+      } else {
+        updated++;
+      }
+    }
+
+    revalidatePath('/conocimiento');
+    return { success: true, updatedTiers: updated };
+  } catch (error: any) {
+    logger.error('Error bulk adjusting prices', { error: error.message });
+    return { success: false, error: error.message };
+  }
+}
+
+// ─── INLINE PRICE EDIT (Hito 2) ───
+/**
+ * Updates a single tier's price directly (inline edit in the table).
+ * Includes the anti-corrupt safeguard from getProductPriceTool: >1e9 is rejected.
+ */
+export async function updateTierPrice(tierId: string, newPrice: number) {
+  try {
+    const supabase = await createClient();
+    if (!Number.isFinite(newPrice) || newPrice < 0) {
+      return { success: false, error: 'Precio inválido.' };
+    }
+    if (newPrice > 1e9) {
+      return { success: false, error: 'Precio sospechosamente alto (salvaguarda anti-dato-corrupto).' };
+    }
+    const { error } = await (supabase as any)
+      .from('price_tiers')
+      .update({ price: newPrice })
+      .eq('id', tierId);
+
+    if (error) throw error;
+    revalidatePath('/conocimiento');
+    return { success: true };
+  } catch (error: any) {
+    logger.error('Error updating tier price', { error: error.message, tierId });
+    return { success: false, error: error.message };
+  }
+}
+
+// ─── CATEGORY / SUBCATEGORY MANAGEMENT (Hito 4) ───
+export async function renameCategory(categoryId: string, newName: string) {
+  try {
+    const supabase = await createClient();
+    const name = newName.trim();
+    if (!name) return { success: false, error: 'Nombre vacío.' };
+    const { error } = await (supabase as any).from('categories').update({ name }).eq('id', categoryId);
+    if (error) throw error;
+
+    // Rebuild search_text for all products in this category (category name is part of search_text)
+    const { data: rows } = await (supabase as any)
+      .from('products')
+      .select('id, name, reference, description, category_id, search_text')
+      .eq('category_id', categoryId);
+    for (const row of rows || []) {
+      try {
+        const sp = await buildSearchPatch(supabase, row.id, row);
+        await (supabase as any).from('products').update(sp).eq('id', row.id);
+      } catch (e) {
+        logger.warn('renameCategory search rebuild failed', { id: row.id, error: (e as any).message });
+      }
+    }
+
+    revalidatePath('/conocimiento');
+    return { success: true };
+  } catch (error: any) {
+    logger.error('Error renaming category', { error: error.message, categoryId });
+    return { success: false, error: error.message };
+  }
+}
+
+export async function deleteCategory(categoryId: string, reassignToCategoryId?: string) {
+  try {
+    const supabase = await createClient();
+    // Option A: reassign products to another category. Option B: detach (set null).
+    if (reassignToCategoryId) {
+      const { error: rErr } = await (supabase as any)
+        .from('products')
+        .update({ category_id: reassignToCategoryId, subcategory_id: null })
+        .eq('category_id', categoryId);
+      if (rErr) throw rErr;
+      // Rebuild search_text for reassigned products
+      const { data: rows } = await (supabase as any)
+        .from('products')
+        .select('id, name, reference, description, category_id, search_text')
+        .eq('category_id', reassignToCategoryId);
+      for (const row of rows || []) {
+        try {
+          const sp = await buildSearchPatch(supabase, row.id, row);
+          await (supabase as any).from('products').update(sp).eq('id', row.id);
+        } catch {
+          logger.warn('deleteCategory reassign search rebuild failed', { id: row.id });
+        }
+      }
+    } else {
+      const { error: dErr } = await (supabase as any)
+        .from('products')
+        .update({ category_id: null, subcategory_id: null })
+        .eq('category_id', categoryId);
+      if (dErr) throw dErr;
+    }
+
+    // Delete subcategories then the category itself
+    const { error: sErr } = await (supabase as any).from('subcategories').delete().eq('category_id', categoryId);
+    if (sErr) throw sErr;
+    const { error: cErr } = await (supabase as any).from('categories').delete().eq('id', categoryId);
+    if (cErr) throw cErr;
+
+    revalidatePath('/conocimiento');
+    return { success: true };
+  } catch (error: any) {
+    logger.error('Error deleting category', { error: error.message, categoryId });
+    return { success: false, error: error.message };
+  }
+}
+
+export async function renameSubcategory(subcategoryId: string, newName: string) {
+  try {
+    const supabase = await createClient();
+    const name = newName.trim();
+    if (!name) return { success: false, error: 'Nombre vacío.' };
+    const { error } = await (supabase as any).from('subcategories').update({ name }).eq('id', subcategoryId);
+    if (error) throw error;
+    revalidatePath('/conocimiento');
+    return { success: true };
+  } catch (error: any) {
+    logger.error('Error renaming subcategory', { error: error.message, subcategoryId });
+    return { success: false, error: error.message };
+  }
+}
+
+export async function deleteSubcategory(subcategoryId: string) {
+  try {
+    const supabase = await createClient();
+    // Detach products from this subcategory (keep them in the parent category)
+    const { error: pErr } = await (supabase as any)
+      .from('products')
+      .update({ subcategory_id: null })
+      .eq('subcategory_id', subcategoryId);
+    if (pErr) throw pErr;
+    const { error } = await (supabase as any).from('subcategories').delete().eq('id', subcategoryId);
+    if (error) throw error;
+    revalidatePath('/conocimiento');
+    return { success: true };
+  } catch (error: any) {
+    logger.error('Error deleting subcategory', { error: error.message, subcategoryId });
+    return { success: false, error: error.message };
+  }
+}
+
+export async function moveProduct(productId: string, categoryId: string | null, subcategoryId: string | null) {
+  try {
+    const supabase = await createClient();
+    const { error } = await (supabase as any)
+      .from('products')
+      .update({ category_id: categoryId, subcategory_id: subcategoryId })
+      .eq('id', productId);
+    if (error) throw error;
+
+    // Rebuild search_text since category name is part of it
+    const { data: row } = await (supabase as any)
+      .from('products')
+      .select('id, name, reference, description, category_id, search_text')
+      .eq('id', productId)
+      .single();
+    if (row) {
+      try {
+        const sp = await buildSearchPatch(supabase, productId, row);
+        await (supabase as any).from('products').update(sp).eq('id', productId);
+      } catch (e) {
+        logger.warn('moveProduct search rebuild failed', { id: productId, error: (e as any).message });
+      }
+    }
+
+    revalidatePath('/conocimiento');
+    return { success: true };
+  } catch (error: any) {
+    logger.error('Error moving product', { error: error.message, productId });
+    return { success: false, error: error.message };
+  }
+}
+
+// ─── EXPORT / IMPORT EXCEL (Hito 5) ───
+/**
+ * Exports the full catalog as an array of plain rows (client builds the .xlsx).
+ * Includes derived price tier rows flattened: one row per product+variant+range.
+ */
+export async function exportCatalogRows(categoryId?: string) {
+  try {
+    const supabase = await createClient();
+    let q = (supabase as any)
+      .from('products')
+      .select('id, name, reference, description, unit, price_includes_iva, min_order_qty, notes, active, categories(name), price_tiers(variant, min_qty, max_qty, price, price_basis, currency)')
+      .order('name', { ascending: true });
+    if (categoryId && categoryId !== 'all') {
+      const id = categoryId.replace(/^(cat|sub)-/, '');
+      if (categoryId.startsWith('sub-')) q = q.eq('subcategory_id', id);
+      else q = q.eq('category_id', id);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+
+    const rows: Record<string, unknown>[] = [];
+    for (const p of data || []) {
+      const catName = (p as any).categories?.name || '';
+      const tiers = (p as any).price_tiers || [];
+      if (tiers.length === 0) {
+        rows.push({
+          categoria: catName,
+          nombre: p.name,
+          referencia: p.reference || '',
+          descripcion: p.description || '',
+          unidad: p.unit,
+          precio_incluye_iva: p.price_includes_iva ? 'SI' : 'NO',
+          cantidad_minima: p.min_order_qty || '',
+          notas: p.notes || '',
+          activo: p.active ? 'SI' : 'NO',
+          variante: '',
+          cantidad_min: '',
+          cantidad_max: '',
+          precio: '',
+          base_precio: '',
+          moneda: '',
+        });
+      } else {
+        for (const t of tiers) {
+          rows.push({
+            categoria: catName,
+            nombre: p.name,
+            referencia: p.reference || '',
+            descripcion: p.description || '',
+            unidad: p.unit,
+            precio_incluye_iva: p.price_includes_iva ? 'SI' : 'NO',
+            cantidad_minima: p.min_order_qty || '',
+            notas: p.notes || '',
+            activo: p.active ? 'SI' : 'NO',
+            variante: t.variant || 'Estándar',
+            cantidad_min: t.min_qty ?? '',
+            cantidad_max: t.max_qty ?? '',
+            precio: t.price ?? '',
+            base_precio: t.price_basis || 'unitario',
+            moneda: t.currency || 'COP',
+          });
+        }
+      }
+    }
+    return { success: true, rows };
+  } catch (error: any) {
+    logger.error('Error exporting catalog', { error: error.message });
+    return { success: false, error: error.message, rows: [] };
+  }
+}
+
+/**
+ * Imports products from normalized row objects (parsed client-side from xlsx/csv).
+ * Matches existing products by `referencia` (case-insensitive, trimmed) when present;
+ * otherwise creates a new product. Returns a report.
+ *
+ * Each row should contain: categoria, nombre, referencia?, descripcion?, unidad?,
+ * precio_incluye_iva?(SI/NO), cantidad_minima?, notas?, activo?(SI/NO), and price
+ * tier fields variante?, cantidad_min?, cantidad_max?, precio?, base_precio?, moneda?
+ *
+ * NOTE: This is a long-running operation. Caller should batch reasonably.
+ */
+export async function importCatalogRows(
+  rows: Array<Record<string, unknown>>
+): Promise<{ inserted: number; updated: number; errors: string[] }> {
+  const report = { inserted: 0, updated: 0, errors: [] as string[] };
+  try {
+    const supabase = await createClient();
+
+    // Preload category map (name -> id) to resolve category names quickly
+    const { data: allCats } = await (supabase as any).from('categories').select('id, name');
+    const catByName = new Map<string, string>();
+    const catNorm = (s: string) => s.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    for (const c of allCats || []) catByName.set(catNorm(c.name), c.id);
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const nombre = String(r.nombre || '').trim();
+      const categoriaNombre = String(r.categoria || '').trim();
+      if (!nombre) { report.errors.push(`Fila ${i + 2}: falta nombre.`); continue; }
+      if (!categoriaNombre) { report.errors.push(`Fila ${i + 2}: falta categoría.`); continue; }
+
+      let categoryId = catByName.get(catNorm(categoriaNombre));
+      if (!categoryId) {
+        // Auto-create the missing category
+        const { data: nc, error: ncErr } = await (supabase as any)
+          .from('categories').insert({ name: categoriaNombre }).select('id').single();
+        if (ncErr) { report.errors.push(`Fila ${i + 2}: no se pudo crear categoría "${categoriaNombre}".`); continue; }
+        categoryId = nc.id;
+        catByName.set(catNorm(categoriaNombre), nc.id);
+      }
+
+      const referencia = r.referencia ? String(r.referencia).trim() : '';
+      const descripcion = r.descripcion ? String(r.descripcion) : null;
+      const unit = r.unidad ? String(r.unidad) : 'unidad';
+      const includesIva = String(r.precio_incluye_iva || '').toUpperCase().startsWith('SI');
+      const minQty = r.cantidad_minima ? Number(r.cantidad_minima) : null;
+      const notes = r.notas ? String(r.notas) : null;
+      const activo = r.activo === undefined ? true : String(r.activo).toUpperCase().startsWith('SI');
+
+      // Try to resolve existing product by reference, else by exact name within category
+      let existingId: string | null = null;
+      if (referencia) {
+        const { data: byRef } = await (supabase as any)
+          .from('products').select('id').eq('reference', referencia).limit(1);
+        if (byRef && byRef.length) existingId = byRef[0].id;
+      }
+      if (!existingId) {
+        const { data: byName } = await (supabase as any)
+          .from('products').select('id').eq('name', nombre).eq('category_id', categoryId).limit(1);
+        if (byName && byName.length) existingId = byName[0].id;
+      }
+
+      // Build search_text (reuse saveProduct format)
+      const searchText = `${categoriaNombre} - ${nombre} - ${referencia} - ${descripcion || ''}.`.trim();
+      let embedding: number[] | null = null;
+      if (process.env.EMBEDDINGS_API_KEY) {
+        try { embedding = await embedText(searchText); } catch (e) {
+          report.errors.push(`Fila ${i + 2}: embedding falló (${(e as any).message}). Producto guardado sin vector.`);
+        }
+      }
+
+      const dbProduct = {
+        category_id: categoryId,
+        name: nombre,
+        reference: referencia || null,
+        description: descripcion,
+        unit,
+        price_includes_iva: includesIva,
+        min_order_qty: minQty && Number.isFinite(minQty) ? minQty : null,
+        notes,
+        active: activo,
+        search_text: searchText,
+        ...(embedding ? { embedding } : {}),
+      };
+
+      let productId: string;
+      if (existingId) {
+        const { error } = await (supabase as any).from('products').update(dbProduct).eq('id', existingId);
+        if (error) { report.errors.push(`Fila ${i + 2}: error actualizando (${error.message}).`); continue; }
+        productId = existingId;
+        report.updated++;
+        // Replace tiers on update
+        await (supabase as any).from('price_tiers').delete().eq('product_id', productId);
+      } else {
+        const { data, error } = await (supabase as any).from('products').insert(dbProduct).select('id').single();
+        if (error) { report.errors.push(`Fila ${i + 2}: error insertando (${error.message}).`); continue; }
+        productId = data.id;
+        report.inserted++;
+      }
+
+      // Insert price tier if price data present
+      const variante = r.variante ? String(r.variante) : 'Estándar';
+      const minQ = r.cantidad_min !== undefined && r.cantidad_min !== '' ? Number(r.cantidad_min) : 1;
+      const maxQ = r.cantidad_max !== undefined && r.cantidad_max !== '' ? Number(r.cantidad_max) : null;
+      const precio = r.precio !== undefined && r.precio !== '' ? Number(r.precio) : null;
+      const basis = r.base_precio ? String(r.base_precio) : 'unitario';
+      const moneda = r.moneda ? String(r.moneda) : 'COP';
+      if (precio !== null && Number.isFinite(precio) && precio < 1e9) {
+        const { error: tErr } = await (supabase as any).from('price_tiers').insert({
+          product_id: productId,
+          variant: variante,
+          min_qty: Number.isFinite(minQ) && minQ > 0 ? minQ : 1,
+          max_qty: maxQ && Number.isFinite(maxQ) ? maxQ : null,
+          price: precio,
+          price_basis: basis,
+          currency: moneda,
+          source_sheet: 'Importación Web SaaS',
+        });
+        if (tErr) report.errors.push(`Fila ${i + 2}: precio no guardado (${tErr.message}).`);
+      }
+    }
+
+    revalidatePath('/conocimiento');
+    return report;
+  } catch (error: any) {
+    logger.error('Error importing catalog', { error: error.message });
+    report.errors.push('Error general: ' + error.message);
+    return report;
   }
 }

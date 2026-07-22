@@ -13,6 +13,8 @@ import {
   List,
   X,
   Kanban,
+  Pulse,
+  Cpu,
 } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { logoutAction } from '@/lib/auth/actions';
@@ -25,6 +27,13 @@ const navItems = [
   { href: '/personalizacion', label: 'Personalización', icon: SlidersHorizontal },
   { href: '/integraciones', label: 'Integraciones', icon: Plugs },
 ];
+
+// /lineas es una herramienta de administración sutil: no aparece como sección
+// principal. Se accede por un ícono pequeño (sin texto) en el pie del sidebar,
+// separado del botón "Cerrar sesión" por un divisor para evitar clics por error.
+function isLineasActive(pathname: string) {
+  return pathname === '/lineas' || pathname.startsWith('/lineas/');
+}
 
 export function Sidebar({ orgName }: { orgName?: string }) {
   const pathname = usePathname();
@@ -97,12 +106,55 @@ export function Sidebar({ orgName }: { orgName?: string }) {
 
         {/* Footer */}
         <div className="p-3 mt-auto">
-          <form action={logoutAction}>
-            <button type="submit" className="sidebar-link w-full text-left hover:text-rose-400">
-              <SignOut size={20} />
-              Cerrar sesión
-            </button>
-          </form>
+          {/* Divisor que separa claramente el pie del sidebar */}
+          <div className="border-t border-white/5 my-2" />
+
+          <div className="flex items-center justify-between px-1">
+            {/* Controles técnicos ocultos (Líneas y Centro de Operaciones) */}
+            <div className="flex items-center gap-2">
+              {/* Ícono de Líneas */}
+              <Link
+                href="/lineas"
+                onClick={() => setMobileOpen(false)}
+                title="Líneas de WhatsApp"
+                aria-label="Líneas"
+                className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                  isLineasActive(pathname)
+                    ? 'bg-primary-500/20 text-primary-300'
+                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                }`}
+              >
+                <Pulse size={18} weight={isLineasActive(pathname) ? 'fill' : 'regular'} />
+              </Link>
+
+              {/* Ícono oculto del Centro de Control (para el desarrollador/líder) */}
+              <Link
+                href="/control-room"
+                onClick={() => setMobileOpen(false)}
+                title="Centro de Control"
+                aria-label="Centro de Control"
+                className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                  pathname === '/control-room' || pathname.startsWith('/control-room/')
+                    ? 'bg-primary-500/20 text-primary-300'
+                    : 'text-slate-600/30 hover:text-slate-300 hover:bg-white/5'
+                }`}
+              >
+                <Cpu size={18} weight={pathname === '/control-room' || pathname.startsWith('/control-room/') ? 'fill' : 'regular'} />
+              </Link>
+            </div>
+
+            {/* Cerrar sesión como ícono minimalista al extremo derecho */}
+            <form action={logoutAction} className="m-0">
+              <button
+                type="submit"
+                title="Cerrar sesión"
+                aria-label="Cerrar sesión"
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <SignOut size={18} />
+              </button>
+            </form>
+          </div>
         </div>
       </aside>
     </>

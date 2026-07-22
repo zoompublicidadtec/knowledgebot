@@ -16,6 +16,8 @@ export interface NormalizedMessage {
   } | null;
   customerName?: string;
   fromMe?: boolean;
+  mediaError?: boolean;
+  mediaType?: string;
 }
 
 /** WhatsApp provider type */

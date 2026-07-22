@@ -5,6 +5,8 @@ import { logger } from '@/lib/logger';
 import type { NormalizedMessage } from './config';
 import type { WhatsAppConfig, AgentConfig } from '@/lib/database.types';
 import { transcribeAudio } from './transcribe';
+import { describeImage } from './describe-image';
+import { logLineError } from './log-line-error';
 
 interface ProcessResult {
   success: boolean;
@@ -166,18 +168,98 @@ export async function processInboundMessage(
       logger.error('Error syncing history from WhatsApp web bridge', { error: String(historyErr) });
     }
 
-    // 3. Transcribe audio message if present
+    // 3. Process media message if present (audio transcription / image description 100% in-memory)
     if (message.media && message.media.data) {
-      try {
-        const transcribedText = await transcribeAudio(message.media.data, message.media.mimetype);
-        if (transcribedText) {
-          message.text = transcribedText;
-        } else {
-          message.text = '[Mensaje de voz sin transcripción disponible]';
+      const mimetype = message.media.mimetype || '';
+
+      if (mimetype.startsWith('audio/')) {
+        try {
+          const transcribedText = await transcribeAudio(message.media.data, mimetype);
+          if (transcribedText) {
+            message.text = transcribedText;
+          } else {
+            message.text = '[Mensaje de voz sin transcripción disponible]';
+            if (lineKey) {
+              await logLineError({
+                lineKey,
+                orgId,
+                errorType: 'transcription',
+                severity: 'warn',
+                message: 'Transcripción devolvió texto vacío (audio inaudible o muy corto)',
+                context: { mimetype, messageId: message.messageId },
+              });
+            }
+          }
+        } catch (err) {
+          logger.error('Error transcribing incoming WhatsApp audio message', { error: String(err) });
+          message.text = '[Error al procesar mensaje de voz]';
+          if (lineKey) {
+            await logLineError({
+              lineKey,
+              orgId,
+              errorType: 'transcription',
+              severity: 'error',
+              message: `Error transcribiendo audio: ${String(err).slice(0, 300)}`,
+              context: { mimetype, messageId: message.messageId },
+            });
+          }
         }
-      } catch (err) {
-        logger.error('Error transcribing incoming WhatsApp audio message', { error: String(err) });
-        message.text = '[Error al procesar mensaje de voz]';
+      } else if (mimetype.startsWith('image/')) {
+        try {
+          const imageDescription = await describeImage(message.media.data, mimetype);
+          if (imageDescription) {
+            if (message.text) {
+              message.text = `${message.text}\n\n[Imagen adjunta de cliente: ${imageDescription}]`;
+            } else {
+              message.text = `[Imagen adjunta de cliente: ${imageDescription}]`;
+            }
+          } else {
+            message.text = message.text || '[Imagen sin descripción disponible]';
+          }
+        } catch (err) {
+          logger.error('Error describing incoming WhatsApp image message with Gemini', { error: String(err) });
+          message.text = message.text || '[Imagen]';
+          if (lineKey) {
+            await logLineError({
+              lineKey,
+              orgId,
+              errorType: 'describe_image',
+              severity: 'error',
+              message: `Error analizando imagen con Gemini: ${String(err).slice(0, 300)}`,
+              context: { mimetype, messageId: message.messageId },
+            });
+          }
+        }
+      } else {
+        if (!message.text) {
+          message.text = '[Archivo adjunto]';
+        }
+      }
+    } else if (message.mediaError) {
+      const type = message.mediaType || '';
+      let errorPromptText = '[El cliente envió un archivo adjunto pero no se pudo descargar en este momento. Por favor dile de forma amable que no pudiste abrir el archivo y pídele que te describa lo que necesita por texto para cotizarle de inmediato.]';
+      
+      if (type === 'image') {
+        errorPromptText = '[El cliente envió una imagen pero el archivo no pudo ser abierto en este momento. Por favor dile de forma amable que no pudiste ver la foto y pídele que te la describa en texto para cotizarle de inmediato.]';
+      } else if (type === 'audio' || type === 'ptt') {
+        errorPromptText = '[El cliente envió una nota de voz pero el archivo de audio no pudo ser abierto. Por favor dile de forma amable que no pudiste escuchar el audio y pídele que te escriba su consulta por texto para responderle de inmediato.]';
+      }
+
+      if (message.text) {
+        message.text = `${message.text}\n\n${errorPromptText}`;
+      } else {
+        message.text = errorPromptText;
+      }
+
+      if (lineKey) {
+        await logLineError({
+          lineKey,
+          orgId,
+          errorType: 'media_download',
+          severity: 'warn',
+          message: `Media no disponible tras reintentos (type=${type})`,
+          context: { messageId: message.messageId, mediaType: type },
+        });
       }
     }
 

@@ -1,7 +1,7 @@
 import { tool, jsonSchema } from 'ai';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createAdminClient } from '../../supabase/admin';
 import { createAdapter } from '@/lib/whatsapp/adapter';
-import { logger } from '@/lib/logger';
+import { logger } from '../../logger';
 
 interface ToolContext {
   orgId: string;

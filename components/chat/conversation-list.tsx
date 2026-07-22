@@ -50,10 +50,30 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
     setConversations(list);
   }, [list]);
 
-  // Real-time: auto-update sidebar when new messages arrive
+  // Real-time: auto-update sidebar when new messages arrive or new conversations created
   useEffect(() => {
     const channel = supabase
       .channel('sidebar_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'conversations' },
+        async (payload) => {
+          // New conversation from a new client — fetch full data with contact info
+          const { data } = await supabase
+            .from('conversations')
+            .select('id, bot_active, last_message_at, line_key, contacts(full_name, wa_phone)')
+            .eq('id', payload.new.id)
+            .single();
+          if (data) {
+            const newConv = data as unknown as ConversationItem;
+            setConversations((prev) => {
+              // Avoid duplicates
+              if (prev.some((c) => c.id === newConv.id)) return prev;
+              return [newConv, ...prev];
+            });
+          }
+        }
+      )
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
@@ -161,9 +181,17 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
                         />
                       )}
                     </div>
-                    <span className="text-[10px] text-slate-500" suppressHydrationWarning>
-                      {new Date(conv.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                      {contact?.wa_phone && (
+                        <>
+                          <span suppressHydrationWarning>{contact.wa_phone}</span>
+                          <span>•</span>
+                        </>
+                      )}
+                      <span suppressHydrationWarning>
+                        {new Date(conv.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

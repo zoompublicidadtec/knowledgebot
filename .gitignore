@@ -87,3 +87,25 @@ catalogo_catalogospromocionales/
 catalogo.tar.gz
 Motor de Conocimiento/data/checkpoints/
 Motor de Conocimiento/data/embeddings/
+
+# === P0 (22-Jul-2026): exclusiones de seguridad para snapshot de producción ===
+
+# Sesiones de WhatsApp (tokens de auth — JAMÁS commitear)
+/wwebjs_sessions/
+/baileys_sessions/
+wa-server/.wwebjs_auth/
+
+# Backups manuales (historial en disco, no en git)
+*.bak
+*.bak.*
+
+# Logs de build y debug sueltos
+build*.log
+HISTORIAL_ELIMINADO.md
+
+# Datos locales del Motor de Conocimiento (viven en el VPS, no en git)
+Motor de Conocimiento/data/products/*.bak
+Motor de Conocimiento/logs/
+
+# Scratch y snapshots locales
+/scratch/

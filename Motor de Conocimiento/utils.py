@@ -272,10 +272,12 @@ def truncate_text(text: str, max_chars: int = 30000) -> str:
 # ============================================================================
 
 def save_json(data: Any, filepath: Path, pretty: bool = True) -> None:
-    """Guarda datos como JSON con encoding UTF-8."""
+    """Guarda datos como JSON con encoding UTF-8 de forma atómica."""
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    with open(filepath, "w", encoding="utf-8") as f:
+    temp_filepath = filepath.with_suffix(filepath.suffix + ".tmp")
+    with open(temp_filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2 if pretty else None, ensure_ascii=False)
+    temp_filepath.replace(filepath)
 
 
 def load_json(filepath: Path) -> Any:

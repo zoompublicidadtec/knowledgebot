@@ -6,7 +6,6 @@ build
 .gitignore
 .env
 .env.local
-.env.production
 *.tsbuildinfo
 next-env.d.ts
 npm-debug.log*
@@ -21,3 +20,4 @@ system_prompt_debug.txt
 scratch
 catalog
 
+catalogo_catalogospromocionales

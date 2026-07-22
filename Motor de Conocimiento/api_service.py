@@ -55,6 +55,10 @@ class ProductResponse(BaseModel):
     subcategory: str
     price: Optional[str] = None
     description: str
+    # Instrucciones comerciales opcionales que viajan con el producto
+    # (ej. cuadernos: lógica de venta cruzada, cuál es premium). Genérico:
+    # cualquier producto futuro puede usarlo. Vacío si no aplica.
+    instrucciones_venta: str = ""
     stock: int
     has_stock: bool
     image_urls: List[str] = []
@@ -82,6 +86,7 @@ def normalize_image_path(absolute_path: str) -> str:
 @app.post("/query", response_model=QueryResponse)
 async def query_rag(request: QueryRequest):
     try:
+        print(f"[API DEBUG] Request query: '{request.query}', top_k parameter: {request.top_k}")
         # Ejecutar consulta en el motor RAG
         # Habilitar use_local=True ya que usamos los embeddings locales indexados
         raw_result = rag_query_engine.query(
@@ -90,6 +95,7 @@ async def query_rag(request: QueryRequest):
             top_k=request.top_k or 5,
             custom_filters=request.filters
         )
+        print(f"[API DEBUG] Query engine returned {len(raw_result.get('sources', []))} sources")
         
         # Cargar catálogo completo para recuperar imágenes y metadatos adicionales
         products_file = PRODUCTS_JSON_DIR / "all_products.json"
@@ -119,8 +125,9 @@ async def query_rag(request: QueryRequest):
                 name=prod_detail.get("name", ""),
                 category=prod_detail.get("category", ""),
                 subcategory=prod_detail.get("subcategory", ""),
-                price=prod_detail.get("price"),
+                price=str(prod_detail.get("price")) if prod_detail.get("price") is not None else None,
                 description=prod_detail.get("description", ""),
+                instrucciones_venta=prod_detail.get("instrucciones_venta", "") or "",
                 stock=prod_detail.get("stock", {}).get("total", 0),
                 has_stock=prod_detail.get("stock", {}).get("has_stock", False),
                 image_urls=web_imgs,

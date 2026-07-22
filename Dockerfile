@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy lockfiles and package.json to install dependencies
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm install
 
 # --- STAGE 2: Build the application ---
 FROM node:20-alpine AS builder
@@ -17,6 +17,9 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # Force production environment
 ENV NODE_ENV=production
+# Restrict memory and CPU cores during build to avoid VPS memory exhaustion (SIGKILL)
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV NEXT_CPU_LIMIT=1
 
 RUN npm run build
 

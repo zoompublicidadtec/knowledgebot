@@ -7,6 +7,7 @@ import { getBridgeUrl, bridgeHeaders } from './bridge';
 /** Abstract adapter interface for WhatsApp messaging */
 export interface WhatsAppAdapter {
   sendTextMessage(to: string, text: string): Promise<string | null>;
+  sendMediaMessage(to: string, mediaUrl: string, caption?: string): Promise<string | null>;
   parseInboundMessage(body: Record<string, unknown>): NormalizedMessage | null;
 }
 
@@ -39,6 +40,11 @@ export function createMetaAdapter(config: WhatsAppConfig): WhatsAppAdapter {
         logger.error('Meta send failed', { error: String(err), to });
         return null;
       }
+    },
+
+    async sendMediaMessage(to: string, mediaUrl: string, caption?: string): Promise<string | null> {
+      logger.warn('Meta sendMediaMessage not fully implemented - falling back to text representation', { mediaUrl });
+      return this.sendTextMessage(to, `${caption ? caption + ' ' : ''}${mediaUrl}`);
     },
 
     parseInboundMessage(body: Record<string, unknown>): NormalizedMessage | null {
@@ -93,6 +99,25 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
       }
     },
 
+    async sendMediaMessage(to: string, mediaUrl: string, caption?: string): Promise<string | null> {
+      try {
+        const chatId = to.replace('+', '');
+        const res = await fetch(
+          `${baseUrl}/api/sessions/${sessionId}/messages/send-media`,
+          {
+            method: 'POST',
+            headers: bridgeHeaders(),
+            body: JSON.stringify({ chatId, mediaUrl, caption }),
+          }
+        );
+        const data = await res.json() as { data?: { id?: string } };
+        return data.data?.id ?? `openwa_media_${Date.now()}`;
+      } catch (err) {
+        logger.error('OpenWA send media failed', { error: String(err), to });
+        return null;
+      }
+    },
+
     parseInboundMessage(body: Record<string, unknown>): NormalizedMessage | null {
       try {
         const event = body.event as string;
@@ -107,10 +132,12 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
         const fromMe = !!message.fromMe;
         const text = (message.body as string || message.text as string || '').trim();
         const media = message.media as any;
+        const mediaError = !!message.mediaError;
+        const mediaType = (message.mediaType as string) || (message.type as string) || '';
         
         const contactPhone = fromMe ? toRaw : fromRaw;
         if (!contactPhone) return null;
-        if (!text && !media) return null;
+        if (!text && !media && !mediaError) return null;
 
         return {
           messageId: (message.id as string) || `openwa_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -121,6 +148,8 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
           media: media || null,
           customerName: fromMe ? 'Tú' : (message.customerName as string || ''),
           fromMe,
+          mediaError,
+          mediaType,
         };
       } catch {
         return null;

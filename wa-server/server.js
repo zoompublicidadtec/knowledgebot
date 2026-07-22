@@ -1,5 +1,5 @@
 const express = require('express');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const QRCodeLib = require('qrcode');
 const fs = require('fs');
@@ -228,6 +228,10 @@ app.use((req, res, next) => {
 });
 
 const sessions = new Map();
+// ── NUEVO (seguimiento): conserva info de la ÚLTIMA caída de cada línea,
+// incluso después de que sessions.delete() borra la entrada de memoria.
+// Es solo para diagnóstico/lectura — no afecta la lógica de conexión.
+const lastDisconnectInfo = new Map();
 
 function startSession(sessionName) {
     if (sessions.has(sessionName)) {
@@ -257,6 +261,7 @@ function startSession(sessionName) {
         },
         puppeteer: {
             headless: true,
+            protocolTimeout: 180000, // 3 minutos para prevenir CDP timeouts (Runtime.callFunctionOn)
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -284,7 +289,15 @@ function startSession(sessionName) {
 
     const client = new Client(clientOptions);
 
-    const sessionObj = { client, status: 'initializing', intervalId: null, lastQr: null };
+    const sessionObj = {
+        client, status: 'initializing', intervalId: null, lastQr: null,
+        // ── NUEVO (seguimiento): solo lectura, no afecta la lógica de conexión.
+        connectedAt: null,      // ISO timestamp al pasar a 'connected'
+        phoneNumber: null,      // cachear el teléfono para mostrarlo en el panel
+        lastError: null,        // último mensaje de error (ej. "detached Frame...")
+        lastErrorAt: null,      // cuándo ocurrió ese error
+        keepAliveErrors: 0,     // contador de errores consecutivos del keep-alive
+    };
     sessions.set(sessionName, sessionObj);
 
     // ─── QR ───────────────────────────────────────────────
@@ -309,6 +322,10 @@ function startSession(sessionName) {
         console.log(`==================================================\n`);
 
         sessionObj.status = 'connected';
+        // ── NUEVO (seguimiento): registrar momento de conexión y teléfono.
+        sessionObj.connectedAt = new Date().toISOString();
+        sessionObj.phoneNumber = phone;
+        sessionObj.keepAliveErrors = 0; // reset al reconectar
 
         await callbackToApp('/api/whatsapp-lines/status', { line_key: sessionName, status: 'connected', phone_number: phone });
 
@@ -332,6 +349,16 @@ function startSession(sessionName) {
                 }
             } catch (e) {
                 console.warn(`[${sessionName}] Keep-alive error (no-crash):`, e.message);
+                // ── NUEVO (seguimiento): registrar el error para diagnóstico.
+                // NO detiene, NO recicla — solo anota. El bucle sigue igual que antes.
+                try {
+                    const s = sessions.get(sessionName);
+                    if (s) {
+                        s.lastError = e.message;
+                        s.lastErrorAt = new Date().toISOString();
+                        s.keepAliveErrors = (s.keepAliveErrors || 0) + 1;
+                    }
+                } catch {}
             }
         };
         keepOnline();
@@ -341,6 +368,8 @@ function startSession(sessionName) {
     // ─── DISCONNECTED ─────────────────────────────────────
     client.on('disconnected', async (reason) => {
         console.error(`[${sessionName}] Desconectado. Razón: ${reason}`);
+        // ── NUEVO (seguimiento): conservar info de la caída antes de limpiar.
+        try { lastDisconnectInfo.set(sessionName, { reason: String(reason), at: new Date().toISOString() }); } catch {}
         if (sessionObj.intervalId) clearInterval(sessionObj.intervalId);
         sessions.delete(sessionName);
 
@@ -366,11 +395,36 @@ function startSession(sessionName) {
 
         try {
             let mediaData = null;
-            if (msg.hasMedia && (msg.type === 'audio' || msg.type === 'ptt')) {
-                try {
-                    const media = await msg.downloadMedia();
-                    if (media?.data) mediaData = { data: media.data, mimetype: media.mimetype, filename: media.filename };
-                } catch {}
+            if (msg.hasMedia && (msg.type === 'audio' || msg.type === 'ptt' || msg.type === 'image')) {
+                // Reintento con backoff: el primer intento puede fallar por un
+                // frame efímeramente detached que se recupera. Probamos hasta 2 veces.
+                let lastMediaErr = null;
+                for (let intento = 1; intento <= 2; intento++) {
+                    try {
+                        const media = await msg.downloadMedia();
+                        if (media?.data) {
+                            mediaData = { data: media.data, mimetype: media.mimetype, filename: media.filename };
+                            console.log(`[${sessionName}] Media descargada OK (type=${msg.type}, mimetype=${media.mimetype}, ${Math.round(media.data.length * 3/4 / 1024)}KB, intento=${intento})`);
+                            lastMediaErr = null;
+                            break;
+                        } else {
+                            console.warn(`[${sessionName}] Media sin data tras downloadMedia (type=${msg.type}, intento=${intento})`);
+                        }
+                    } catch (mediaErr) {
+                        lastMediaErr = mediaErr;
+                        // Captura RICA del error para diagnóstico (no solo .message que a veces da 'r').
+                        const errType = mediaErr && mediaErr.constructor ? mediaErr.constructor.name : typeof mediaErr;
+                        const errMsg = mediaErr && mediaErr.message ? mediaErr.message : String(mediaErr);
+                        const errStack = mediaErr && mediaErr.stack ? String(mediaErr.stack).split('\n').slice(0, 3).join(' | ') : '';
+                        console.error(`[${sessionName}] ERROR descargando media (type=${msg.type}, intento=${intento}/${2}): [${errType}] ${errMsg}${errStack ? ' || ' + errStack : ''}`);
+                        if (intento < 2) {
+                            await new Promise(r => setTimeout(r, 2000)); // backoff 2s antes de reintentar
+                        }
+                    }
+                }
+            } else if (msg.hasMedia) {
+                // Tiene media pero no es audio/ptt/image: registramos el tipo para diagnóstico.
+                console.log(`[${sessionName}] Mensaje con media de tipo no procesado: type=${msg.type}, hasMedia=${msg.hasMedia}`);
             }
 
             let customerName = '';
@@ -397,6 +451,8 @@ function startSession(sessionName) {
                             body: msg.body,
                             type: msg.type,
                             media: mediaData,
+                            mediaError: msg.hasMedia && !mediaData,
+                            mediaType: msg.type,
                             customerName,
                         },
                     },
@@ -429,6 +485,41 @@ app.get('/health', (req, res) => {
         status[key] = { status: val.status, hasQr: !!val.lastQr };
     }
     res.json({ ok: true, sessions: status });
+});
+
+// ── NUEVO (seguimiento): diagnóstico detallado por línea. SOLO LECTURA.
+// Devuelve, por cada línea: estado, desde cuándo conectada, último error,
+// contador de errores del keep-alive, y si la sesión persistente existe en disco.
+// No realiza ninguna acción sobre las sesiones — solo observa y reporta.
+app.get('/diagnostic', (req, res) => {
+    const out = {};
+    // 1) Sesiones cargadas en memoria
+    for (const [key, val] of sessions.entries()) {
+        out[key] = {
+            loaded: true,
+            status: val.status,
+            connectedAt: val.connectedAt,
+            phoneNumber: val.phoneNumber,
+            lastError: val.lastError,
+            lastErrorAt: val.lastErrorAt,
+            keepAliveErrors: val.keepAliveErrors || 0,
+            hasQr: !!val.lastQr,
+            sessionOnDisk: fs.existsSync(path.join(SESSION_DATA_PATH, 'session-' + key)),
+        };
+    }
+    // 2) Líneas que cayeron (no están en memoria pero tenemos su última info)
+    for (const [key, info] of lastDisconnectInfo.entries()) {
+        if (!out[key]) {
+            out[key] = {
+                loaded: false,
+                status: 'disconnected',
+                lastDisconnectReason: info.reason,
+                lastErrorAt: info.at,
+                sessionOnDisk: fs.existsSync(path.join(SESSION_DATA_PATH, 'session-' + key)),
+            };
+        }
+    }
+    res.json({ ok: true, sessions: out, bridgeTime: new Date().toISOString() });
 });
 
 // Start a session
@@ -491,6 +582,52 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
         res.json({ data: { id: 'sent_' + Date.now() } });
     } catch (e) {
         console.error(`[${sessionName}] Error al enviar:`, e.message);
+        res.status(500).json({ error: e.toString() });
+        if (e.message?.includes('detached Frame')) {
+            try { sessionObj.client.destroy(); } catch {}
+            if (sessionObj.intervalId) clearInterval(sessionObj.intervalId);
+            sessions.delete(sessionName);
+        }
+    }
+});
+
+// Send media (image/pdf/etc) from URL
+app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
+    const auth = validateApiKey(req, res);
+    if (auth !== true) return;
+    const sessionName = req.params.session;
+    let { chatId, mediaUrl, caption } = req.body;
+
+    if (chatId) {
+        chatId = String(chatId).replace('+', '').replace(/\s/g, '');
+        if (!chatId.includes('@')) chatId = chatId + '@c.us';
+    }
+
+    const sessionObj = sessions.get(sessionName);
+    if (!sessionObj || sessionObj.status !== 'connected') {
+        return res.status(400).json({ error: 'Sesión "' + sessionName + '" no está activa.' });
+    }
+
+    try {
+        const client = sessionObj.client;
+        try {
+            const chat = await client.getChatById(chatId);
+            await chat.sendStateTyping();
+            await new Promise(r => setTimeout(r, 1500));
+            await chat.clearState();
+        } catch {}
+
+        let fullMediaUrl = mediaUrl;
+        if (mediaUrl.startsWith('/')) {
+            fullMediaUrl = APP_URL + mediaUrl;
+        }
+
+        console.log('[' + sessionName + '] Enviando media desde URL: ' + fullMediaUrl);
+        const media = await MessageMedia.fromUrl(fullMediaUrl, { unsafeMime: true });
+        const sentMsg = await client.sendMessage(chatId, media, { caption: caption || '' });
+        res.json({ data: { id: sentMsg?.id?._serialized || ('sent_media_' + Date.now()) } });
+    } catch (e) {
+        console.error('[' + sessionName + '] Error al enviar media:', e.message);
         res.status(500).json({ error: e.toString() });
         if (e.message?.includes('detached Frame')) {
             try { sessionObj.client.destroy(); } catch {}

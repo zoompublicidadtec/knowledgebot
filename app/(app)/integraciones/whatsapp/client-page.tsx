@@ -10,6 +10,8 @@ interface WhatsAppLine {
   phone_number: string | null;
   status: 'disconnected' | 'awaiting_qr' | 'connected';
   qr_code: string | null;
+  isZombie?: boolean;
+  keepAliveErrors?: number;
 }
 
 // Maximum number of WhatsApp lines. Set NEXT_PUBLIC_MAX_WHATSAPP_LINES env to override.
@@ -31,9 +33,33 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
       const res = await fetch('/api/whatsapp-lines');
       if (res.ok) {
         const data: WhatsAppLine[] = await res.json();
+
+        // Consultar el estado de diagnóstico en paralelo para obtener isZombie
+        let diagMap: Record<string, { isZombie: boolean; keepAliveErrors: number }> = {};
+        try {
+          const diagRes = await fetch('/api/whatsapp-lines/diagnostic');
+          if (diagRes.ok) {
+            const diagData = await diagRes.json();
+            (diagData.lines || []).forEach((dl: any) => {
+              diagMap[dl.line_key] = {
+                isZombie: dl.isZombie === true,
+                keepAliveErrors: dl.keepAliveErrors || 0,
+              };
+            });
+          }
+        } catch (e) {
+          // Si el diagnóstico no responde, continuar con datos de la BD
+        }
+
+        const enrichedData = data.map(line => ({
+          ...line,
+          isZombie: diagMap[line.line_key]?.isZombie ?? false,
+          keepAliveErrors: diagMap[line.line_key]?.keepAliveErrors ?? 0,
+        }));
+
         setLines(prev => {
           // Track when lines newly enter awaiting_qr state
-          data.forEach(line => {
+          enrichedData.forEach(line => {
             if (line.status === 'awaiting_qr' && !line.qr_code) {
               if (!awaitingQrSince.current[line.line_key]) {
                 awaitingQrSince.current[line.line_key] = Date.now();
@@ -43,7 +69,7 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
               delete awaitingQrSince.current[line.line_key];
             }
           });
-          return data;
+          return enrichedData;
         });
 
         // Pull-fallback: for VISIBLE lines awaiting QR without one, try fetching directly from bridge.
@@ -313,6 +339,14 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
                     <SpinnerGap size={24} className="animate-spin text-primary-400" />
                     <span className="text-xs">Generando QR...</span>
                     <span className="text-[10px] text-slate-500">Puede tomar 10-30 segundos</span>
+                  </div>
+                ) : line.status === 'connected' && line.isZombie ? (
+                  <div className="flex flex-col items-center gap-2 text-amber-400/90">
+                    <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-1">
+                      <Warning size={24} weight="fill" className="text-amber-400" />
+                    </div>
+                    <span className="text-xs font-semibold text-amber-300">Línea con Advertencia</span>
+                    <span className="text-[10px] text-amber-400/70">Sesión degradada o en timeout</span>
                   </div>
                 ) : line.status === 'connected' ? (
                   <div className="flex flex-col items-center gap-2 text-emerald-400/80">

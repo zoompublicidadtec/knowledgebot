@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { ConversationList } from '@/components/chat/conversation-list';
 import { MessageBubble } from '@/components/chat/message-bubble';
 import { MessageInput } from '@/components/chat/message-input';
 import { toggleBotAction } from '@/lib/conversations/actions';
-import { Robot, SpinnerGap, WarningCircle, UserCircle, ArrowCounterClockwise } from '@phosphor-icons/react';
+import { Robot, SpinnerGap, WarningCircle, UserCircle, ArrowCounterClockwise, ArrowLeft } from '@phosphor-icons/react';
 
 interface ChatClientPageProps {
   conversationId: string;
@@ -46,8 +47,9 @@ export default function ChatClientPage({
 
   // Live real-time subscription for messages and conversation updates
   useEffect(() => {
+    // Unique channel per conversation to avoid collisions
     const channel = supabase
-      .channel('realtime_chat')
+      .channel(`realtime_chat_${conversationId}`)
       .on(
         'postgres_changes',
         {
@@ -59,7 +61,17 @@ export default function ChatClientPage({
         (payload) => {
           if (payload.eventType === 'INSERT') {
             setMessages((prev) => {
-              if (prev.some((m) => m.id === payload.new.id)) return prev;
+              // Si ya lo tenemos en el estado por actualización optimista, lo ignoramos o actualizamos
+              if (prev.some((m) => m.id === payload.new.id || m.wa_message_id === payload.new.wa_message_id)) {
+                return prev;
+              }
+              // Si hay un mensaje temporal optimista con el mismo contenido, lo reemplazamos con el real de Supabase
+              const tempIndex = prev.findIndex((m) => m.id.startsWith('temp_') && m.content === payload.new.content);
+              if (tempIndex !== -1) {
+                const copy = [...prev];
+                copy[tempIndex] = payload.new;
+                return copy;
+              }
               return [...prev, payload.new];
             });
           }
@@ -115,24 +127,45 @@ export default function ChatClientPage({
     });
   }
 
+  function handleOptimisticMessageSent(content: string) {
+    const tempMessage = {
+      id: `temp_${Date.now()}`,
+      conversation_id: conversationId,
+      direction: 'outbound',
+      sender: 'human',
+      content: content,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, tempMessage]);
+  }
+
   return (
     <div className="animate-fade-in h-[calc(100vh-140px)] min-h-[450px] grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Sidebar List (Lg Screen) */}
+      {/* Sidebar List (solo desktop) - en móvil se oculta, se navega con la flecha */}
       <div className="hidden lg:block lg:col-span-1 glass rounded-2xl overflow-hidden h-full">
         <ConversationList list={conversations} />
       </div>
 
-      {/* Main chat window */}
-      <div className="lg:col-span-3 glass rounded-2xl flex flex-col h-full overflow-hidden">
+      {/* Main chat window - full width en móvil */}
+      <div className="col-span-1 lg:col-span-3 glass rounded-2xl flex flex-col h-full overflow-hidden">
         {/* Chat Header */}
         <div className="p-4 border-b border-white/5 bg-slate-950/20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold bg-primary-600/20 text-primary-300">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Back button - solo móvil (flujo tipo WhatsApp: lista -> chat -> volver) */}
+            <Link
+              href="/conversaciones"
+              className="lg:hidden flex-shrink-0 p-2 -ml-1 rounded-full text-slate-300 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
+              title="Volver a la lista de chats"
+              aria-label="Volver"
+            >
+              <ArrowLeft size={22} weight="bold" />
+            </Link>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold bg-primary-600/20 text-primary-300 shrink-0">
               {String(name).charAt(0).toUpperCase()}
             </div>
-            <div>
-              <h2 className="text-sm font-semibold text-white">{name}</h2>
-              <p className="text-[10px]" style={{ color: 'rgba(148, 163, 184, 0.5)' }}>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-white truncate">{name}</h2>
+              <p className="text-[10px] truncate" style={{ color: 'rgba(148, 163, 184, 0.5)' }}>
                 {contact?.wa_phone}
               </p>
             </div>
@@ -213,7 +246,11 @@ export default function ChatClientPage({
         </div>
 
         {/* Message Input */}
-        <MessageInput conversationId={conversationId} contactPhone={contact?.wa_phone || ''} />
+        <MessageInput 
+          conversationId={conversationId} 
+          contactPhone={contact?.wa_phone || ''} 
+          onMessageSent={handleOptimisticMessageSent}
+        />
       </div>
     </div>
   );

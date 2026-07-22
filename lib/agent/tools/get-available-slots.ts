@@ -1,8 +1,8 @@
 import { tool, jsonSchema } from 'ai';
 import { getFreeBusySlots } from '@/lib/google/calendar';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { localToUtc } from '@/lib/timezone';
-import type { BusinessHours, ServiceConfig } from '@/lib/database.types';
+import { createAdminClient } from '../../supabase/admin';
+import { localToUtc } from '../../timezone';
+import type { BusinessHours, ServiceConfig } from '../../database.types';
 
 interface ToolContext {
   orgId: string;

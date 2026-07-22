@@ -40,7 +40,8 @@ export async function middleware(request: NextRequest) {
       request.nextUrl.pathname.startsWith('/kanban') ||
       request.nextUrl.pathname.startsWith('/conocimiento') ||
       request.nextUrl.pathname.startsWith('/personalizacion') ||
-      request.nextUrl.pathname.startsWith('/integraciones')) {
+      request.nextUrl.pathname.startsWith('/integraciones') ||
+      request.nextUrl.pathname.startsWith('/lineas')) {
     if (!user) {
       const url = request.nextUrl.clone();
       url.pathname = '/login';

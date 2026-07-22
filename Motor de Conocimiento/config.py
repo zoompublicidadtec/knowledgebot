@@ -46,12 +46,18 @@ CATALOG_ENTRY_URL = f"{CATALOG_BASE_URL}/seccion/subcategorias.html"
 # 3. GOOGLE CLOUD / GEMINI
 # ============================================================================
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "")
 GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "cataprom-rag-assets")
 
 # Gemini Embedding 2
-EMBEDDING_MODEL = "gemini-embedding-2"
+# Si tenemos una API key de OpenRouter, usamos el id de modelo de OpenRouter.
+if OPENROUTER_API_KEY and OPENROUTER_API_KEY.startswith("sk-or-"):
+    EMBEDDING_MODEL = "google/gemini-embedding-2"
+else:
+    EMBEDDING_MODEL = "gemini-embedding-2"
+
 EMBEDDING_DIMENSIONS = 3072
 EMBEDDING_TASK_TYPE_DOCUMENT = "RETRIEVAL_DOCUMENT"
 EMBEDDING_TASK_TYPE_QUERY = "RETRIEVAL_QUERY"
