@@ -5,7 +5,29 @@ RAG_QUERY_ENGINE.PY — Motor de Consulta RAG con Búsqueda Híbrida
 Recibe query en lenguaje natural → genera embedding → busca vectores
 → filtra metadatos → inyecta contexto en Gemini Pro → responde.
 ============================================================================
-"""
+
+── VERDADES ARQUITECTÓNICAS (leer antes de tocar este archivo) ──────────────
+1. MOTOR PRINCIPAL = BÚSQUEDA POR PALABRAS CLAVE (keyword_fallback_search),
+   NO la búsqueda vectorial. Solo ~2.312 de 7.233 productos tienen embeddings;
+   por eso keyword search SIEMPRE se ejecuta primero y los resultados vectoriales
+   se penalizan (*0.4) al fusionarse. El nombre "fallback" es un misnomer histórico.
+
+2. DIMENSIONES = 3072 (config.EMBEDDING_DIMENSIONS). El catálogo de productos
+   usa este motor LOCAL NumPy (NO pgvector de Supabase). NumPy no tiene límite
+   de dimensiones. El límite 1536D histórico aplica SOLO a la tabla de documentos
+   `knowledge_chunks` en Supabase (otro motor, ver lib/embeddings.ts).
+
+3. MODELO = google/gemini-embedding-2 (Google). OpenRouter es SOLO el enrutador
+   de la API, NO es la IA. No confundir transportista con modelo.
+
+4. PRECIOS: este archivo NO es la fuente de verdad de precios. El campo
+   `product.get("price")` (usado por _has_price) es un JSON legacy. La calculadora
+   real del agente (getProductPrice en lib/agent/tools/get-product-price.ts) lee
+   la RPC get_product_price_tiers de Supabase. Dos fuentes distintas.
+
+5. El Guardrail v4 del agente (applyOutputGuardrail) NO valida valores de precio;
+   solo verifica que se llamó getProductPrice (reason: 'calculator-used').
+──────────────────────────────────────────────────────────────────────────── """
 
 import json
 import re
@@ -76,6 +98,15 @@ def generate_query_embedding(query: str) -> list[float]:
     """
     Genera embedding de la consulta del usuario usando
     task_type RETRIEVAL_QUERY para óptima recuperación.
+
+    ── ANTI-SUPOSICIÓN ──────────────────────────────────────────────
+    En caso de error (rama OpenRouter o rama Gemini) retorna un VECTOR
+    DE CEROS de 3072 dimensiones, NO lanza excepción. Esto significa que
+    la búsqueda vectorial "falla en silencio": local_vector_search calculará
+    similitud coseno ~0 para todo (por debajo del umbral) y devolverá [].
+    El único rastro del fallo es un logger.warning. El pipeline completo no
+    se cae porque keyword search sigue cubriendo los 7.233 productos.
+    ─────────────────────────────────────────────────────────────────
     """
     if OPENROUTER_API_KEY and OPENROUTER_API_KEY.startswith("sk-or-"):
         try:
@@ -117,6 +148,22 @@ def vector_search(
     """
     Busca los vecinos más cercanos en Vertex AI Vector Search.
     Soporta filtrado por metadatos (categoría, stock, etc.).
+
+    ── ANTI-SUPOSICIÓN ──────────────────────────────────────────────
+    NO es el motor de búsqueda en producción. Requiere Vertex AI Vector
+    Search (GCP) que NO está desplegado en este VPS. En runtime la función
+    query() se llama con use_local=True (ver api_service.py), así que esta
+    rama nunca se ejecuta y se usa local_vector_search en su lugar.
+
+    Además, los numeric_restricts que se construyen abajo (líneas 160-165)
+    NO se pasan a find_neighbors() -> son código muerto dentro de esta fn.
+    ─────────────────────────────────────────────────────────────────
+
+    Args:
+        query_embedding: Vector de consulta (3072-d).
+        top_k: Número de resultados a retornar.
+        filters: Dict con filtros de metadatos opcionales.
+            Ej: {"category": "TECNOLOGÍA", "min_stock": 10}
     
     Args:
         query_embedding: Vector de consulta (3072-d).
@@ -262,6 +309,9 @@ def local_vector_search(
 JARGON_SYNONYMS: dict[str, list[str]] = {
     # Bebidas / vasos
     "pocillo": ["mug", "pocillo", "taza"],
+    "pocillos": ["mug", "pocillo", "taza"],
+    "posillo": ["mug", "pocillo", "taza"],
+    "posillos": ["mug", "pocillo", "taza"],
     "tinto": ["mug", "cafe", "taza"],
     "taza": ["mug", "taza"],
     "botilito": ["termo", "botilito", "botella", "caramañola"],
@@ -283,6 +333,16 @@ JARGON_SYNONYMS: dict[str, list[str]] = {
     "lapiceros": ["boligrafo", "esfero", "lapicero"],
     "boligrafo": ["boligrafo", "esfero"],
     "pluma": ["pluma", "boligrafo"],
+    # SINONIMOS TARJETAS (9 jul 2026) - el bot busca en singular, RAG necesita plural
+    "tarjeta mate": ["tarjetas", "mate uv", "tarjetas mate uv"],
+    "tarjeta de presentacion mate": ["tarjetas", "mate uv", "tarjetas mate uv"],
+    "tarjeta de presentación mate": ["tarjetas", "mate uv", "tarjetas mate uv"],
+    "tarjetas mate": ["tarjetas", "mate uv", "tarjetas mate uv"],
+    "tarjeta uv": ["tarjetas", "mate uv", "tarjetas mate uv"],
+    "tarjeta imanada": ["tarjetas", "imanadas", "tarjetas imanadas"],
+    "tarjeta brillante": ["tarjetas", "brillantes", "tarjetas brillantes"],
+    "tarjeta de presentacion": ["tarjetas", "tarjetas presentacion"],
+    "tarjeta de presentación": ["tarjetas", "tarjetas presentacion"],
     "lapiz": ["lapiz", "lapicero"],
     "retractil": ["mecanismo push", "retractil", "boligrafo"],
     "retractiles": ["mecanismo push", "retractil", "boligrafo"],
@@ -373,6 +433,15 @@ def keyword_fallback_search(query: str, filters: Optional[dict] = None, top_k: i
     Es el motor principal de recuperación porque el catálogo (6.790 productos)
     está mayormente sin embeddings (solo 21).
 
+    ── ANTI-SUPOSICIÓN ──────────────────────────────────────────────
+    El NOMBRE dice "fallback" (secundario) pero es el MOTOR PRINCIPAL.
+    query() la ejecuta SIEMPRE primero (ver bloque "2. Buscar SIEMPRE por
+    palabras clave") y los resultados vectoriales se penalizan (*0.4) al
+    fusionar. Cubre los 7.233 productos del catálogo vía all_products.json,
+    mientras que los embeddings solo cubren ~2.312. NO quitar ni degradar
+    esta función creyendo que "el vectorial es el principal".
+    ─────────────────────────────────────────────────────────────────
+
     Características:
     - Traducción de jerga colombiana (pocillo->mug, cachucha->gorra...).
     - Stemming básico (gorras->gorra).
@@ -402,6 +471,26 @@ def keyword_fallback_search(query: str, filters: Optional[dict] = None, top_k: i
     terms_set = set(terms)
     logger.info(f"[KEYWORD SEARCH] Términos expandidos: {terms}")
 
+    # === CORRECCIÓN ORTOGRÁFICA ===
+    # Para cada palabra de la consulta que no se reconozca, buscar palabras
+    # parecidas del catálogo y añadirlas a los términos. Así "lapisero" se
+    # convierte en "lapicero" sin perder el término original.
+    global _CATALOG_VOCABULARY_CACHE
+    if _CATALOG_VOCABULARY_CACHE is None:
+        _CATALOG_VOCABULARY_CACHE = _build_catalog_vocabulary(products)
+    corrections_added = []
+    for w in remove_accents(query.lower()).split():
+        w_clean = re.sub(r'[^a-z0-9]', '', w)
+        if len(w_clean) >= 4:
+            suggestions = _fuzzy_correct(w_clean, _CATALOG_VOCABULARY_CACHE)
+            for s in suggestions:
+                if s not in terms_set:
+                    terms_set.add(s)
+                    terms.append(s)
+                    corrections_added.append(f"{w_clean}->{s}")
+    if corrections_added:
+        logger.info(f"[KEYWORD SEARCH] Correcciones ortográficas: {corrections_added}")
+
     results = []
     query_lower = remove_accents(query.lower().strip())
 
@@ -426,24 +515,72 @@ def keyword_fallback_search(query: str, filters: Optional[dict] = None, top_k: i
             score = 0.95
         else:
             # 2. Coincidencia de términos (con stemming + jerga) contra el nombre
-            name_hits = sum(1 for t in terms_set if t in p_name)
+            name_hits = sum(1 for t in terms_set if _contains_whole_word(t, p_name))
             # 3. Coincidencia contra descripción/search_text (peso menor)
             desc_hits = sum(1 for t in terms_set if t in p_desc or t in p_search)
             # Palabras de la consulta original (sin jerga) que aparecen en nombre
             raw_terms = [remove_accents(w) for w in query_lower.split() if len(w) > 2]
-            raw_name_hits = sum(1 for t in raw_terms if t in p_name)
+            raw_name_hits = sum(1 for t in raw_terms if _contains_whole_word(t, p_name))
+
+            # === PRIORIZACIÓN DE PALABRA PRINCIPAL ===
+            # La PRIMERA palabra de la búsqueda casi siempre es el tipo de
+            # producto (bolígrafo, termo, gorra). Le damos peso extra para que
+            # un "Bolígrafo Plástico" le gane siempre a una "Botella Plástica".
+            query_words = [w for w in query_lower.split() if len(w) > 2]
+            primary_word = query_words[0] if query_words else ""
+            # Si la primera palabra fue corregida ortográficamente, usar la corrección
+            if primary_word and primary_word not in terms_set:
+                # buscar si hay una corrección para la palabra principal
+                primary_suggestions = _fuzzy_correct(primary_word, _CATALOG_VOCABULARY_CACHE) if _CATALOG_VOCABULARY_CACHE else []
+                if primary_suggestions:
+                    primary_word = primary_suggestions[0]
+
+            has_primary_in_name = (
+                primary_word and _contains_whole_word(primary_word, p_name)
+            )
+            starts_with_primary = (
+                primary_word and p_name.startswith(primary_word)
+            )
 
             if name_hits > 0:
-                # más términos del nombre que coinciden = mayor score
                 score = 0.55 + min(name_hits, 4) * 0.1
                 if raw_name_hits > 0:
                     score += 0.05
+                # CAMBIO: la palabra principal pesa extra
+                if has_primary_in_name:
+                    score += 0.30
+                # CAMBIO: bonus si el nombre empieza con la palabra principal
+                if starts_with_primary:
+                    score += 0.15
             elif raw_name_hits > 0:
                 score = 0.45 + min(raw_name_hits, 3) * 0.05
+                if has_primary_in_name:
+                    score += 0.30
+                if starts_with_primary:
+                    score += 0.15
             elif desc_hits > 0:
-                score = 0.25 + min(desc_hits, 3) * 0.03
+                # CAMBIO: si coincide solo en descripción PERO le falta la
+                # palabra principal en el nombre, penalizar (no debería ganarle
+                # a un producto que sí tiene la palabra principal).
+                if primary_word and not has_primary_in_name:
+                    score = 0.10 + min(desc_hits, 3) * 0.02
+                else:
+                    score = 0.25 + min(desc_hits, 3) * 0.03
 
         if score > 0.0:
+            # === PREFERITISMO PARA PRODUCTOS DEL EXCEL DE ZOOM ===
+            # Los productos propios (UUID) con foto real Y precio reciben un
+            # puntaje extra SIEMPRE. Esto garantiza que, cuando compiten contra
+            # un importado con score similar, el producto de ZOOM gana y quede
+            # de primero. Si no se aplica, importados con descripciones largas
+            # empatan o superan a los propios y el bot mezcla productos.
+            #
+            # NOTA: el bono +0.40 se suma SIEMPRE a todo producto preferente
+            # (ver is_preferente: hoy = cualquier UUID). Es independiente del
+            # multiplicador INTERNAL_BOOST (1.8x) que aplica apply_internal_boost
+            # más abajo, y que SOLO actúa si hay match FUERTE preferente.
+            if is_preferente(p):
+                score += 0.40
             results.append({
                 "id": p.get("product_id"),
                 "score": score,
@@ -537,6 +674,306 @@ def remove_accents(text: str) -> str:
 
 
 # ============================================================================
+# JERARQUÍA DE CATÁLOGOS — Boosting de Producción Interna
+# ----------------------------------------------------------------------------
+# Evita la colisión semántica entre productos fabricados por ZOOM Publicidad
+# (PRODUCCION_INTERNA) y los catálogos importados/promocionales (IMPORTADO).
+# Si para la consulta existe un match FUERTE de producción interna, se aplica
+# un multiplicador para que domine el Top 3 y desplace las coincidencias
+# parciales importadas (ej. "Tarjetas" interna aplasta a "Portatarjetas"
+# importado; "Mugs" de sublimación propia sobre los promocionales genéricos).
+# ============================================================================
+
+# Vocabulario de las líneas de manufactura propia de ZOOM Publicidad
+# (extraído del Excel interno de producción). Cualquier producto cuyo nombre o
+# subcategoría contenga uno de estos términos se considera PRODUCCION_INTERNA.
+INTERNAL_PRODUCTION_KEYWORDS = {
+    "bolsa", "bolsas", "bolsatex", "yute", "kraft", "organza", "satin", "pad mouse",
+    "boton", "botones", "sello", "sellos", "usb", "memorias usb", "abanico", "abanicos",
+    "sombrilla", "sombrillas", "paraguas", "impermeables", "mug", "mugs", "pocillo", "pocillos",
+    "vinilo", "vinilos", "banner", "banners", "carnet", "carnets", "portacarnet", "portacarnets",
+    "retablo", "retablos", "banderin", "banderines", "calandra", "poliestireno",
+    "manilla", "manillas", "plastisol", "silicona", "llavero", "llaveros", "pin", "pines",
+    "acrilico", "acrilicos", "tarjeta", "tarjetas", "volante", "volantes", "talonario", "talonarios",
+    "camiseta", "camisetas", "gorra", "gorras", "chaqueta", "chaquetas", "chaleco", "chalecos",
+    "rompevientos", "dtf", "screen", "tampografia", "laser", "cuaderno", "cuadernos", "agenda", "agendas",
+    "inserto", "insertos", "filtro uv", "guardas", "impresion", "litografia",
+}
+
+# Pistas adicionales en la subcategoría (no en el nombre del producto).
+INTERNAL_SUBCATEGORY_HINTS = (
+    "nacional", "produccion nacional", "producción nacional",
+    "sublimacion", "sublimación", "litografia", "litografía",
+)
+IMPORTED_SUBCATEGORY_HINTS = (
+    "importado", "gildan",
+)
+
+INTERNAL_BOOST = 1.8          # multiplicador a internos en match fuerte
+IMPORTED_PENALTY = 0.5        # multiplicador a importados de match parcial
+STRONG_MATCH_THRESHOLD = 0.5  # score mínimo para considerar "match fuerte"
+# ── VERDAD ARQUITECTÓNICA: cuándo aplican estos multiplicadores ──────────────
+# INTERNAL_BOOST e IMPORTED_PENALTY NO aplican siempre. Solo entran en juego
+# dentro de apply_internal_boost() Y únicamente si existe al menos un resultado
+# preferente que sea match FUERTE (score >= STRONG_MATCH_THRESHOLD y el término
+# canónico aparece como palabra completa en el nombre). En consultas genéricas
+# sin match fuerte preferente, apply_internal_boost es un no-op (solo reordena).
+# NO confundir con el bono +0.40 de keyword_fallback_search que sí es incondicional.
+
+
+
+def _contains_whole_word(needle: str, haystack: str) -> bool:
+    """Devuelve True si needle aparece como palabra COMPLETA en haystack.
+    Acepta singular y plural: 'tarjeta' SI coincide con 'tarjetas' pero NO con 'portatarjetas'."""
+    if not needle or not haystack:
+        return False
+    # Buscar la palabra exacta y su plural (singular + 's' o 'es')
+    variantes = [needle]
+    if not needle.endswith('s'):
+        variantes.append(needle + 's')
+        if not needle.endswith('e') and len(needle) > 3:
+            variantes.append(needle + 'es')
+    for v in variantes:
+        pattern = r'\b' + re.escape(v) + r'\b'
+        if re.search(pattern, haystack):
+            return True
+    return False
+
+
+# ============================================================================
+# CORRECCIÓN ORTOGRÁFICA (Fuzzy Matching)
+# ----------------------------------------------------------------------------
+# Cuando el cliente escribe una palabra que NO existe en el catálogo, busca
+# la palabra real más parecida (máximo 2 letras de diferencia) y la usa.
+# Esto cubre errores de tipeo como "lapisero" -> "lapicero".
+#
+# Seguridad:
+#  - Solo aplica si la diferencia es <= 2 letras (no adivina cosas muy raras).
+#  - Solo compara contra palabras reales del catálogo + sinónimos conocidos.
+#  - NO reemplaza los términos originales: los AÑADE para no perder nada.
+# ============================================================================
+_CATALOG_VOCABULARY_CACHE: set = None
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Distancia de Levenshtein: cuántas letras hay que cambiar/mover/borrar."""
+    if len(a) < len(b):
+        a, b = b, a
+    if len(b) == 0:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            ins = prev[j + 1] + 1
+            dele = curr[j] + 1
+            sub = prev[j] + (ca != cb)
+            curr.append(min(ins, dele, sub))
+        prev = curr
+    return prev[-1]
+
+
+def _build_catalog_vocabulary(products: list) -> set:
+    """Construye el conjunto de palabras conocidas del catálogo."""
+    vocab = set()
+    # Sinónimos de jerga conocidos (esfero, lapicero, botilito, etc.)
+    for syns in JARGON_SYNONYMS.values():
+        for s in syns:
+            vocab.add(remove_accents(s.lower()))
+    # Palabras de los nombres de productos del catálogo
+    for p in products:
+        name = remove_accents((p.get("name") or "").lower())
+        for w in name.split():
+            w_clean = re.sub(r'[^a-z0-9]', '', w)
+            if len(w_clean) >= 3:
+                vocab.add(w_clean)
+    return vocab
+
+
+def _fuzzy_correct(word: str, vocabulary: set, max_distance: int = 2) -> list:
+    """Devuelve palabras del vocabulario parecidas a 'word' (distancia <= max).
+    Solo corrige palabras de 4+ letras para no corregir preposiciones cortas.
+    Ordena por menor distancia (mejor coincidencia primero)."""
+    w = remove_accents(word.lower().strip())
+    if len(w) < 4:
+        return []
+    # Si la palabra ya existe en el vocabulario, no necesita corrección
+    if w in vocabulary:
+        return []
+    candidates = []
+    for v in vocabulary:
+        # Optimización: solo comparar si la diferencia de longitud es razonable
+        if abs(len(v) - len(w)) > max_distance:
+            continue
+        dist = _levenshtein(w, v)
+        if dist <= max_distance and dist > 0:
+            candidates.append((dist, v))
+    candidates.sort()
+    return [v for _, v in candidates[:3]]  # máximo 3 sugerencias
+
+
+# Patrón para reconocer un product_id tipo UUID (producción propia de ZOOM).
+# Los importados usan códigos de catálogo (VA-666, CAP-22, TE-455...).
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+# Placeholder de foto falsa que no debe contar como "foto real".
+_PLACEHOLDER_IMG = "9039_bolsas_ecol_cambrel_comunes"
+
+
+def _has_real_photo(product: dict) -> bool:
+    """True si el producto tiene al menos una foto que NO sea el placeholder de bolsa.
+
+    ── ANTI-SUPOSICIÓN ──────────────────────────────────────────────
+    Filtra el PLACEHOLDER de bolsa (_PLACEHOLDER_IMG), NO responde a
+    "¿existe la imagen del producto?". La imagen, cuando el pipeline
+    multimodal de embedding_pipeline.py funciona, queda embebida dentro
+    del vector 3072D. Este chequeo mira el campo `local_image_paths`
+    del JSON (paths en disco), no el vector.
+    NOTA: hoy esta función existe pero is_preferente NO la invoca.
+    ─────────────────────────────────────────────────────────────────
+    """
+    imgs = product.get("local_image_paths") or []
+    if not imgs:
+        return False
+    return any((_PLACEHOLDER_IMG not in str(im)) for im in imgs)
+
+
+def _has_price(product: dict) -> bool:
+    """True si el producto tiene un precio no vacío.
+
+    ── ANTI-SUPOSICIÓN ──────────────────────────────────────────────
+    Chequea el campo `price` del JSON legacy (all_products.json). ESE
+    campo NO es lo que usa la calculadora del agente: getProductPrice
+    (lib/agent/tools/get-product-price.ts) lee la RPC get_product_price_tiers
+    de Supabase. Son dos fuentes de precio distintas; no asumir que
+    _has_price=False implica "no se puede cotizar". Además trata "0" y
+    la cadena "None" como sin precio.
+    NOTA: hoy esta función existe pero is_preferente NO la invoca.
+    ─────────────────────────────────────────────────────────────────
+    """
+    price = product.get("price")
+    return bool(price) and str(price).strip() not in ("None", "", "0")
+
+
+def classify_origen(product: dict) -> str:
+    """Clasifica un producto como 'PRODUCCION_INTERNA', 'IMPORTADO' o 'DESCONOCIDO'.
+
+    ORDEN DE PRIORIDAD (criterio principal = tipo de ID, no palabras del nombre):
+      1. product_id tipo UUID  -> PRODUCCION_INTERNA (fabricado por ZOOM).
+      2. product_id tipo código de catálogo (VA-666, CAP-22) -> IMPORTADO.
+      3. Si no se puede determinar por ID, se usan las pistas de subcategoría
+         y las palabras clave como respaldo (comportamiento anterior).
+
+    NOTA: Antes esto se basaba en palabras del nombre ("chaqueta", "gorra"...),
+    pero 1.667 importados también contienen esas palabras y quedaban marcados
+    como propios por error. El tipo de ID es la frontera confiable.
+    """
+    pid = str(product.get("product_id") or "")
+    if _UUID_RE.match(pid):
+        return "PRODUCCION_INTERNA"
+    # Si tiene código de catálogo (letras-guion-números) es importado
+    if re.match(r"^[A-Z]{2,5}-\d", pid, re.IGNORECASE):
+        return "IMPORTADO"
+    # Respaldo: pistas de subcategoría + palabras clave (casos sin ID claro)
+    name = remove_accents((product.get("name") or "").lower())
+    subcat = remove_accents((product.get("subcategory") or "").lower())
+    haystack = f"{name} {subcat}"
+    if any(h in subcat for h in INTERNAL_SUBCATEGORY_HINTS):
+        return "PRODUCCION_INTERNA"
+    if any(h in subcat for h in IMPORTED_SUBCATEGORY_HINTS):
+        return "IMPORTADO"
+    if any(_contains_whole_word(k, haystack) for k in INTERNAL_PRODUCTION_KEYWORDS):
+        return "PRODUCCION_INTERNA"
+    return "DESCONOCIDO"
+
+
+def is_preferente(product: dict) -> bool:
+    """True si el producto proviene de las tablas de Excel de ZOOM (ID tipo UUID).
+    Recibe prioridad máxima (puntos extra + multiplicador INTERNAL_BOOST 1.8x).
+
+    ── ANTI-SUPOSICIÓN ──────────────────────────────────────────────
+    Implementación ACTUAL: solo mira el UUID (no exige foto ni precio).
+    El docstring de apply_internal_boost (más abajo) dice "CON foto real
+    Y precio" — eso está DESACTUALIZADO. Las funciones _has_real_photo y
+    _has_price existen pero is_preferente NO las llama.
+
+    Justificación: el precio NO es indispensable para que el flujo
+    comercial funcione. El Guardrail v4 del agente aprueba la respuesta
+    cuando se USÓ la calculadora getProductPrice (reason: 'calculator-used'),
+    NO valida valores de precio. Por eso un UUID sin precio puede ser
+    preferente y aún así el bot lo cotiza vía la RPC de Supabase.
+    ─────────────────────────────────────────────────────────────────
+    """
+    pid = str(product.get("product_id") or "")
+    return bool(_UUID_RE.match(pid))
+
+
+def apply_internal_boost(results: list[dict], query: str, top_k: int) -> list[dict]:
+    """Aplica el boosting de jerarquía de catálogos (preferitismo).
+
+    PREFERITISMO (criterio principal): si hay al menos un resultado PREFERENTE
+    (UUID de producción propia) que además sea match fuerte de la consulta, entonces:
+      - Los preferentes reciben INTERNAL_BOOST (suben al top).
+      - Los importados que NO sean match fuerte reciben IMPORTED_PENALTY (bajan).
+
+    ── ANTI-SUPOSICIÓN ──────────────────────────────────────────────
+    Versiones anteriores de este docstring decían "CON foto real Y precio".
+    Eso ya NO es cierto: is_preferente hoy solo exige UUID. El texto viejo
+    quedó por descuido y confundía a quienes leían el código. El criterio
+    real preferente = tipo de ID (UUID = propio), sin importar foto/precio.
+    ─────────────────────────────────────────────────────────────────
+
+    Además, inyecta metadata['origen'] y metadata['preferente'] en cada resultado.
+    """
+    if not results:
+        return results
+
+    products_file = PRODUCTS_JSON_DIR / "all_products.json"
+    all_products: dict = {}
+    if products_file.exists():
+        for p in load_json(products_file):
+            all_products[p.get("product_id")] = p
+
+    # Término canónico principal de la consulta (ya con jerga+stemming)
+    q_terms = _expand_jargon(query)
+    q_core = q_terms[0] if q_terms else remove_accents(query.lower().strip())
+
+    # 1. Clasificar origen/preferencia y detectar match fuerte preferente
+    has_strong_preferente = False
+    enriched: list[tuple[dict, str, bool, bool]] = []
+    for r in results:
+        prod = all_products.get(r.get("id"), {})
+        origen = classify_origen(prod)
+        preferente = is_preferente(prod)
+
+        r = dict(r)
+        r["metadata"] = dict(r.get("metadata") or {})
+        r["metadata"]["origen"] = origen
+        r["metadata"]["preferente"] = preferente
+
+        name_norm = remove_accents((prod.get("name") or "").lower())
+        score = r.get("score", 0)
+        is_strong = (score >= STRONG_MATCH_THRESHOLD) and _contains_whole_word(q_core, name_norm)
+
+        if preferente and is_strong:
+            has_strong_preferente = True
+        enriched.append((r, origen, is_strong, preferente))
+
+    # 2. Solo boosting si hay match fuerte preferente (no degrada consultas genéricas)
+    if has_strong_preferente:
+        boosted = []
+        for r, origen, is_strong, preferente in enriched:
+            if preferente:
+                r["score"] = r.get("score", 0) * INTERNAL_BOOST
+            elif origen == "IMPORTADO" and not is_strong:
+                r["score"] = r.get("score", 0) * IMPORTED_PENALTY
+            boosted.append(r)
+        results = boosted
+
+    results.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return results[:top_k]
+
+
+# ============================================================================
 # 5. PARSEO DE FILTROS DESDE LENGUAJE NATURAL
 # ============================================================================
 
@@ -620,6 +1057,53 @@ def remove_accents_markers(markers) -> list[str]:
 # 6. GENERACIÓN DE RESPUESTA CON LLM
 # ============================================================================
 
+def call_openrouter_chat_api(prompt: str, system_prompt: str) -> str:
+    """
+    Genera respuesta de chat via OpenRouter (API pagada) en vez de Gemini gratis.
+    """
+    import os
+    import urllib.request
+    import json
+
+    if not OPENROUTER_API_KEY or not OPENROUTER_API_KEY.startswith("sk-or-"):
+        raise RuntimeError("OPENROUTER_API_KEY no configurada o invalida")
+
+    chat_model = os.getenv("RAG_CHAT_MODEL", "google/gemini-2.5-flash")
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": chat_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": LLM_TEMPERATURE,
+        "max_tokens": LLM_MAX_OUTPUT_TOKENS,
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            res_data = response.read().decode("utf-8")
+            data = json.loads(res_data)
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"]
+            raise ValueError(f"OpenRouter chat respuesta vacia/invalida: {data}")
+    except urllib.error.HTTPError as e:
+        error_content = e.read().decode("utf-8")
+        raise RuntimeError(f"OpenRouter chat HTTP Error {e.code}: {error_content}")
+    except Exception as e:
+        raise RuntimeError(f"OpenRouter chat Error: {e}")
+
+
 def generate_rag_response(
     query: str,
     context: str,
@@ -658,18 +1142,10 @@ Proporciona una respuesta detallada y útil basada exclusivamente en los
 productos del contexto anterior."""
 
     try:
-        response = gemini_client.models.generate_content(
-            model=LLM_MODEL,
-            contents=[prompt],
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt or default_system,
-                temperature=LLM_TEMPERATURE,
-                max_output_tokens=LLM_MAX_OUTPUT_TOKENS,
-            ),
-        )
-        return response.text
+        # Usa OpenRouter (pagado) en vez de Gemini gratis (que se agota).
+        return call_openrouter_chat_api(prompt, system_prompt or default_system)
     except Exception as e:
-        logger.warning(f"[LLM GENERATE] Error en generación LLM, usando fallback estático: {e}")
+        logger.warning(f"[LLM GENERATE] Error en generación LLM con OpenRouter, usando fallback estático: {e}")
         
         fallback_msg = "Hola! En este momento presento alta demanda en mi servicio de lenguaje, pero he recuperado los siguientes productos de mi catálogo que coinciden con tu búsqueda:\n\n"
         
@@ -801,7 +1277,14 @@ def query(
 
     search_results = search_results[:top_k]
     logger.info(f"[QUERY] {len(search_results)} resultados fusionados")
-    
+
+    # 5. BOOSTING DE JERARQUÍA DE CATÁLOGOS:
+    # Si hay match fuerte de producción interna (ZOOM) para esta consulta,
+    # los productos internos dominan el Top 3 y desplazan los importados
+    # parciales (ej. "Tarjetas" interna > "Portatarjetas" importado).
+    search_results = apply_internal_boost(search_results, clean_query, top_k)
+    logger.info(f"[QUERY] {len(search_results)} resultados tras boosting de jerarquía")
+
     if not search_results:
         return {
             "response": "No encontré productos que coincidan con tu búsqueda. "

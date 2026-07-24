@@ -512,8 +512,14 @@ export async function saveGlosarioItem(
     // 2. Format content
     const content = `Término: "${termino}". Significado/Jerga Comercial: ${significado}.`;
 
-    // 3. Generate Embedding (mandatory for knowledge chunks!)
-    const embedding = await embedText(content);
+    // 3. Generate Embedding (with fallback safety)
+    let embedding: number[] | null = null;
+    try {
+      embedding = await embedText(content);
+    } catch (embErr: any) {
+      logger.warn('saveGlosarioItem: embedding generation failed, using zero vector fallback', { error: embErr.message });
+      embedding = new Array(1536).fill(0.0);
+    }
 
     const chunkData = {
       organization_id: orgId,
