@@ -25,18 +25,35 @@ async function run() {
   console.log('Iniciando importación del catálogo RAG a Supabase...');
   const supabase = createAdminClient();
 
-  // 1. Obtener productos y categorías existentes en la BD para evitar duplicados
-  const { data: existingProducts, error: prodFetchError } = await supabase.from('products').select('reference');
-  if (prodFetchError) {
-    console.error('Error consultando productos existentes:', prodFetchError.message);
-    process.exit(1);
+  // 1. Obtener productos y categorías existentes en la BD con paginación (PostgREST limita a 1000 por request)
+  let existingProducts: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase.from('products').select('id, reference').range(from, from + 999);
+    if (error) {
+      console.error('Error consultando productos existentes:', error.message);
+      process.exit(1);
+    }
+    if (!data || data.length === 0) break;
+    existingProducts.push(...data);
+    if (data.length < 1000) break;
+    from += 1000;
   }
+  const existingIds = new Set((existingProducts || []).map(p => p.id).filter(Boolean));
   const existingRefs = new Set((existingProducts || []).map(p => p.reference).filter(Boolean));
   
-  const { data: existingCategories, error: catFetchError } = await supabase.from('categories').select('id, name');
-  if (catFetchError) {
-    console.error('Error consultando categorías existentes:', catFetchError.message);
-    process.exit(1);
+  let existingCategories: any[] = [];
+  from = 0;
+  while (true) {
+    const { data, error } = await supabase.from('categories').select('id, name').range(from, from + 999);
+    if (error) {
+      console.error('Error consultando categorías existentes:', error.message);
+      process.exit(1);
+    }
+    if (!data || data.length === 0) break;
+    existingCategories.push(...data);
+    if (data.length < 1000) break;
+    from += 1000;
   }
   const catMap = new Map((existingCategories || []).map(c => [c.name.toUpperCase(), c.id]));
 
@@ -47,10 +64,12 @@ async function run() {
     process.exit(1);
   }
   const ragProducts = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-  console.log(`Productos en JSON: ${ragProducts.length}. Ya existentes en BD: ${existingRefs.size}`);
+  console.log(`Productos en JSON: ${ragProducts.length}. Ya existentes en BD (por ID o Ref): ${existingIds.size + existingRefs.size}`);
+
+  const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
 
   // Filtrar solo los nuevos
-  const newProducts = ragProducts.filter((p: any) => p.product_id && !existingRefs.has(p.product_id));
+  const newProducts = ragProducts.filter((p: any) => p.product_id && !existingIds.has(p.product_id) && !existingRefs.has(p.product_id));
   console.log(`Productos nuevos a importar: ${newProducts.length}`);
 
   if (newProducts.length === 0) {
@@ -73,21 +92,31 @@ async function run() {
     }
   }
 
-  // 4. Preparar baches
+  // 4. Preparar baches evitando duplicados internos
+  const seenIds = new Set<string>();
+  const seenRefs = new Set<string>();
   const productsToInsert: any[] = [];
   const tiersToInsert: any[] = [];
 
   for (const p of newProducts) {
-    const uuid = generateUUID();
+    const isIdUuid = isUUID(p.product_id);
+    const uuid = isIdUuid ? p.product_id : generateUUID();
+    const ref = isIdUuid ? (p.reference || null) : p.product_id;
+
+    if (seenIds.has(uuid) || (ref && seenRefs.has(ref))) {
+      continue;
+    }
+    seenIds.add(uuid);
+    if (ref) seenRefs.add(ref);
     const catId = catMap.get((p.category || '').toUpperCase()) || null;
-    const priceStr = p.price || "$0";
+    const priceStr = String(p.price || "$0");
     const priceNum = parseInt(priceStr.replace(/[^0-9]/g, ''), 10) || 0;
     
     productsToInsert.push({
       id: uuid,
       category_id: catId,
       name: p.name,
-      reference: p.product_id, // Código del catálogo (ej: Bol Flaggy, ASTON-ECO)
+      reference: ref,
       description: p.description || null,
       unit: p.unit || 'unidad',
       active: true,

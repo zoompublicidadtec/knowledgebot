@@ -1,5 +1,5 @@
 import { tool, jsonSchema } from 'ai';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createAdminClient } from '../../supabase/admin';
 
 interface ToolContext {
   orgId: string;

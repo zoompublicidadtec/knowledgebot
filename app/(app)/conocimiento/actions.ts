@@ -282,6 +282,7 @@ export async function saveProduct(
     notes: string;
     active: boolean;
     synonyms: string; // Comma-separated string in the form (specific product synonyms)
+    image_url?: string;
   },
   priceTiers: Array<{
     variant: string;
@@ -335,28 +336,54 @@ export async function saveProduct(
       notes: productData.notes || null,
       active: productData.active,
       search_text: searchText,
+      image_url: productData.image_url || null,
       ...(embedding ? { embedding } : {}),
     };
 
     let savedProductId = productData.id;
 
-    if (productData.id) {
-      // Update
-      const { error } = await (supabase as any)
-        .from('products')
-        .update(dbProduct)
-        .eq('id', productData.id);
-      if (error) throw error;
-    } else {
-      // Insert
-      const { data, error } = await (supabase as any)
-        .from('products')
-        .insert(dbProduct)
-        .select('id')
-        .single();
-      if (error) throw error;
-      savedProductId = data.id;
-    }
+    // Resilient upsert helper to dynamically strip missing columns on database error
+    const executeResilientUpsert = async (payload: any): Promise<string> => {
+      let currentPayload = { ...payload };
+      while (true) {
+        try {
+          if (productData.id) {
+            const { error } = await (supabase as any)
+              .from('products')
+              .update(currentPayload)
+              .eq('id', productData.id);
+            if (error) throw error;
+            return productData.id;
+          } else {
+            const { data, error } = await (supabase as any)
+              .from('products')
+              .insert(currentPayload)
+              .select('id')
+              .single();
+            if (error) throw error;
+            return data.id;
+          }
+        } catch (err: any) {
+          const errMsg = err.message || '';
+          // Detect missing columns (e.g. image_url or subcategory_id)
+          const matchMissingCol = errMsg.match(/Could not find the '([^']+)' column/) ||
+                                  errMsg.match(/column "([^"]+)" of relation "products" does not exist/) ||
+                                  errMsg.match(/column "([^"]+)" does not exist/);
+          
+          if (matchMissingCol && matchMissingCol[1]) {
+            const colName = matchMissingCol[1];
+            if (colName in currentPayload) {
+              logger.warn(`Column '${colName}' not found in products table. Stripping from payload and retrying...`);
+              delete currentPayload[colName];
+              continue;
+            }
+          }
+          throw err;
+        }
+      }
+    };
+
+    savedProductId = await executeResilientUpsert(dbProduct);
 
     // Now handle price tiers. Clean out existing tiers first
     if (productData.id) {

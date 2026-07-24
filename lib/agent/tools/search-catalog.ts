@@ -1,3 +1,25 @@
+/**
+ * ============================================================================
+ * SEARCH-CATALOG.TS — Búsqueda del Catálogo (cliente del Motor RAG Python)
+ * ============================================================================
+ *
+ * ── VERDADES ARQUITECTÓNICAS ───────────────────────────────────────────────
+ * 1. Llama al Motor RAG Python en http://127.0.0.1:8001/query (POST {query,
+ *    top_k:15}). Si ese servicio cae, hace fallback a la RPC search_products
+ *    de Supabase (búsqueda trigram/tsvector, NO vectorial).
+ *
+ * 2. El campo `price` que devuelve el Motor Python es DECORATIVO: viene del
+ *    JSON legacy (all_products.json) y NO se usa para ranking ni pricing. El
+ *    ranking real y el flag has_pricing/is_most_expensive se calculan acá en
+ *    annotateMatchesWithricing() consultando la tabla price_tiers de Supabase.
+ *    La fuente canónica de precios SIEMPRE es getProductPrice (otra tool).
+ *
+ * 3. La noción de "preferente" del Motor Python (UUID = producción propia de
+ *    ZOOM) NO viaja hasta acá: este archivo no lee ni escribe `preferente`.
+ *    El reordenamiento que hace el bot es por has_pricing + score.
+ * ============================================================================
+ */
+
 import { tool, jsonSchema } from 'ai';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
@@ -155,6 +177,7 @@ export function searchCatalogTool() {
             unit: prod.unit || 'unidad',
             price: prod.price || '',
             description: prod.description || '',
+            instrucciones_venta: prod.instrucciones_venta || '',
             notes: prod.notes || '',
             requires_area: prod.requires_area || false,
             image_urls: prod.image_urls || [],
@@ -213,6 +236,24 @@ export function searchCatalogTool() {
           // Reordenar: primero los cotizables (con precio), luego el resto.
           matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)) || ((b.score || 0) - (a.score || 0)));
 
+          // Si hay productos con precio, filtrar para no enviar productos incompletos/sin precio que causen evasivas
+          const pricedMatches = matches.filter((m: any) => m.has_pricing);
+          if (pricedMatches.length > 0) {
+            matches = pricedMatches;
+          }
+
+          // Enmascarar product_id a ref_corta (evitar que el LLM vea jamás UUIDs de 36 caracteres)
+          const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+          matches = matches.map((m: any) => {
+            const pid = String(m.product_id || '').trim();
+            const refCorta = isUUID(pid) ? `REF-${pid.slice(0, 8).toUpperCase()}` : (m.reference || pid);
+            return {
+              ...m,
+              product_id: refCorta,
+              reference: refCorta,
+            };
+          });
+
           const cotizables = matches.filter((m: any) => m.has_pricing).length;
           logger.info('RAG microservice response success', { count: matches.length, cotizables });
 
@@ -221,7 +262,7 @@ export function searchCatalogTool() {
             query: rawQuery,
             matches,
             rag_response: data.response,
-            note: 'Se ha realizado una búsqueda semántica usando el Motor de Conocimiento RAG. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente, redactadas en un párrafo fluido o máximo 2 bullets, y sin mencionar precios bajos o "el mejor precio". IMPORTANTE: Prioriza SIEMPRE los productos con has_pricing=true. Si presentas un producto con has_pricing=false, advierte al cliente que necesitas confirmar disponibilidad/precio. EXIGENCIA DE VARIEDAD Y GAMA: Si los resultados contienen productos de diferentes materiales (cerámica, plástico, metal, etc.), presenta un abanico variado al cliente (por ejemplo, una opción Premium en metal/térmica, una Estándar en cerámica y una Económica en plástico) en lugar de ofrecer tres productos del mismo material. NUEVA REGLA COMERCIAL DE FASE 1 (PRODUCTO MÁS CARO OBLIGATORIO): En la Fase 1 del embudo comercial, estás OBLIGADO a que una de las 3 opciones propuestas (la Opción Premium) sea el producto de mayor valor económico de toda la familia buscada. Para lograr esto sin equivocarte, busca en la lista de matches el producto que tenga marcado is_most_expensive = true. Ese producto DEBE ser presentado obligatoriamente como la Opción Premium. Las otras 2 opciones (Estándar y Económica) pueden ser seleccionadas libremente entre los demás matches que tengan has_pricing = true.',
+            note: 'Se ha realizado una búsqueda semántica usando el Motor de Conocimiento RAG. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente. PRIORIDAD OFICIAL ZOOM: Todos los productos presentados DEBEN tener has_pricing=true. Queda PROHIBIDO presentar productos sin tarifa o usar frases evasivas como "déjame confirmar con producción". FORMATO DE REFERENCIA: Muestra la referencia en formato limpio (ej: Ref: REF-AE9573E1 o Ref: MU-303-1). FOTOS E IMÁGENES: El sistema adjunta automáticamente la imagen por WhatsApp. Si el cliente pregunta por fotos o imágenes, responde afirmativamente con entusiasmo ("¡Claro que sí! Aquí te comparto la imagen del producto:") confirmando la foto adjunta.',
           };
         } else {
           logger.warn(`RAG microservice returned status ${response.status}, falling back to database search`);
@@ -258,6 +299,7 @@ export function searchCatalogTool() {
           name: row.name,
           unit: row.unit,
           description: row.description,
+          instrucciones_venta: row.instrucciones_venta || '',
           notes: row.notes,
           requires_area: row.requires_area,
           image_urls: [],
@@ -271,11 +313,29 @@ export function searchCatalogTool() {
         // Reordenar
         matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)));
 
+        // Filtrar productos con precio si existen
+        const pricedFallback = matches.filter((m: any) => m.has_pricing);
+        if (pricedFallback.length > 0) {
+          matches = pricedFallback;
+        }
+
+        // Enmascarar product_id a ref_corta
+        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+        matches = matches.map((m: any) => {
+          const pid = String(m.product_id || '').trim();
+          const refCorta = isUUID(pid) ? `REF-${pid.slice(0, 8).toUpperCase()}` : (m.reference || pid);
+          return {
+            ...m,
+            product_id: refCorta,
+            reference: refCorta,
+          };
+        });
+
         return {
           success: true,
           query,
           matches,
-          note: 'OJO: He retornado hasta 100 resultados de la base de datos de fallback. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente, redactadas en un párrafo fluido o máximo 2 bullets, y sin mencionar precios bajos o "el mejor precio". NUEVA REGLA COMERCIAL DE FASE 1 (PRODUCTO MÁS CARO OBLIGATORIO): En la Fase 1 del embudo comercial, estás OBLIGADO a que una de las 3 opciones propuestas (la Opción Premium) sea el producto de mayor valor económico de toda la familia buscada. Para lograr esto sin equivocarte, busca en la lista de matches el producto que tenga marcado is_most_expensive = true. Ese producto DEBE ser presentado obligatoriamente como la Opción Premium. Las otras 2 opciones (Estándar y Económica) pueden ser seleccionadas libremente entre los demás matches que tengan has_pricing = true.',
+          note: 'OJO: He retornado resultados de la base de datos de fallback. Selecciona y presenta 3 opciones (Premium, Estándar, Económica) con has_pricing=true. FORMATO DE REFERENCIA: Usa la referencia corta (ej. Ref: REF-AE9573E1). FOTOS E IMÁGENES: El sistema adjunta automáticamente la imagen por WhatsApp. Responde con entusiasmo ("¡Claro que sí! Aquí te comparto la imagen del producto:").',
         };
       } catch (err: any) {
         logger.error('Search catalog exception', { error: String(err) });

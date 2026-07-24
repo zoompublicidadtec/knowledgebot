@@ -1,8 +1,8 @@
 import { tool, jsonSchema } from 'ai';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createAdminClient } from '../../supabase/admin';
 import { createCalendarEvent } from '@/lib/google/calendar';
-import { localToUtc } from '@/lib/timezone';
-import { logger } from '@/lib/logger';
+import { localToUtc } from '../../timezone';
+import { logger } from '../../logger';
 
 interface ToolContext {
   orgId: string;

@@ -63,6 +63,7 @@ interface Product {
   notes: string | null;
   active: boolean;
   search_text: string | null;
+  image_url?: string | null;
 }
 
 interface PriceTier {
@@ -140,6 +141,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
   const [notes, setNotes] = useState('');
   const [active, setActive] = useState(true);
   const [synonyms, setSynonyms] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [priceTiers, setPriceTiers] = useState<PriceTier[]>([]);
 
   // Glossary State
@@ -230,6 +232,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
       setMinOrderQty(details.product.min_order_qty || 1);
       setNotes(details.product.notes || '');
       setActive(details.product.active);
+      setImageUrl(details.product.image_url || '');
       
       // Extract specific product synonyms from search_text
       let extractedSynonyms = '';
@@ -279,6 +282,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     setNotes('');
     setActive(true);
     setSynonyms('');
+    setImageUrl('');
     setPriceTiers([
       { variant: 'Estándar', min_qty: 1, max_qty: null, price: 0, price_basis: 'unitario' }
     ]);
@@ -351,7 +355,8 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
         min_order_qty: minOrderQty,
         notes,
         active,
-        synonyms
+        synonyms,
+        image_url: imageUrl || undefined
       }, priceTiers);
 
       if (res.success) {
@@ -1126,6 +1131,39 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                     onChange={(e) => setSynonyms(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-primary-500 transition-all"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300">URL de la Imagen del Producto (Opcional - Auto-mapeado activado)</label>
+                  <div className="flex gap-4 items-center">
+                    <input
+                      type="url"
+                      placeholder="Dejar vacío para usar imagen local automática de la referencia"
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      className="flex-1 px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-primary-500 transition-all"
+                    />
+                    {imageUrl ? (
+                      <div className="w-10 h-10 rounded border border-white/10 overflow-hidden bg-slate-950 flex items-center justify-center shrink-0">
+                        <img src={imageUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                      </div>
+                    ) : reference ? (
+                      <div className="w-10 h-10 rounded border border-white/10 overflow-hidden bg-slate-950 flex items-center justify-center shrink-0" title="Imagen cargada automáticamente desde el VPS">
+                        <img 
+                          src={`/api/catalog-images/${encodeURIComponent(reference)}`} 
+                          alt="Vista previa automática" 
+                          className="w-full h-full object-cover" 
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                            const parent = (e.target as HTMLElement).parentElement;
+                            if (parent) {
+                              parent.innerHTML = '<span class="text-[8px] text-slate-600">Sin foto</span>';
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 

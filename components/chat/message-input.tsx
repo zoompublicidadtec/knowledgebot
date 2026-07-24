@@ -7,9 +7,10 @@ import { PaperPlaneRight, SpinnerGap } from '@phosphor-icons/react';
 interface MessageInputProps {
   conversationId: string;
   contactPhone: string;
+  onMessageSent?: (text: string) => void;
 }
 
-export function MessageInput({ conversationId, contactPhone }: MessageInputProps) {
+export function MessageInput({ conversationId, contactPhone, onMessageSent }: MessageInputProps) {
   const [text, setText] = useState('');
   const [isPending, startTransition] = useTransition();
 
@@ -19,6 +20,11 @@ export function MessageInput({ conversationId, contactPhone }: MessageInputProps
 
     const currentText = text;
     setText('');
+
+    // Instant local feedback (optimistic update)
+    if (onMessageSent) {
+      onMessageSent(currentText);
+    }
 
     startTransition(async () => {
       const res = await sendMessageAction(conversationId, contactPhone, currentText);

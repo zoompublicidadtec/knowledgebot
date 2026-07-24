@@ -28,6 +28,7 @@ export interface CatalogProduct {
   notes: string | null;
   active: boolean;
   search_text: string | null;
+  image_url?: string | null;
   categories?: { name: string } | null;
   price_tiers?: Array<{
     id?: string;
@@ -290,10 +291,37 @@ function ProductRow({
         />
       </td>
       <td className="p-4">
-        <div>
-          <div className="font-semibold text-white">{prod.name}</div>
-          <div className="text-xs text-slate-400 mt-0.5 line-clamp-1 max-w-[300px]" title={prod.description || ''}>
-            {prod.description || 'Sin descripción técnica'}
+        <div className="flex items-center gap-3">
+          {prod.image_url ? (
+            <div className="w-10 h-10 rounded overflow-hidden bg-slate-900/50 border border-white/10 shrink-0 flex items-center justify-center">
+              <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
+            </div>
+          ) : prod.reference ? (
+            <div className="w-10 h-10 rounded overflow-hidden bg-slate-900/50 border border-white/10 shrink-0 flex items-center justify-center">
+              <img 
+                src={`/api/catalog-images/${encodeURIComponent(prod.reference)}`} 
+                alt={prod.name} 
+                className="w-full h-full object-cover" 
+                onError={(e) => {
+                  // If endpoint returns 404/fails, hide image or show placeholder
+                  (e.target as HTMLElement).style.display = 'none';
+                  const parent = (e.target as HTMLElement).parentElement;
+                  if (parent) {
+                    parent.innerHTML = '<span class="text-[9px] text-slate-600">Sin foto</span>';
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className="w-10 h-10 rounded bg-slate-900/40 border border-white/5 shrink-0 flex items-center justify-center text-[10px] text-slate-600">
+              Sin foto
+            </div>
+          )}
+          <div>
+            <div className="font-semibold text-white">{prod.name}</div>
+            <div className="text-xs text-slate-400 mt-0.5 line-clamp-1 max-w-[300px]" title={prod.description || ''}>
+              {prod.description || 'Sin descripción técnica'}
+            </div>
           </div>
         </div>
       </td>
@@ -387,6 +415,26 @@ function MobileProductCard({
           onChange={onToggleSelect}
           className="w-4 h-4 mt-1 rounded accent-primary-500 cursor-pointer shrink-0"
         />
+        {prod.image_url ? (
+          <div className="w-12 h-12 rounded overflow-hidden bg-slate-900/50 border border-white/10 shrink-0 flex items-center justify-center">
+            <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
+          </div>
+        ) : prod.reference ? (
+          <div className="w-12 h-12 rounded overflow-hidden bg-slate-900/50 border border-white/10 shrink-0 flex items-center justify-center">
+            <img 
+              src={`/api/catalog-images/${encodeURIComponent(prod.reference)}`} 
+              alt={prod.name} 
+              className="w-full h-full object-cover" 
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+                const parent = (e.target as HTMLElement).parentElement;
+                if (parent) {
+                  parent.innerHTML = '<span class="text-[9px] text-slate-600">Sin foto</span>';
+                }
+              }}
+            />
+          </div>
+        ) : null}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <h4 className="font-semibold text-sm text-white">{prod.name}</h4>

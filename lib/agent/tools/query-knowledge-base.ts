@@ -1,6 +1,6 @@
 import { tool, jsonSchema } from 'ai';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { logger } from '@/lib/logger';
+import { createAdminClient } from '../../supabase/admin';
+import { logger } from '../../logger';
 import { embedText } from '@/lib/embeddings';
 
 interface ToolContext {

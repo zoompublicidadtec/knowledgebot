@@ -47,8 +47,9 @@ export default function ChatClientPage({
 
   // Live real-time subscription for messages and conversation updates
   useEffect(() => {
+    // Unique channel per conversation to avoid collisions
     const channel = supabase
-      .channel('realtime_chat')
+      .channel(`realtime_chat_${conversationId}`)
       .on(
         'postgres_changes',
         {
@@ -60,7 +61,17 @@ export default function ChatClientPage({
         (payload) => {
           if (payload.eventType === 'INSERT') {
             setMessages((prev) => {
-              if (prev.some((m) => m.id === payload.new.id)) return prev;
+              // Si ya lo tenemos en el estado por actualización optimista, lo ignoramos o actualizamos
+              if (prev.some((m) => m.id === payload.new.id || m.wa_message_id === payload.new.wa_message_id)) {
+                return prev;
+              }
+              // Si hay un mensaje temporal optimista con el mismo contenido, lo reemplazamos con el real de Supabase
+              const tempIndex = prev.findIndex((m) => m.id.startsWith('temp_') && m.content === payload.new.content);
+              if (tempIndex !== -1) {
+                const copy = [...prev];
+                copy[tempIndex] = payload.new;
+                return copy;
+              }
               return [...prev, payload.new];
             });
           }
@@ -114,6 +125,18 @@ export default function ChatClientPage({
         setBotActive(!nextState); // Rollback
       }
     });
+  }
+
+  function handleOptimisticMessageSent(content: string) {
+    const tempMessage = {
+      id: `temp_${Date.now()}`,
+      conversation_id: conversationId,
+      direction: 'outbound',
+      sender: 'human',
+      content: content,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, tempMessage]);
   }
 
   return (
@@ -223,7 +246,11 @@ export default function ChatClientPage({
         </div>
 
         {/* Message Input */}
-        <MessageInput conversationId={conversationId} contactPhone={contact?.wa_phone || ''} />
+        <MessageInput 
+          conversationId={conversationId} 
+          contactPhone={contact?.wa_phone || ''} 
+          onMessageSent={handleOptimisticMessageSent}
+        />
       </div>
     </div>
   );

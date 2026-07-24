@@ -1,0 +1,596 @@
+{
+  "startedAt": "2026-07-09T13:58:59.854Z",
+  "finishedAt": "2026-07-09T14:02:04.095Z",
+  "totalTurns": 20,
+  "globalPassRate": 0.05,
+  "ragHealth": {
+    "online": false,
+    "latencyMs": null
+  },
+  "categoryStats": [
+    {
+      "category": "Cuadernos",
+      "total": 4,
+      "pass": 0,
+      "guardrailBlock": 0,
+      "frozen": 0,
+      "hallucinatedPrice": 0,
+      "noPrice": 4,
+      "passRate": 0
+    },
+    {
+      "category": "Tarjetas de Presentación",
+      "total": 4,
+      "pass": 1,
+      "guardrailBlock": 0,
+      "frozen": 0,
+      "hallucinatedPrice": 0,
+      "noPrice": 3,
+      "passRate": 0.25
+    },
+    {
+      "category": "DTF",
+      "total": 4,
+      "pass": 0,
+      "guardrailBlock": 0,
+      "frozen": 0,
+      "hallucinatedPrice": 0,
+      "noPrice": 4,
+      "passRate": 0
+    },
+    {
+      "category": "Mugs / Pocillos",
+      "total": 4,
+      "pass": 0,
+      "guardrailBlock": 0,
+      "frozen": 0,
+      "hallucinatedPrice": 0,
+      "noPrice": 4,
+      "passRate": 0
+    },
+    {
+      "category": "Llaveros",
+      "total": 4,
+      "pass": 0,
+      "guardrailBlock": 0,
+      "frozen": 0,
+      "hallucinatedPrice": 0,
+      "noPrice": 4,
+      "passRate": 0
+    }
+  ],
+  "turns": [
+    {
+      "category": "Cuadernos",
+      "pricingLogic": "compuesto",
+      "variantLabel": "formal",
+      "question": "Hola, necesito cotizar cuadernos personalizados para mi empresa",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo con los cuadernos personalizados. Para darte el valor exacto, ¿qué tamaño buscas, de cuántas hojas los necesitas, qué cantidad y si los prefieres argollados o cosidos?",
+      "latencyMs": 3089,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [
+          "ieres"
+        ],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Cuaderno Argollado - Base 120 hojas (precio por unidad, sin adicionales)",
+        "Cuaderno Argollado - Base 100 hojas (precio por unidad, sin adicionales)",
+        "Cuaderno Argollado - Base 80 hojas (precio por unidad, sin adicionales)"
+      ]
+    },
+    {
+      "category": "Cuadernos",
+      "pricingLogic": "compuesto",
+      "variantLabel": "jerga_col",
+      "question": "Buenas, ando buscando unas libreticas para regalar en un evento",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo con las libretas. Para darte el valor exacto, ¿qué tamaño buscas, de cuántas hojas las necesitas, qué cantidad y si las prefieres argolladas o cosidas?",
+      "latencyMs": 2679,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [
+          "ieres"
+        ],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Cuaderno Argollado - Base 120 hojas (precio por unidad, sin adicionales)",
+        "Cuaderno Argollado - Base 100 hojas (precio por unidad, sin adicionales)",
+        "Cuaderno Argollado - Base 80 hojas (precio por unidad, sin adicionales)"
+      ]
+    },
+    {
+      "category": "Cuadernos",
+      "pricingLogic": "compuesto",
+      "variantLabel": "con_cantidad",
+      "question": "Cotízame 50 cuadernos de 100 hojas tamaño 1/2 carta argollados",
+      "response": "<thought>\n- Fase actual del embudo: Fase 1 Calificación\n- Datos que ya tengo: cantidad=50, hojas=100, tamaño=1/2 carta, tipo=argollado\n- Regla de categoría inyectada recibida: ninguna\n- Preguntas de cualificación ya hechas en el historial: ninguna\n- Decisión: La búsqueda de \"cuaderno 100 hojas\" sigue sin dar resultados. Parece que el catálogo no tiene un producto base con esa descripción exacta. Voy a intentar una búsqueda más amplia para \"cuaderno\" y luego buscar las características de tamaño y tipo (argollado) como adicionales, si es que existen como productos separados.\n\nDado que las búsquedas específicas no están funcionando, voy a intentar buscar solo",
+      "latencyMs": 79517,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Cuaderno Argollado - Base 120 hojas (precio por unidad, sin adicionales)",
+        "Cuaderno Argollado - Base 100 hojas (precio por unidad, sin adicionales)",
+        "Cuaderno Argollado - Base 80 hojas (precio por unidad, sin adicionales)"
+      ]
+    },
+    {
+      "category": "Cuadernos",
+      "pricingLogic": "compuesto",
+      "variantLabel": "ambigua",
+      "question": "Cuánto valen los cuadernos?",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo con los cuadernos. Para darte el valor exacto, ¿qué tamaño buscas (1/2 Carta, 1/2 Octavo o Carta), de cuántas hojas los necesitas (80, 100 o 120), qué cantidad y si los prefieres argollados o cosidos?",
+      "latencyMs": 3948,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [
+          "ieres"
+        ],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Cuaderno Argollado - Base 120 hojas (precio por unidad, sin adicionales)",
+        "Cuaderno Argollado - Base 100 hojas (precio por unidad, sin adicionales)",
+        "Cuaderno Argollado - Base 80 hojas (precio por unidad, sin adicionales)"
+      ]
+    },
+    {
+      "category": "Tarjetas de Presentación",
+      "pricingLogic": "millares",
+      "variantLabel": "formal",
+      "question": "Requiero cotizar tarjetas de presentación para la compañía",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo. Las manejamos en acabado Brillante, Mate UV o Imanadas. ¿Cuál acabado buscas y cuántos millares necesitas?",
+      "latencyMs": 2679,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Volante Carta 4x4 (full color ambas caras)",
+        "MORRAL BACKPACK SWISS PEAK BUZZ",
+        "Tarjetas Imanadas Brillantes"
+      ]
+    },
+    {
+      "category": "Tarjetas de Presentación",
+      "pricingLogic": "millares",
+      "variantLabel": "jerga_col",
+      "question": "Hola, necesito unas tarjetitas para el negocio",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo. Las manejamos en acabado Brillante, Mate UV o Imanadas. ¿Cuál acabado buscas y cuántos millares necesitas?",
+      "latencyMs": 3669,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Volante Carta 4x4 (full color ambas caras)",
+        "MORRAL BACKPACK SWISS PEAK BUZZ",
+        "Tarjetas Imanadas Brillantes"
+      ]
+    },
+    {
+      "category": "Tarjetas de Presentación",
+      "pricingLogic": "millares",
+      "variantLabel": "con_cantidad",
+      "question": "Precio de 1000 tarjetas de presentación brillantes",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te cotizo las 1000 tarjetas de presentación. Te presento tres opciones:\n\n*Opción Premium:*\n- *Tarjetas Imanadas Brillantes* (Ref: TJ-IM): $180.000 COP\n- *Total por 1000 unidades:* $180.000 COP\n\n*Opción Estándar:*\n- *Tarjetas Mate UV* (Ref: TJ-UV): $75.000 COP\n- *Total por 1000 unidades:* $75.000 COP\n\n*Opción Económica:*\n- *Tarjetas Brillantes* (Ref: TJ-BR): $55.000 COP\n- *Total por 1000 unidades:* $55.000 COP\n\n¿Cuál de estas opciones te interesa más?",
+      "latencyMs": 16298,
+      "error": null,
+      "verdict": "PASS",
+      "detail": {
+        "verdict": "PASS",
+        "mentionedPrices": [
+          180000,
+          180000,
+          75000,
+          75000,
+          55000,
+          55000
+        ],
+        "matchedRealPrices": [
+          180000,
+          180000
+        ],
+        "hallucinatedPrices": [
+          75000,
+          75000,
+          55000,
+          55000
+        ],
+        "mentionedProductIds": [
+          "TJ-IM",
+          "TJ-UV",
+          "TJ-BR"
+        ],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot respondió con 2 precio(s) válido(s) contra la BD."
+      },
+      "realProductNames": [
+        "Volante Carta 4x4 (full color ambas caras)",
+        "MORRAL BACKPACK SWISS PEAK BUZZ",
+        "Tarjetas Imanadas Brillantes"
+      ]
+    },
+    {
+      "category": "Tarjetas de Presentación",
+      "pricingLogic": "millares",
+      "variantLabel": "ambigua",
+      "question": "Cuánto cuestan las tarjetas?",
+      "response": "Con gusto. Las manejamos en acabado Brillante, Mate UV o Imanadas. ¿Cuál acabado buscas y cuántos millares necesitas?",
+      "latencyMs": 2841,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Volante Carta 4x4 (full color ambas caras)",
+        "MORRAL BACKPACK SWISS PEAK BUZZ",
+        "Tarjetas Imanadas Brillantes"
+      ]
+    },
+    {
+      "category": "DTF",
+      "pricingLogic": "area",
+      "variantLabel": "formal",
+      "question": "Necesito cotizar DTF para estampar camisetas con mi logo",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo con la cotización de DTF. Para darte un valor exacto, ¿cuántas unidades necesitas y de qué tamaño es tu logo (ancho y alto en centímetros)?",
+      "latencyMs": 2449,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set Ecologico Demin",
+        "Puerto USB RPET",
+        "SILLA COMPACT FLEX"
+      ]
+    },
+    {
+      "category": "DTF",
+      "pricingLogic": "area",
+      "variantLabel": "jerga_col",
+      "question": "Hola, quiero unas estampas para unas camisetas",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo con las estampas. Para poder cotizarte, necesito saber si buscas estampas en DTF o Screen, qué tamaño aproximado tienen (ancho y alto en centímetros) y qué cantidad de estampas necesitas.",
+      "latencyMs": 2776,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set Ecologico Demin",
+        "Puerto USB RPET",
+        "SILLA COMPACT FLEX"
+      ]
+    },
+    {
+      "category": "DTF",
+      "pricingLogic": "area",
+      "variantLabel": "con_cantidad",
+      "question": "Cotiza 100 DTF textiles de 10x10 cm para mi marca",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nNo encontré el producto \"DTF\" con el ID que usé. Para poder cotizarte los DTF textiles, ¿podrías darme más detalles sobre el tipo de DTF que buscas o si tienes alguna referencia específica?",
+      "latencyMs": 4819,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [
+          "erencia"
+        ],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set Ecologico Demin",
+        "Puerto USB RPET",
+        "SILLA COMPACT FLEX"
+      ]
+    },
+    {
+      "category": "DTF",
+      "pricingLogic": "area",
+      "variantLabel": "ambigua",
+      "question": "Cuánto vale el DTF?",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nPara poder cotizar el DTF, necesito saber las medidas de ancho y alto de cada pieza, y la cantidad de piezas que necesitas.",
+      "latencyMs": 2576,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set Ecologico Demin",
+        "Puerto USB RPET",
+        "SILLA COMPACT FLEX"
+      ]
+    },
+    {
+      "category": "Mugs / Pocillos",
+      "pricingLogic": "volumen",
+      "variantLabel": "formal",
+      "question": "Hola, deseo cotizar mugs personalizados para un evento corporativo",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nClaro que sí. Manejamos varias líneas de mugs: sencillo blanco, con color interno, tintero o mágico. ¿Cuál te interesa y cuántas unidades necesitas?",
+      "latencyMs": 2462,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set de Mugs con Termo Cascade",
+        "Mug Ethio Cofee 473 ml",
+        "Mug Metálico Bamboo Eco 350ml"
+      ]
+    },
+    {
+      "category": "Mugs / Pocillos",
+      "pricingLogic": "volumen",
+      "variantLabel": "jerga_col",
+      "question": "Buenas, necesito unos pocillos pal tinto con el logo de la empresa",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nClaro que sí. Manejamos varias líneas de mugs: sencillo blanco, con color interno, tintero o mágico. ¿Cuál te interesa y cuántas unidades necesitas?",
+      "latencyMs": 2991,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set de Mugs con Termo Cascade",
+        "Mug Ethio Cofee 473 ml",
+        "Mug Metálico Bamboo Eco 350ml"
+      ]
+    },
+    {
+      "category": "Mugs / Pocillos",
+      "pricingLogic": "volumen",
+      "variantLabel": "con_cantidad",
+      "question": "Cotiza 50 mugs de cerámica blanca de 11 onzas",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nNo encontré un mug de cerámica blanca de 11 onzas exacto en el catálogo. Para poder darte las mejores opciones, ¿podrías indicarme si buscas un mug de color específico, o si te interesaría alguna otra característica como que sea mágico, con color interno o tipo tintero?",
+      "latencyMs": 15951,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set de Mugs con Termo Cascade",
+        "Mug Ethio Cofee 473 ml",
+        "Mug Metálico Bamboo Eco 350ml"
+      ]
+    },
+    {
+      "category": "Mugs / Pocillos",
+      "pricingLogic": "volumen",
+      "variantLabel": "ambigua",
+      "question": "Cuánto valen los pocillos?",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nClaro que sí. Manejamos varias líneas de mugs: sencillo blanco, con color interno, tintero o mágico. ¿Cuál te interesa y cuántas unidades necesitas?",
+      "latencyMs": 4096,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set de Mugs con Termo Cascade",
+        "Mug Ethio Cofee 473 ml",
+        "Mug Metálico Bamboo Eco 350ml"
+      ]
+    },
+    {
+      "category": "Llaveros",
+      "pricingLogic": "diversidad",
+      "variantLabel": "formal",
+      "question": "Necesito cotizar llaveros promocionales para una campaña",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo con los llaveros promocionales. Para darte opciones exactas, ¿los buscas en algún material específico como acrílico, metálico o plástico, y para qué cantidad aproximada?",
+      "latencyMs": 5436,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set ML-421 Rpet",
+        "Set ML-398",
+        "Set ML-422 Rpet"
+      ]
+    },
+    {
+      "category": "Llaveros",
+      "pricingLogic": "diversidad",
+      "variantLabel": "jerga_col",
+      "question": "Hola, ando buscando unos llaveritos para regalar",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\n",
+      "latencyMs": 8262,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set ML-421 Rpet",
+        "Set ML-398",
+        "Set ML-422 Rpet"
+      ]
+    },
+    {
+      "category": "Llaveros",
+      "pricingLogic": "diversidad",
+      "variantLabel": "con_cantidad",
+      "question": "Cotiza 100 llaveros plastisol de forma redonda",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nNo encontré llaveros plastisol con la descripción de \"redondo\" en este momento. Para poder ayudarte mejor, ¿podrías darme más detalles sobre el tipo de llavero plastisol que buscas o alguna característica adicional?",
+      "latencyMs": 8505,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set ML-421 Rpet",
+        "Set ML-398",
+        "Set ML-422 Rpet"
+      ]
+    },
+    {
+      "category": "Llaveros",
+      "pricingLogic": "diversidad",
+      "variantLabel": "ambigua",
+      "question": "Cuánto cuestan los llaveros?",
+      "response": "Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?\n\nCon gusto te ayudo con los llaveros. Para darte opciones exactas, ¿los buscas en material metálico, acrílico o de goma, y qué cantidad aproximada necesitas?",
+      "latencyMs": 4461,
+      "error": null,
+      "verdict": "NO_PRICE",
+      "detail": {
+        "verdict": "NO_PRICE",
+        "mentionedPrices": [],
+        "matchedRealPrices": [],
+        "hallucinatedPrices": [],
+        "mentionedProductIds": [],
+        "guardrailTriggered": false,
+        "frozen": false,
+        "reason": "El bot describió producto(s) pero no dio ningún precio (no llamó getProductPrice o no lo mostró)."
+      },
+      "realProductNames": [
+        "Set ML-421 Rpet",
+        "Set ML-398",
+        "Set ML-422 Rpet"
+      ]
+    }
+  ],
+  "rootCauseDiagnosis": "CAUSA DOMINANTE: EL BOT NO DA PRECIOS (19/20 turnos describen productos pero sin cifras). El bot no está ejecutando getProductPrice, o lo ejecuta pero no muestra el resultado.",
+  "recommendations": [
+    "⚡ Revisar si el system-prompt está forzando demasiada indagación antes de cotizar (Protocolo de Indagación demasiado estricto).",
+    "⚡ Verificar que getProductPrice devuelva precios para los product_ids de estas categorías (pueden faltar tiers)."
+  ]
+}

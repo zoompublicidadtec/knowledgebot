@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { SquaresFour, CalendarBlank, ChatCircleDots, TrendUp, Users } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { ActivityChart } from '@/components/dashboard/activity-chart';
+import { BotGlobalToggle } from '@/components/dashboard/bot-global-toggle';
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -43,6 +44,15 @@ export default async function DashboardPage() {
     .select('*', { count: 'exact', head: true })
     .eq('organization_id', orgId);
 
+  // Bot global toggle state
+  const { data: agentConfig } = await (supabase as any)
+    .from('agent_configs')
+    .select('bot_globally_enabled')
+    .eq('organization_id', orgId)
+    .single();
+
+  const botGloballyEnabled = agentConfig?.bot_globally_enabled ?? true;
+
   // Last 5 conversations
   const { data: recentConversations } = await (supabase as any)
     .from('conversations')
@@ -63,6 +73,9 @@ export default async function DashboardPage() {
           Resumen de actividad de tu negocio
         </p>
       </div>
+
+      {/* Interruptor General del Bot */}
+      <BotGlobalToggle initialEnabled={botGloballyEnabled} />
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

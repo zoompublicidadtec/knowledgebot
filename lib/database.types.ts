@@ -137,6 +137,7 @@ export interface Database {
           services: Json;
           business_hours: Json;
           handoff_message: string | null;
+          bot_globally_enabled: boolean;
           metadata: Json;
           updated_at: string;
         };
@@ -148,6 +149,7 @@ export interface Database {
           services?: Json;
           business_hours?: Json;
           handoff_message?: string | null;
+          bot_globally_enabled?: boolean;
           metadata?: Json;
           updated_at?: string;
         };
@@ -159,6 +161,7 @@ export interface Database {
           services?: Json;
           business_hours?: Json;
           handoff_message?: string | null;
+          bot_globally_enabled?: boolean;
           metadata?: Json;
           updated_at?: string;
         };

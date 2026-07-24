@@ -24,46 +24,55 @@ export async function transcribeAudio(
   // OpenRouter transcription endpoint
   const url = 'https://openrouter.ai/api/v1/audio/transcriptions';
 
-  logger.info(`Sending audio transcription request to OpenRouter (format: ${format})...`);
+  const models = [
+    'openai/whisper-large-v3-turbo',
+    'openai/whisper-large-v3',
+    'openai/whisper-1',
+  ];
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'openai/whisper-large-v3-turbo',
-        // Send both camelCase and snake_case to be fully compliant with OpenRouter specs
-        inputAudio: {
-          data: base64Data,
-          format: format,
-        },
-        input_audio: {
-          data: base64Data,
-          format: format,
-        },
-        language: 'es', // Request Spanish transcription
-      }),
-    });
+  let lastError: any = null;
 
-    if (!response.ok) {
-      const errText = await response.text();
-      logger.error('OpenRouter transcription error response', {
-        status: response.status,
-        body: errText,
+  for (const model of models) {
+    logger.info(`Sending audio transcription request to OpenRouter using ${model} (format: ${format})...`);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model,
+          input_audio: {
+            data: base64Data,
+            format: format,
+          },
+          language: 'es',
+        }),
       });
-      throw new Error(`OpenRouter transcription returned status ${response.status}`);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        logger.warn(`OpenRouter transcription error with model ${model}`, {
+          status: response.status,
+          body: errText,
+        });
+        lastError = new Error(`OpenRouter transcription returned status ${response.status}: ${errText}`);
+        continue;
+      }
+
+      const data = (await response.json()) as TranscribeResult;
+      const transcribedText = data.text?.trim() || '';
+
+      logger.info(`Successfully transcribed audio using ${model}`, { length: transcribedText.length });
+      return transcribedText;
+    } catch (err: any) {
+      logger.warn(`Failed to transcribe audio using ${model}`, { error: String(err) });
+      lastError = err;
     }
-
-    const data = (await response.json()) as TranscribeResult;
-    const transcribedText = data.text?.trim() || '';
-
-    logger.info('Successfully transcribed audio', { length: transcribedText.length });
-    return transcribedText;
-  } catch (err) {
-    logger.error('Failed to transcribe audio via OpenRouter', { error: String(err) });
-    throw err;
   }
+
+  logger.error('All transcription models failed', { error: String(lastError) });
+  throw lastError || new Error('Transcription failed');
 }
