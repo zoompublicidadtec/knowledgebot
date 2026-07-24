@@ -20,6 +20,7 @@ Después de **cualquier** cambio, añade una fila con: Fecha, Objetivo, Archivos
 
 | Fecha | Objetivo | Archivos tocados | Prueba realizada | Resultado |
 |---|---|---|---|---|
+| 2026-07-24 | **PUNTO DE RESTAURACIÓN RESTORE_POINT_20260724_PRE_ZM_PREFERENTE**: Restauración de puntaje preferente para referencias `ZM-` de ZOOM y activación de extracción de fotos/citas. | `Motor de Conocimiento/rag_query_engine.py`, `docs/REGISTRO_DE_CAMBIOS.md` | Commit git `376092a` / `7e0c100`. | ✅ OK |
 | 2026-07-18 | Documentación operativa inicial. | `docs/ESTADO_OPERATIVO.md`, `docs/REGISTRO_DE_CAMBIOS.md`, `AGENTS.md` | Lectura cruzada de memoria vs código. | ✅ OK |
 | 2026-07-21 | Restauración del pipeline multimodal (visión de imágenes + audio). | `lib/whatsapp/webhook-processor.ts` | Backup + tsc. | ⚠️ Revertido por el usuario. |
 | 2026-07-21 | Reversión completa + limpieza de scripts `.py` con credenciales. | `webhook-processor.ts`, 20 scripts `.py` eliminados | grep de credenciales. | ✅ OK |

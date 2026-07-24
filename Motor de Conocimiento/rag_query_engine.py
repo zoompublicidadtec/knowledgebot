@@ -903,8 +903,8 @@ def is_preferente(product: dict) -> bool:
     preferente y aún así el bot lo cotiza vía la RPC de Supabase.
     ─────────────────────────────────────────────────────────────────
     """
-    pid = str(product.get("product_id") or "")
-    return bool(_UUID_RE.match(pid))
+    pid = str(product.get("product_id") or "").strip().upper()
+    return pid.startswith("ZM-") or bool(_UUID_RE.match(pid))
 
 
 def apply_internal_boost(results: list[dict], query: str, top_k: int) -> list[dict]:
