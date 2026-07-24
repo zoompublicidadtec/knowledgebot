@@ -16,7 +16,11 @@ services:
       - NODE_ENV=production
       - PORT=3003
       - HOSTNAME=0.0.0.0
-      - WHATSAPP_BRIDGE_URL=http://localhost:3004
+      - WHATSAPP_BRIDGE_URL=http://localhost:3005
+      - VOLUME_PATH=/data
+    volumes:
+      - ./attachments:/data/attachments
+      - ./catalogo_catalogospromocionales/imagenes_productos:/data/imagenes_productos:ro
     logging:
       driver: "json-file"
       options:
@@ -28,10 +32,13 @@ services:
       context: ./wa-server
       dockerfile: Dockerfile
     container_name: knowledgebot-wa-bridge
+    init: true
     network_mode: "host"
     restart: always
     env_file:
       - .env.production
+    environment:
+      - APP_URL=http://localhost:3003
     volumes:
       - ./wwebjs_sessions:/data/wwebjs_sessions
       - ./wa-server/.wwebjs_cache:/app/.wwebjs_cache
