@@ -318,9 +318,13 @@ export async function processInboundMessage(
           // Dispatch queued product photos if any were captured during tool calls
           const photos = getPhotosForConversation(conversationId);
           if (photos && photos.length > 0) {
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://zoompublicidad.tech';
             for (const photo of photos) {
               try {
-                await adapter.sendMediaMessage(message.from, photo.image_url, photo.name);
+                const fullUrl = photo.image_url.startsWith('http')
+                  ? photo.image_url
+                  : `${baseUrl}${photo.image_url.startsWith('/') ? '' : '/'}${photo.image_url}`;
+                await adapter.sendMediaMessage(message.from, fullUrl, photo.name);
               } catch (photoErr) {
                 logger.error('Failed to send product photo', { error: String(photoErr), photo });
               }

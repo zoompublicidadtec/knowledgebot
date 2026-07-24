@@ -247,10 +247,12 @@ export function searchCatalogTool() {
           matches = matches.map((m: any) => {
             const pid = String(m.product_id || '').trim();
             const refCorta = (m.reference && !isUUID(m.reference)) ? m.reference : (isUUID(pid) ? `REF-${pid.slice(0, 8).toUpperCase()}` : pid);
+            const rawImg = m.image_url || (m.image_urls && m.image_urls[0]) || `/api/catalog-images/${refCorta}`;
             return {
               ...m,
               product_id: refCorta,
               reference: refCorta,
+              image_url: rawImg,
             };
           });
 

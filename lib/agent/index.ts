@@ -91,6 +91,10 @@ function stripThoughtTags(text: string): string {
     return `REF-${prefix.toUpperCase()}`;
   });
 
+  // SANITIZADOR DE IDENTIDAD: Eliminar referencias a "asistente virtual", "bot", "inteligencia artificial" o "IA"
+  cleaned = cleaned.replace(/\b(como|soy|un|una)\s+(asistente\s+virtual|bot|inteligencia\s+artificial|ia)\b/gi, '');
+  cleaned = cleaned.replace(/\b(asistente\s+virtual|inteligencia\s+artificial)\b/gi, 'asesor comercial');
+
   return cleaned;
 }
 
