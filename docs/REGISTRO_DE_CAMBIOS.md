@@ -36,6 +36,7 @@ Después de **cualquier** cambio, añade una fila con: Fecha, Objetivo, Archivos
 | 2026-07-24 | **Poblado de referencias comerciales ZM- en Supabase (517 productos) y all_products.json (488 productos) + Migración 00007 (Trigger antierror).** Backup creado: `all_products.json.bak`. | `scripts/populate_zoom_references.ts`, `supabase/migrations/00007_auto_generate_product_reference.sql`, `lib/agent/tools/search-catalog.ts`, `all_products.json` | Ejecución de script de lote + sanitización de rag_response. | ✅ 8.639 productos en Supabase con referencias comerciales completas. |
 | 2026-07-24 | **Actualización de `lib/embeddings.ts` para soporte multiclave (GEMINI_API_KEY / GOOGLE_API_KEY / OPENROUTER_API_KEY) + fallback resiliente en Glosario.** | `lib/embeddings.ts` | Guardado de jerga comercial en el panel web. | ✅ Guardado de glosario 100% funcional. |
 | 2026-07-24 | **Blindaje total en `saveGlosarioItem` (try/catch para evitar alertas) + adición de `posillo`/`posillos` en `JARGON_SYNONYMS` de Python RAG.** | `app/(app)/conocimiento/actions.ts`, `Motor de Conocimiento/rag_query_engine.py` | Pruebas de guardado de jerga + búsquedas de posillo en RAG. | ✅ OK |
+| 2026-07-24 | **Soporte híbrido Gemini 2 + OpenRouter en `lib/embeddings.ts` (detección por prefijo de clave `AIza...` / `sk-or-v1...`).** | `lib/embeddings.ts` | Guardado de jerga comercial sin depender exclusivamente de GEMINI_API_KEY. | ✅ OK |
 
 ---
 
