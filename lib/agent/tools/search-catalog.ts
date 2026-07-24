@@ -242,17 +242,26 @@ export function searchCatalogTool() {
             matches = pricedMatches;
           }
 
-          // Enmascarar product_id a ref_corta (evitar que el LLM vea jamás UUIDs de 36 caracteres)
+          // Enmascarar product_id a la referencia comercial limpia (ZM-MUG-001, MU-302, etc.)
           const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
           matches = matches.map((m: any) => {
             const pid = String(m.product_id || '').trim();
-            const refCorta = isUUID(pid) ? `REF-${pid.slice(0, 8).toUpperCase()}` : (m.reference || pid);
+            const refCorta = (m.reference && !isUUID(m.reference)) ? m.reference : (isUUID(pid) ? `REF-${pid.slice(0, 8).toUpperCase()}` : pid);
             return {
               ...m,
               product_id: refCorta,
               reference: refCorta,
             };
           });
+
+          // Sanitizar rag_response para que el LLM jamás lea UUIDs en el texto crudo del RAG
+          let cleanRagResponse = data.response || '';
+          if (cleanRagResponse) {
+            cleanRagResponse = cleanRagResponse.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi, (uuidMatch: string) => {
+              const matchedProd = matches.find((m: any) => m.product_id === uuidMatch || m.id === uuidMatch);
+              return matchedProd?.reference || `REF-${uuidMatch.slice(0, 8).toUpperCase()}`;
+            });
+          }
 
           const cotizables = matches.filter((m: any) => m.has_pricing).length;
           logger.info('RAG microservice response success', { count: matches.length, cotizables });
@@ -261,8 +270,8 @@ export function searchCatalogTool() {
             success: true,
             query: rawQuery,
             matches,
-            rag_response: data.response,
-            note: 'Se ha realizado una búsqueda semántica usando el Motor de Conocimiento RAG. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente. PRIORIDAD OFICIAL ZOOM: Todos los productos presentados DEBEN tener has_pricing=true. Queda PROHIBIDO presentar productos sin tarifa o usar frases evasivas como "déjame confirmar con producción". FORMATO DE REFERENCIA: Muestra la referencia en formato limpio (ej: Ref: REF-AE9573E1 o Ref: MU-303-1). FOTOS E IMÁGENES: El sistema adjunta automáticamente la imagen por WhatsApp. Si el cliente pregunta por fotos o imágenes, responde afirmativamente con entusiasmo ("¡Claro que sí! Aquí te comparto la imagen del producto:") confirmando la foto adjunta.',
+            rag_response: cleanRagResponse,
+            note: 'Se ha realizado una búsqueda semántica usando el Motor de Conocimiento RAG. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente. PRIORIDAD OFICIAL ZOOM: Todos los productos presentados DEBEN tener has_pricing=true. Queda PROHIBIDO presentar productos sin tarifa o usar frases evasivas como "déjame confirmar con producción". FORMATO DE REFERENCIA: Muestra la referencia comercial limpia (ej: Ref: ZM-MUG-001 o Ref: MU-303-1). FOTOS E IMÁGENES: El sistema adjunta automáticamente la imagen por WhatsApp. Si el cliente pregunta por fotos o imágenes, responde afirmativamente con entusiasmo ("¡Claro que sí! Aquí te comparto la imagen del producto:") confirmando la foto adjunta.',
           };
         } else {
           logger.warn(`RAG microservice returned status ${response.status}, falling back to database search`);
