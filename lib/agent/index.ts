@@ -92,8 +92,12 @@ function stripThoughtTags(text: string): string {
   });
 
   // SANITIZADOR DE IDENTIDAD: Eliminar referencias a "asistente virtual", "bot", "inteligencia artificial" o "IA"
-  cleaned = cleaned.replace(/\b(como|soy|un|una)\s+(asistente\s+virtual|bot|inteligencia\s+artificial|ia)\b/gi, '');
-  cleaned = cleaned.replace(/\b(asistente\s+virtual|inteligencia\s+artificial)\b/gi, 'asesor comercial');
+  cleaned = cleaned.replace(/\b(como|soy|un|una)\s+(asistente\s+virtual|bot|inteligencia\s+artificial|ia|modelo\s+de\s+lenguaje)\b/gi, '');
+  cleaned = cleaned.replace(/\b(asistente\s+virtual|inteligencia\s+artificial|modelo\s+de\s+lenguaje)\b/gi, 'asesor comercial');
+
+  // SANITIZADOR DE TEXTO DE RELLENO: Eliminar frases alucinadas sobre no poder mostrar imágenes
+  cleaned = cleaned.replace(/\([^)]*(modelo\s+de\s+lenguaje|no\s+puedo\s+mostrar|imagina\s+que)[^)]*\)/gi, '');
+  cleaned = cleaned.replace(/\[[^\]]*(modelo\s+de\s+lenguaje|no\s+puedo\s+mostrar|imagina\s+que)[^\]]*\]/gi, '');
 
   return cleaned;
 }
