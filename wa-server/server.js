@@ -623,7 +623,18 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
         }
 
         console.log('[' + sessionName + '] Enviando media desde URL: ' + fullMediaUrl);
-        const media = await MessageMedia.fromUrl(fullMediaUrl, { unsafeMime: true });
+        let media;
+        try {
+            media = await MessageMedia.fromUrl(fullMediaUrl, { unsafeMime: true });
+        } catch (urlErr) {
+            console.warn('[' + sessionName + '] MessageMedia.fromUrl fallo (' + urlErr.message + '), intentando fallback con fetch...');
+            const fetchRes = await fetch(fullMediaUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+            if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status} al descargar media de ${fullMediaUrl}`);
+            const arrayBuf = await fetchRes.arrayBuffer();
+            const mimeType = fetchRes.headers.get('content-type') || 'image/jpeg';
+            const base64Data = Buffer.from(arrayBuf).toString('base64');
+            media = new MessageMedia(mimeType, base64Data, 'imagen.jpg');
+        }
         const sentMsg = await client.sendMessage(chatId, media, { caption: caption || '' });
         res.json({ data: { id: sentMsg?.id?._serialized || ('sent_media_' + Date.now()) } });
     } catch (e) {
