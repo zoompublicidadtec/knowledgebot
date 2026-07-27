@@ -232,6 +232,16 @@ const sessions = new Map();
 // incluso después de que sessions.delete() borra la entrada de memoria.
 // Es solo para diagnóstico/lectura — no afecta la lógica de conexión.
 const lastDisconnectInfo = new Map();
+const reconnectAttempts = new Map();
+const reconnectTimers = new Map();
+const MAX_RECONNECT_ATTEMPTS = 5;
+
+function clearReconnectState(sessionName) {
+    const timer = reconnectTimers.get(sessionName);
+    if (timer) clearTimeout(timer);
+    reconnectTimers.delete(sessionName);
+    reconnectAttempts.delete(sessionName);
+}
 
 function startSession(sessionName) {
     if (sessions.has(sessionName)) {
@@ -322,6 +332,7 @@ function startSession(sessionName) {
         console.log(`==================================================\n`);
 
         sessionObj.status = 'connected';
+        clearReconnectState(sessionName);
         // ── NUEVO (seguimiento): registrar momento de conexión y teléfono.
         sessionObj.connectedAt = new Date().toISOString();
         sessionObj.phoneNumber = phone;
@@ -367,12 +378,39 @@ function startSession(sessionName) {
 
     // ─── DISCONNECTED ─────────────────────────────────────
     client.on('disconnected', async (reason) => {
+        // Ignore stale events emitted by a client already replaced by a newer one.
+        if (sessions.get(sessionName) !== sessionObj) return;
+
         console.error(`[${sessionName}] Desconectado. Razón: ${reason}`);
-        // ── NUEVO (seguimiento): conservar info de la caída antes de limpiar.
         try { lastDisconnectInfo.set(sessionName, { reason: String(reason), at: new Date().toISOString() }); } catch {}
         if (sessionObj.intervalId) clearInterval(sessionObj.intervalId);
         sessions.delete(sessionName);
+        try { await client.destroy(); } catch {}
 
+        const reasonText = String(reason || 'unknown');
+        const sessionDir = path.join(SESSION_DATA_PATH, `session-${sessionName}`);
+        const hasLocalSession = fs.existsSync(sessionDir);
+        const isExplicitLogout = /logout|unpaired|auth(?:entication)?[_ -]?failure/i.test(reasonText);
+
+        if (hasLocalSession && !isExplicitLogout) {
+            const attempt = (reconnectAttempts.get(sessionName) || 0) + 1;
+            reconnectAttempts.set(sessionName, attempt);
+
+            if (attempt <= MAX_RECONNECT_ATTEMPTS) {
+                const delayMs = Math.min(3000 * attempt, 15000);
+                console.warn(`[${sessionName}] Reconexión automática ${attempt}/${MAX_RECONNECT_ATTEMPTS} en ${delayMs}ms.`);
+                const timer = setTimeout(() => {
+                    reconnectTimers.delete(sessionName);
+                    if (!sessions.has(sessionName)) startSession(sessionName);
+                }, delayMs);
+                reconnectTimers.set(sessionName, timer);
+                return;
+            }
+
+            console.error(`[${sessionName}] Se agotaron los reintentos de reconexión.`);
+        }
+
+        clearReconnectState(sessionName);
         await callbackToApp('/api/whatsapp-lines/status', { line_key: sessionName, status: 'disconnected' });
     });
 
