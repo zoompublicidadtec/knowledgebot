@@ -246,14 +246,11 @@ function clearReconnectState(sessionName) {
 function startSession(sessionName) {
     if (sessions.has(sessionName)) {
         const existing = sessions.get(sessionName);
-        if (existing.status === 'connected') {
-            console.log(`[${sessionName}] Ya conectado.`);
-            return existing;
-        }
-        console.log(`[${sessionName}] Reiniciando sesión previa...`);
-        try { existing.client.destroy(); } catch (e) {}
-        if (existing.intervalId) clearInterval(existing.intervalId);
-        sessions.delete(sessionName);
+        // Starting the same LocalAuth profile twice races Chromium and can
+        // invalidate a QR flow. An initialization error removes its entry,
+        // allowing a later explicit retry to create a fresh client.
+        console.log(`[${sessionName}] Sesión ya ${existing.status}; se conserva el cliente actual.`);
+        return existing;
     }
 
     console.log(`[${sessionName}] Inicializando cliente WhatsApp Web...`);
