@@ -8,7 +8,7 @@ import { bookAppointmentTool } from './tools/book-appointment';
 import { cancelAppointmentTool } from './tools/cancel-appointment';
 import { rescheduleAppointmentTool } from './tools/reschedule-appointment';
 import { queryKnowledgeBaseTool } from './tools/query-knowledge-base';
-import { searchCatalogTool } from './tools/search-catalog';
+import { searchCatalogTool, runCatalogSearch } from './tools/search-catalog';
 import { getProductPriceTool } from './tools/get-product-price';
 import { saveContactInfoTool } from './tools/save-contact-info';
 import { requestHumanHandoffTool } from './tools/request-human-handoff';
@@ -185,7 +185,8 @@ async function applyOutputGuardrail(
   responseText: string,
   steps: any[],
   questionStreak = 0,
-  approvedPrices: Set<number> = new Set()
+  approvedPrices: Set<number> = new Set(),
+  catalogHits: any[] = []
 ): Promise<{ blocked: boolean; reason: string }> {
   try {
     // 1. Toda referencia citada al cliente tiene que existir de verdad. En
@@ -194,6 +195,19 @@ async function applyOutputGuardrail(
     //    en este turno y, para las demás (p. ej. un producto cotizado antes en
     //    la misma conversación), se comprueba contra la base.
     const cited = extractCitedReferences(responseText);
+
+    // 0. RAIL DE RECUPERACIÓN: negar un producto que SÍ está en el catálogo es
+    //    el fallo más caro, porque el cliente se va creyendo que no lo tenemos.
+    //    Solo bloquea si además no ofreció ninguna referencia: "no manejamos esa
+    //    medida exactamente, pero tengo esta otra" es correcto y debe pasar.
+    if (catalogHits.length > 0 && cited.length === 0 && NEGACION_DE_CATALOGO.test(responseText)) {
+      logger.error('GUARDRAIL: negó un producto que sí está en el catálogo', {
+        coincidencias: catalogHits.length,
+        ejemplo: catalogHits[0]?.name || '',
+      });
+      return { blocked: true, reason: 'denied-with-catalog-hits' };
+    }
+
     if (cited.length > 0) {
       const allowed = collectAllowedReferences(steps);
       const unverified = cited.filter(r => !allowed.has(r));
@@ -336,6 +350,111 @@ function deduplicateHistory(messages: { role: string; content: string }[]) {
  * Runs the AI agent for an inbound WhatsApp message.
  * Returns the agent's text response or null if no response.
  */
+/**
+ * RAIL DE RECUPERACIÓN DETERMINISTA (input guardrail)
+ * --------------------------------------------------------------------------
+ * El 29-jul-2026 un cliente pidió "bolsas de organza, unas 100 de 5x7" —un
+ * producto que ZOOM fabrica y tiene cotizable— y el bot respondió "eso puntual
+ * no lo manejamos", se inventó tres referencias y le ofreció maletines. El log
+ * lo dejó claro: `fromTool: 0`, searchCatalog no se ejecutó nunca, y en el
+ * reintento buscó con las palabras de su propio texto de alcance.
+ *
+ * La regla existía, pero solo como frase en el prompt. Aquí la búsqueda con las
+ * palabras del cliente se ejecuta SIEMPRE en el servidor, antes de que el
+ * modelo hable, y negar un producto que sí está en el catálogo pasa a ser un
+ * bloqueo del guardrail, no una sugerencia.
+ */
+const PALABRAS_VACIAS = new Set([
+  'para', 'este', 'esta', 'esos', 'esas', 'como', 'pero', 'porque', 'cuando',
+  'donde', 'cuanto', 'cuantos', 'cuantas', 'necesito', 'necesita', 'quiero',
+  'quisiera', 'busco', 'buscar', 'tienen', 'tiene', 'tienes', 'manejan',
+  'manejas', 'hacen', 'haces', 'hola', 'buenas', 'favor', 'gracias', 'sale',
+  'vale', 'valen', 'cuesta', 'cuestan', 'precio', 'precios', 'valor', 'cotizar',
+  'cotizacion', 'unidades', 'unidad', 'sobre', 'algun', 'alguna', 'algunas',
+  'algunos', 'todos', 'todas', 'mucho', 'mucha', 'poder', 'puedes', 'puede',
+  'seria', 'estoy', 'tengo', 'saber', 'decir', 'dime', 'mandame', 'envia',
+  'enviame', 'ustedes', 'nosotros', 'tipo', 'clase', 'mismo', 'misma',
+]);
+
+function sinAcentos(text: string): string {
+  return Array.from(String(text || '').normalize('NFD'))
+    .filter((ch) => {
+      const cp = ch.codePointAt(0) ?? 0;
+      return cp < 0x300 || cp > 0x36f;
+    })
+    .join('');
+}
+
+function palabrasDeContenido(text: string): Set<string> {
+  const out = new Set<string>();
+  const limpio = sinAcentos(String(text || '').toLowerCase()).replace(/[^a-z0-9]+/g, ' ');
+  for (const w of limpio.split(' ')) {
+    if (w.length >= 4 && !PALABRAS_VACIAS.has(w) && !/^[0-9]+$/.test(w)) out.add(w);
+  }
+  return out;
+}
+
+/**
+ * Busca en el catálogo con el mensaje literal del cliente y se queda con los
+ * productos que comparten al menos una palabra de contenido con lo que pidió.
+ * Ese cruce léxico es lo que separa "bolsas de organza" —donde la coincidencia
+ * es real— de una pregunta fuera de catálogo, en la que la búsqueda vectorial
+ * devuelve cualquier cosa. Sin él, el rail bloquearía respuestas legítimas.
+ */
+async function probeCatalogo(messageText: string): Promise<{ relevant: any[]; total: number }> {
+  const texto = String(messageText || '');
+  // Los avisos internos de media fallida no son una petición del cliente.
+  if (texto.trim().startsWith('[El cliente envió')) return { relevant: [], total: 0 };
+
+  // El motor puntúa por palabras clave: la frase entera lo diluye. Medido con
+  // el mensaje real del cliente ("Hola, necesito bolsas de organza, necesito
+  // unas 100 de 5por7") devolvía CERO bolsas de organza; con "bolsas organza"
+  // devuelve las 7. Se consulta con los términos limpios, sin medidas ni
+  // cantidades.
+  const terminosDeConsulta = Array.from(palabrasDeContenido(texto))
+    .filter((w) => !/[0-9]/.test(w));
+  if (terminosDeConsulta.length === 0) return { relevant: [], total: 0 };
+
+  const consultas = [terminosDeConsulta.slice(0, 6).join(' ')];
+  const masEspecifico = terminosDeConsulta.slice().sort((a, b) => b.length - a.length)[0];
+  if (masEspecifico && masEspecifico !== consultas[0]) consultas.push(masEspecifico);
+
+  const pedidas = new Set(terminosDeConsulta);
+  let vistos = 0;
+  for (const consulta of consultas) {
+    try {
+      const res: any = await runCatalogSearch(consulta);
+      const matches: any[] = res?.matches || [];
+      vistos = matches.length;
+      const relevant = matches.filter((m: any) =>
+        coincideAlgunaPalabra(pedidas, palabrasDeContenido(`${m.name || ''} ${m.category || ''}`))
+      );
+      if (relevant.length > 0) return { relevant, total: vistos };
+    } catch (err) {
+      logger.warn('Rail de recuperación: la búsqueda previa falló', {
+        consulta, error: String(err),
+      });
+      return { relevant: [], total: 0 };
+    }
+  }
+  return { relevant: [], total: vistos };
+}
+
+/** Cruce de palabras tolerante a singular/plural: "bolsas" ↔ "bolsa". */
+function coincideAlgunaPalabra(pedidas: Set<string>, delProducto: Set<string>): boolean {
+  for (const w of pedidas) {
+    if (delProducto.has(w)) return true;
+    if (delProducto.has(`${w}s`) || delProducto.has(`${w}es`)) return true;
+    if (w.endsWith('es') && delProducto.has(w.slice(0, -2))) return true;
+    if (w.endsWith('s') && delProducto.has(w.slice(0, -1))) return true;
+  }
+  return false;
+}
+
+/** Frases con las que el bot niega tener un producto. */
+const NEGACION_DE_CATALOGO =
+  /(no lo manejamos|no la manejamos|no los manejamos|no las manejamos|no manejamos|no lo trabajamos|no la trabajamos|eso puntual no|no tenemos ese|no tenemos esa|no contamos con|no disponemos)/i;
+
 export async function runAgentForMessage(params: {
   orgId: string;
   contactPhone: string;
@@ -418,6 +537,38 @@ export async function runAgentForMessage(params: {
 
     const toolContext = { orgId, contactId, contactPhone, contactName, conversationId };
 
+    // === RAIL DE RECUPERACIÓN DETERMINISTA ===
+    // La búsqueda con las palabras del cliente se ejecuta aquí, no cuando al
+    // modelo le parezca. Es lo único que impide que niegue un producto que
+    // tenemos sin haber mirado el catálogo.
+    const catalogProbe = await probeCatalogo(messageText);
+    const catalogListado = catalogProbe.relevant
+      .slice(0, 12)
+      .map((m: any) => `${m.product_id} (${m.name})`)
+      .join(', ');
+
+    let systemPromptFinal = systemPrompt;
+    if (catalogProbe.relevant.length > 0) {
+      const lineas = catalogProbe.relevant
+        .slice(0, 12)
+        .map((m: any) => `- product_id: ${m.product_id} | ${m.name}${m.has_pricing ? '' : ' | SIN TARIFA'}`)
+        .join('\n');
+      systemPromptFinal = `${systemPrompt}
+
+## Catálogo ya consultado con las palabras del cliente
+La búsqueda automática con el mensaje del cliente devolvió estos productos, que
+EXISTEN en el catálogo y corresponden a lo que pidió:
+${lineas}
+
+No digas que no manejamos ninguno de ellos. Cotízalos con getProductPrice usando
+el product_id tal cual aparece en esta lista.`;
+      logger.info('Rail de recuperación: coincidencias con las palabras del cliente', {
+        conversationId,
+        total: catalogProbe.total,
+        relevantes: catalogProbe.relevant.length,
+      });
+    }
+
     // === BUQUE DE RECÁLCULO (obligar a usar la calculadora) ===
     // El bot genera respuesta → guardrail revisa → si bloquea, se le devuelve
     // una orden de recalcular → repite hasta 3 intentos. Escala en severidad.
@@ -427,6 +578,11 @@ export async function runAgentForMessage(params: {
         'ALTO. Tu respuesta fue BLOQUEADA porque diste precios sin usar la calculadora. Está PROHIBIDO dar precios de memoria. Ejecuta searchCatalog para encontrar el producto y luego getProductPrice (o calculateCustomPrice si se cobra por área o metro, como DTF, vinilos o screen) antes de responder. No repitas precios del historial.',
         'BLOQUEADO DE NUEVO. No respondas de memoria. Para CADA producto que menciones con precio ejecuta getProductPrice, o calculateCustomPrice si va por medidas. Solo entonces responde con las cifras que devolvió la herramienta.',
         'ÚLTIMO INTENTO. Sin ejecutar la calculadora no hay respuesta válida. Ejecuta searchCatalog y después getProductPrice o calculateCustomPrice AHORA.',
+      ],
+      'denied-with-catalog-hits': [
+        'ALTO. Le dijiste al cliente que no manejamos lo que pidió, y SÍ lo tenemos en el catálogo: {PRODUCTOS}. Ejecuta getProductPrice con esos product_id y preséntale 3 opciones con su precio. PROHIBIDO repetir que no lo manejamos.',
+        'BLOQUEADO DE NUEVO. Estos productos existen y son los que pidió: {PRODUCTOS}. Cotízalos con getProductPrice y responde con las cifras reales.',
+        'ÚLTIMO INTENTO. Usa exactamente estos product_id: {PRODUCTOS}. Ejecuta getProductPrice con cada uno y entrega la propuesta con precios.',
       ],
       'invented-reference': [
         'ALTO. Tu respuesta fue BLOQUEADA porque citaste una referencia de producto que NO existe en el catálogo: la inventaste. Solo puedes nombrar productos que searchCatalog te devolvió en ESTE turno, con su product_id exacto. Ejecuta searchCatalog ahora y usa únicamente esos resultados.',
@@ -453,7 +609,7 @@ export async function runAgentForMessage(params: {
     for (let attempt = 0; attempt < MAX_RECALC_ATTEMPTS; attempt++) {
       const result = await generateText({
         model,
-        system: systemPrompt,
+        system: systemPromptFinal,
         messages: loopMessages,
         tools: {
           getAvailableSlots: getAvailableSlotsTool(toolContext),
@@ -502,7 +658,8 @@ export async function runAgentForMessage(params: {
 
       // Revisar con el guardrail
       const guardrailResult = await applyOutputGuardrail(
-        cleanedResponse, result.steps || [], questionStreak, approvedPrices
+        cleanedResponse, result.steps || [], questionStreak, approvedPrices,
+        catalogProbe.relevant
       );
 
       // === REPARTIDOR DE FOTOS: capturar fotos+precios del rastro del bot ===
@@ -585,9 +742,11 @@ export async function runAgentForMessage(params: {
 
       // Añadir la respuesta bloqueada del bot + la orden de recalcular al historial
       const orders = RECALC_ORDERS[guardrailResult.reason] || RECALC_ORDERS['no-calculator'];
+      const orderText = (orders[attempt] || orders[orders.length - 1])
+        .replace('{PRODUCTOS}', catalogListado || 'los que devuelva searchCatalog');
       loopMessages = [...loopMessages,
         { role: 'assistant', content: cleanedResponse },
-        { role: 'user', content: orders[attempt] || orders[orders.length - 1] },
+        { role: 'user', content: orderText },
       ];
 
       // Si es el último intento, entregar respuesta de respaldo

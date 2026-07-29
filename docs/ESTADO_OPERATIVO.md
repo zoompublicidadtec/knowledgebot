@@ -95,6 +95,20 @@
 - ✅ **Interrogatorio**: bloquea un tercer mensaje seguido que solo pregunte.
 - ✅ Formato de miles colombiano aplicado a la salida.
 
+### Rail de recuperación determinista (`lib/agent/index.ts`)
+- ✅ La búsqueda en el catálogo con las palabras del cliente **se ejecuta en el
+  servidor antes de que el modelo hable**. No depende de que el modelo decida
+  llamar a `searchCatalog`: en producción no la llamaba (`fromTool: 0`) y negaba
+  productos que sí existen.
+- ✅ Consulta por términos de contenido, no por la frase entera: el motor puntúa
+  por palabras clave y el ruido la diluye (medido: la frase completa devolvía 0
+  bolsas de organza; los términos limpios devuelven las 7).
+- ✅ Guardrail `denied-with-catalog-hits`: si el catálogo tiene coincidencias
+  léxicas con lo que pidió el cliente y el bot dice que no lo manejamos **sin
+  ofrecer ninguna referencia**, la respuesta se bloquea y se reintenta con la
+  lista de lo que sí existe. Decir "no manejo esa medida, pero tengo esta otra"
+  sigue siendo válido.
+
 ### Retrieval rail (`lib/agent/tools/search-catalog.ts`)
 - ✅ El catálogo **no expone ninguna cifra al modelo** (ni `price`, ni
   `max_price`, ni precios embebidos en descripciones). Cotizar con la
@@ -104,8 +118,10 @@
 - ✅ **2.252 productos activos** (deduplicados el 2026-07-29 desde 8.637 filas).
 - ✅ Cobertura de imagen: **~99%**.
 - ✅ 0 referencias duplicadas.
-- ✅ Preferitismo ZOOM activo: **517 productos** `ZM-` son preferentes y
-  encabezan las búsquedas.
+- ✅ Preferitismo ZOOM activo. Criterio: referencia `ZM-` **o** tarifa
+  procedente de una hoja del Excel propio. Así entran también los volantes
+  `VL-` y las tarjetas `TJ-`, que son producción propia y antes no recibían
+  ningún punto por no llevar el prefijo.
 
 ### Panel
 - ✅ **Centro de Control** muestra estado real (antes eran datos inventados):

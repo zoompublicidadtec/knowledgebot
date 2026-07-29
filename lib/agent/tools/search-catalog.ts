@@ -158,8 +158,18 @@ export function searchCatalogTool() {
       },
       required: ['query'],
     }),
-    execute: async (args: any) => {
-      const rawQuery = String(args.query || '').trim();
+    execute: async (args: any) => runCatalogSearch(String(args.query || '')),
+  } as any);
+}
+
+/**
+ * Ejecuta la busqueda del catalogo. Se exporta para que el agente pueda
+ * lanzarla de forma DETERMINISTA con las palabras del cliente, sin depender de
+ * que el modelo decida llamar a la herramienta: en produccion no la llamaba y
+ * respondia "eso no lo manejamos" sobre productos que si existen.
+ */
+export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
+      const rawQuery = String(rawQueryInput || '').trim();
 
       if (!rawQuery) {
         return { success: false, error: 'Debes enviar un termino de busqueda.' };
@@ -319,6 +329,4 @@ export function searchCatalogTool() {
         logger.error('Search catalog exception', { error: String(err) });
         return { success: false, error: err.message || String(err) };
       }
-    },
-  } as any);
 }

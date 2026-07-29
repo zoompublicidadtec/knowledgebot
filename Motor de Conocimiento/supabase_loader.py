@@ -56,13 +56,26 @@ _cache: dict = {
 }
 
 
+# Origenes que NO son produccion propia de ZOOM: el catalogo de importados y
+# las marcas de reparacion/edicion. Todo lo demas en price_tiers.source_sheet es
+# una hoja del Excel de ZOOM, o sea, producto propio.
+_HOJAS_IMPORTADOS = {
+    "",
+    "catalogo_productos.csv",
+    "reparado desde catalogo_productos.csv",
+    "reparacion precio concatenado",
+    "reparación precio concatenado",
+    "web saas dashboard",
+}
+
+
 def _is_available() -> bool:
     """True si hay URL + service role key configurados."""
     return bool(SUPABASE_URL and SUPABASE_KEY)
 
 
-def _fetch_priced_product_ids(client: httpx.Client) -> set:
-    """UUIDs que tienen al menos una tarifa válida en price_tiers.
+def _fetch_priced_product_ids(client: httpx.Client) -> tuple:
+    """(cotizables, propios): UUIDs con tarifa válida y UUIDs de producción propia.
 
     El motor necesita saber si un producto es cotizable para decidir si puede
     ser PREFERENTE. Antes se miraba products.price, que en Supabase siempre
@@ -70,12 +83,14 @@ def _fetch_priced_product_ids(client: httpx.Client) -> set:
     de ZOOM nunca llegaba a activarse.
     """
     priced: set = set()
+    propios: set = set()
     offset, page = 0, 1000
     try:
         while True:
             resp = client.get(
                 f"{SUPABASE_URL}/rest/v1/price_tiers",
-                params={"select": "product_id,price", "limit": page, "offset": offset},
+                params={"select": "product_id,price,source_sheet",
+                        "limit": page, "offset": offset},
                 headers=_headers(),
                 timeout=30,
             )
@@ -83,6 +98,9 @@ def _fetch_priced_product_ids(client: httpx.Client) -> set:
                 break
             batch = resp.json()
             for t in batch:
+                hoja = (t.get("source_sheet") or "").strip().lower()
+                if hoja not in _HOJAS_IMPORTADOS:
+                    propios.add(t["product_id"])
                 try:
                     if t.get("price") is not None and float(t["price"]) > 0:
                         priced.add(t["product_id"])
@@ -93,7 +111,7 @@ def _fetch_priced_product_ids(client: httpx.Client) -> set:
             offset += page
     except Exception as e:
         logger.warning(f"[SUPABASE] No se pudieron cargar price_tiers: {e}")
-    return priced
+    return priced, propios
 
 
 def _map_supabase_row(row: dict, category_name: str) -> dict:
@@ -122,7 +140,10 @@ def _map_supabase_row(row: dict, category_name: str) -> dict:
         "subcategory": "",  # Supabase no la separa; va dentro de notes/search_text
         "price": price,
         "has_pricing": bool(row.get("_has_pricing")),
-        "is_zoom": ref.upper().startswith("ZM-"),
+        # Producción propia de ZOOM: la referencia ZM- O venir de una hoja del
+        # Excel propio. Los volantes VL- y las tarjetas TJ- son propios y con el
+        # criterio viejo (solo prefijo) no recibían preferencia ninguna.
+        "is_zoom": ref.upper().startswith("ZM-") or bool(row.get("_is_own")),
         "description": row.get("description", "") or "",
         "search_text": row.get("search_text", "") or "",
         "notes": row.get("notes", "") or "",
@@ -169,8 +190,9 @@ def _fetch_products_from_supabase() -> Optional[list]:
             categories = _fetch_categories(client)
             logger.info(f"[SUPABASE] {len(categories)} categorías cargadas")
 
-            priced_ids = _fetch_priced_product_ids(client)
-            logger.info(f"[SUPABASE] {len(priced_ids)} productos con tarifa válida")
+            priced_ids, propios_ids = _fetch_priced_product_ids(client)
+            logger.info(f"[SUPABASE] {len(priced_ids)} productos con tarifa válida, "
+                        f"{len(propios_ids)} de producción propia por hoja de origen")
 
             products: list = []
             page_size = 1000
@@ -213,6 +235,7 @@ def _fetch_products_from_supabase() -> Optional[list]:
                 for row in batch:
                     cat_name = categories.get(row.get("category_id", ""), "")
                     row["_has_pricing"] = row.get("id") in priced_ids
+                    row["_is_own"] = row.get("id") in propios_ids
                     products.append(_map_supabase_row(row, cat_name))
 
                 if len(batch) < page_size:
