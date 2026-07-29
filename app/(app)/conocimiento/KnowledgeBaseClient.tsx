@@ -29,6 +29,7 @@ import {
   saveCategorySynonyms,
   hardDeleteProduct,
   updateTierPrice,
+  getServiciosYMarcaciones,
 } from './actions';
 import { CatalogTable, type CatalogProduct, type SortField, type SortDir } from './components/CatalogTable';
 import { BulkActionsBar } from './components/BulkActionsBar';
@@ -91,6 +92,8 @@ interface KnowledgeBaseClientProps {
 export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBaseClientProps) {
   // Tabs State
   const [activeTab, setActiveTab] = useState<'catalog' | 'glossary' | 'marking'>('catalog');
+  const [services, setServices] = useState<any[]>([]);
+  const [loadingServices, setLoadingServices] = useState(false);
 
   // Categories State
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -211,6 +214,25 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     if (activeTab === 'glossary') {
       loadGlossaryList();
     }
+  }, [activeTab]);
+
+  // Servicios y marcaciones (tarifas reales de la base, no escritas en el código)
+  const loadServices = async () => {
+    setLoadingServices(true);
+    try {
+      setServices(await getServiciosYMarcaciones());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingServices(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'marking' && services.length === 0) {
+      loadServices();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   // Handle Edit Product
@@ -796,185 +818,135 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
       {/* ─── TAB 3: MARKING PRICES ─── */}
       {activeTab === 'marking' && (
         <div className="space-y-6 animate-fade-in">
-          <div>
-            <h3 className="text-base font-semibold text-white">Tablas Globales de Precios de Marcación</h3>
-            <p className="text-xs mt-0.5" style={{ color: 'rgba(148, 163, 184, 0.6)' }}>
-              Estas son las tarifas de servicios de personalización extraídas del archivo de precios B2B original.
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-white">Servicios y Marcaciones</h3>
+              <p className="text-xs mt-0.5" style={{ color: 'rgba(148, 163, 184, 0.6)' }}>
+                Lo que se cobra aparte del producto o combinado con él: marcaciones, impresión por
+                área y componentes de cuaderno. Son las mismas tarifas que usa el bot para cotizar.
+              </p>
+            </div>
+            <button
+              onClick={loadServices}
+              disabled={loadingServices}
+              className="btn-ghost py-1.5 px-3 text-xs rounded-lg disabled:opacity-50"
+            >
+              {loadingServices ? 'Cargando...' : 'Recargar'}
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* TAMPOGRAFÍA */}
-            <div className="glass p-5 rounded-2xl border border-white/5 space-y-4">
-              <h4 className="font-semibold text-white flex items-center gap-2 text-sm border-b border-white/5 pb-2">
-                <Sliders className="text-primary-400" size={18} />
-                Tampografía / Tampo Llaveros, Lapiceros, etc.
-              </h4>
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="text-slate-400 border-b border-white/5">
-                      <th className="pb-2">Rango Cantidad</th>
-                      <th className="pb-2">1 Tinta (Cliché + Tiraje)</th>
-                      <th className="pb-2">Tinta Adicional</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 text-slate-300">
-                    <tr>
-                      <td className="py-2">1 - 99 uds</td>
-                      <td className="py-2">$45.000 (Mínimo lote)</td>
-                      <td className="py-2">$20.000</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">100 - 299 uds</td>
-                      <td className="py-2">$350 / ud</td>
-                      <td className="py-2">$180 / ud</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">300 - 499 uds</td>
-                      <td className="py-2">$300 / ud</td>
-                      <td className="py-2">$150 / ud</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">500+ uds</td>
-                      <td className="py-2">$200 / ud</td>
-                      <td className="py-2">$100 / ud</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="p-3 bg-white/2 rounded-xl text-[11px] text-slate-400 flex items-start gap-2">
-                <Info size={14} className="text-primary-400 shrink-0 mt-0.5" />
-                <p>Las tarifas de tampografía asumen que el cliente provee el logo en vector y se aplica en una sola cara del producto.</p>
-              </div>
-            </div>
+          {loadingServices && services.length === 0 && (
+            <div className="text-center py-12 text-slate-500 text-sm">Leyendo las tarifas...</div>
+          )}
 
-            {/* SCREEN / BOLSAS Y AGENDAS */}
-            <div className="glass p-5 rounded-2xl border border-white/5 space-y-4">
-              <h4 className="font-semibold text-white flex items-center gap-2 text-sm border-b border-white/5 pb-2">
-                <Sliders className="text-primary-400" size={18} />
-                Screen (Bolsas Kraft, Agendas, Gorras)
-              </h4>
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="text-slate-400 border-b border-white/5">
-                      <th className="pb-2">Rango Cantidad</th>
-                      <th className="pb-2">1 Tinta (Marco + Tiraje)</th>
-                      <th className="pb-2">Tinta Adicional</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 text-slate-300">
-                    <tr>
-                      <td className="py-2">1 - 49 uds</td>
-                      <td className="py-2">$40.000 (Mínimo lote)</td>
-                      <td className="py-2">$25.000</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">50 - 199 uds</td>
-                      <td className="py-2">$900 / ud</td>
-                      <td className="py-2">$450 / ud</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">200 - 499 uds</td>
-                      <td className="py-2">$700 / ud</td>
-                      <td className="py-2">$350 / ud</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">500+ uds</td>
-                      <td className="py-2">$550 / ud</td>
-                      <td className="py-2">$250 / ud</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="p-3 bg-white/2 rounded-xl text-[11px] text-slate-400 flex items-start gap-2">
-                <Info size={14} className="text-primary-400 shrink-0 mt-0.5" />
-                <p>El precio base no incluye el costo de la malla de screen si el diseño del cliente requiere alta densidad de color.</p>
-              </div>
+          {!loadingServices && services.length === 0 && (
+            <div className="glass p-6 rounded-2xl text-center text-sm text-slate-400">
+              No hay servicios cargados todavía.
             </div>
+          )}
 
-            {/* GRABADO LÁSER */}
-            <div className="glass p-5 rounded-2xl border border-white/5 space-y-4">
-              <h4 className="font-semibold text-white flex items-center gap-2 text-sm border-b border-white/5 pb-2">
-                <Sliders className="text-primary-400" size={18} />
-                Grabado Láser (Metal, Madera, Cuero)
-              </h4>
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="text-slate-400 border-b border-white/5">
-                      <th className="pb-2">Cantidad</th>
-                      <th className="pb-2">Costo Grabado 1 Cara</th>
-                      <th className="pb-2">Configuración Láser</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 text-slate-300">
-                    <tr>
-                      <td className="py-2">1 - 29 uds</td>
-                      <td className="py-2">$2.000 / ud</td>
-                      <td className="py-2">$15.000 (Lote único)</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">30 - 99 uds</td>
-                      <td className="py-2">$1.200 / ud</td>
-                      <td className="py-2">Sin costo</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">100 - 499 uds</td>
-                      <td className="py-2">$700 / ud</td>
-                      <td className="py-2">Sin costo</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">500+ uds</td>
-                      <td className="py-2">$450 / ud</td>
-                      <td className="py-2">Sin costo</td>
-                    </tr>
-                  </tbody>
-                </table>
+          {services.map((grp) => (
+            <div key={grp.group} className="glass p-5 rounded-2xl border border-white/5 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                <h4 className="font-semibold text-white flex items-center gap-2 text-sm">
+                  <Sliders className="text-primary-400" size={18} />
+                  {grp.group}
+                </h4>
+                <span className="text-[10px] text-slate-500 font-semibold uppercase">
+                  {grp.items.length} servicio{grp.items.length === 1 ? '' : 's'}
+                </span>
               </div>
-            </div>
 
-            {/* DTF UV / TEXTIL */}
-            <div className="glass p-5 rounded-2xl border border-white/5 space-y-4">
-              <h4 className="font-semibold text-white flex items-center gap-2 text-sm border-b border-white/5 pb-2">
-                <Sliders className="text-primary-400" size={18} />
-                DTF UV & DTF Textil
-              </h4>
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="text-slate-400 border-b border-white/5">
-                      <th className="pb-2">Concepto</th>
-                      <th className="pb-2">Medida Max</th>
-                      <th className="pb-2">Precio Unitario</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 text-slate-300">
-                    <tr>
-                      <td className="py-2">DTF UV (Sticker 3D) Chico</td>
-                      <td className="py-2">4x4 cm</td>
-                      <td className="py-2">$1.500 / ud (mín. 50 uds)</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">DTF UV Mediano</td>
-                      <td className="py-2">8x8 cm</td>
-                      <td className="py-2">$2.800 / ud (mín. 30 uds)</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">DTF Textil (Gorra/Camiseta)</td>
-                      <td className="py-2">10x10 cm</td>
-                      <td className="py-2">$3.500 / ud</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2">Plancha DTF Completa</td>
-                      <td className="py-2">58x100 cm</td>
-                      <td className="py-2">$45.000 / metro</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="space-y-3">
+                {grp.items.map((it: any) => {
+                  const sinTarifa = !it.tiers || it.tiers.length === 0;
+                  return (
+                    <div
+                      key={it.id}
+                      className={`p-4 rounded-xl bg-white/2 border ${
+                        sinTarifa ? 'border-amber-500/30' : 'border-white/5'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm font-semibold text-white truncate">{it.name}</span>
+                          {it.reference && (
+                            <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                              {it.reference}
+                            </span>
+                          )}
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 font-bold uppercase shrink-0">
+                            {it.unit}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleEditProduct({ id: it.id } as any)}
+                          className="btn-ghost py-1 px-2.5 text-[11px] rounded-lg shrink-0"
+                        >
+                          Editar tarifas
+                        </button>
+                      </div>
+
+                      {it.description && (
+                        <p className="text-[11px] text-slate-400 mt-1.5 line-clamp-2">{it.description}</p>
+                      )}
+
+                      {sinTarifa ? (
+                        <p className="text-[11px] text-amber-400 mt-2">
+                          Sin tarifas cargadas: el bot no puede cotizar este servicio.
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto mt-3">
+                          <table className="w-full text-left text-[11px]">
+                            <thead>
+                              <tr className="text-slate-500 border-b border-white/5">
+                                <th className="pb-1.5 pr-3 font-semibold">Variante</th>
+                                <th className="pb-1.5 pr-3 font-semibold">Desde</th>
+                                <th className="pb-1.5 pr-3 font-semibold">Hasta</th>
+                                <th className="pb-1.5 pr-3 font-semibold text-right">Precio</th>
+                                <th className="pb-1.5 font-semibold">Se cobra</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5 text-slate-300">
+                              {it.tiers.slice(0, 8).map((t: any) => (
+                                <tr key={t.id}>
+                                  <td className="py-1.5 pr-3">{t.variant || 'Estándar'}</td>
+                                  <td className="py-1.5 pr-3">{t.min_qty}</td>
+                                  <td className="py-1.5 pr-3">{t.max_qty ?? 'en adelante'}</td>
+                                  <td className="py-1.5 pr-3 text-right font-semibold text-white">
+                                    ${Number(t.price).toLocaleString('es-CO')}
+                                  </td>
+                                  <td className="py-1.5 text-slate-400">
+                                    {t.price_basis === 'unitario' ? 'por unidad'
+                                      : t.price_basis === 'lote_total' ? 'por el lote completo'
+                                      : t.price_basis === 'cm2' ? 'por cm²'
+                                      : t.price_basis}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {it.tiers.length > 8 && (
+                            <p className="text-[10px] text-slate-500 mt-1.5">
+                              y {it.tiers.length - 8} rango(s) más — ábrelo con "Editar tarifas".
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
+          ))}
+
+          <div className="p-3 bg-white/2 rounded-xl text-[11px] text-slate-400 flex items-start gap-2">
+            <Info size={14} className="text-primary-400 shrink-0 mt-0.5" />
+            <p>
+              Los servicios que se cobran por área (DTF, vinilos) se calculan por medidas: el bot pide
+              ancho y alto y aplica la tarifa. Los que se cobran por unidad usan los rangos de cantidad.
+              Si un servicio aparece en ámbar es porque no tiene tarifas y el bot no podrá ofrecerlo.
+            </p>
           </div>
         </div>
       )}

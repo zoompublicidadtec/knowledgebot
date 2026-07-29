@@ -1131,3 +1131,131 @@ export async function importCatalogRows(
     return report;
   }
 }
+
+// ─── SERVICIOS Y MARCACIONES ───
+//
+// Servicios que se cobran aparte del producto o que se combinan con él:
+// marcaciones (tampografía, screen, láser, bordado), impresión por área
+// (DTF UV, DTF Textil, vinilos, banners) y los componentes de cuaderno.
+// Hasta ahora el panel mostraba estas tarifas escritas a mano en el código,
+// con cifras que no existían en la base: el bot cotizaba una cosa y el panel
+// mostraba otra. Esto lee la fuente real.
+
+const SERVICE_NAME_HINTS = [
+  'tampograf', 'screen', 'laser', 'láser', 'bordado', 'dtf', 'vinilo',
+  'sublima', 'marcado', 'marcación', 'marcacion', 'servicio de',
+  'adicional:', 'impresión', 'impresion', 'calandra', 'panaflex', 'banner',
+];
+
+const AREA_UNITS = ['m2', 'cm2', 'metro', 'm'];
+
+export type ServiceGroup = {
+  group: string;
+  items: Array<{
+    id: string;
+    reference: string | null;
+    name: string;
+    unit: string;
+    description: string | null;
+    notes: string | null;
+    active: boolean;
+    tiers: Array<{
+      id: string;
+      variant: string | null;
+      min_qty: number;
+      max_qty: number | null;
+      price: number;
+      price_basis: string;
+    }>;
+  }>;
+};
+
+export async function getServiciosYMarcaciones(): Promise<ServiceGroup[]> {
+  try {
+    const supabase = await createClient();
+
+    const { data: cats } = await (supabase as any).from('categories').select('id, name');
+    const catName = new Map<string, string>((cats || []).map((c: any) => [c.id, c.name]));
+
+    // Se pagina: PostgREST devuelve como máximo 1000 filas por consulta.
+    const products: any[] = [];
+    for (let from = 0; from < 20000; from += 1000) {
+      const { data: page } = await (supabase as any)
+        .from('products')
+        .select('id, reference, name, unit, description, notes, active, category_id')
+        .eq('active', true)
+        .range(from, from + 999);
+      if (!page?.length) break;
+      products.push(...page);
+      if (page.length < 1000) break;
+    }
+
+    const isService = (p: any) => {
+      const unit = (p.unit || '').toLowerCase();
+      if (AREA_UNITS.includes(unit)) return true;
+      const hay = `${p.name || ''} ${catName.get(p.category_id) || ''}`.toLowerCase();
+      return SERVICE_NAME_HINTS.some(h => hay.includes(h));
+    };
+
+    const services = products.filter(isService);
+    if (services.length === 0) return [];
+
+    // Tarifas de esos servicios, por lotes para no exceder el largo de la URL.
+    const tiersByProduct = new Map<string, any[]>();
+    const ids = services.map(s => s.id);
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data: tiers } = await (supabase as any)
+        .from('price_tiers')
+        .select('id, product_id, variant, min_qty, max_qty, price, price_basis')
+        .in('product_id', ids.slice(i, i + 100));
+      for (const t of (tiers || [])) {
+        if (!tiersByProduct.has(t.product_id)) tiersByProduct.set(t.product_id, []);
+        tiersByProduct.get(t.product_id)!.push(t);
+      }
+    }
+
+    const groupOf = (p: any): string => {
+      const n = (p.name || '').toLowerCase();
+      const c = (catName.get(p.category_id) || '').toLowerCase();
+      if (c.includes('cuaderno')) return 'Cuadernos: base y adicionales';
+      if (n.includes('dtf')) return 'DTF (UV y Textil)';
+      if (n.includes('tampograf')) return 'Tampografía';
+      if (n.includes('bordado')) return 'Bordado';
+      if (n.includes('laser') || n.includes('láser')) return 'Marcación láser';
+      if (n.includes('screen') || n.includes('serigraf')) return 'Screen / serigrafía';
+      if (n.includes('vinilo') || n.includes('poli cal')) return 'Vinilos y adhesivos';
+      if (n.includes('banner') || n.includes('panaflex')) return 'Banners y lonas';
+      if (n.includes('calandra') || n.includes('tela')) return 'Impresión sobre tela';
+      if (n.includes('sublima')) return 'Sublimación';
+      return 'Otros servicios';
+    };
+
+    const grouped = new Map<string, ServiceGroup['items']>();
+    for (const p of services) {
+      const g = groupOf(p);
+      if (!grouped.has(g)) grouped.set(g, []);
+      const tiers = (tiersByProduct.get(p.id) || [])
+        .sort((a, b) => String(a.variant || '').localeCompare(String(b.variant || '')) || a.min_qty - b.min_qty);
+      grouped.get(g)!.push({
+        id: p.id,
+        reference: p.reference,
+        name: p.name,
+        unit: p.unit || 'unidad',
+        description: p.description,
+        notes: p.notes,
+        active: p.active,
+        tiers,
+      });
+    }
+
+    return [...grouped.entries()]
+      .map(([group, items]) => ({
+        group,
+        items: items.sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .sort((a, b) => a.group.localeCompare(b.group));
+  } catch (error: any) {
+    logger.error('Error loading servicios y marcaciones', { error: error.message });
+    return [];
+  }
+}
