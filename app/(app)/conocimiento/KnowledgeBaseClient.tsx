@@ -145,6 +145,8 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
   const [active, setActive] = useState(true);
   const [synonyms, setSynonyms] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const [priceTiers, setPriceTiers] = useState<PriceTier[]>([]);
 
   // Glossary State
@@ -287,6 +289,37 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
       alert('Error cargando detalles del producto: ' + err.message);
     } finally {
       setLoadingProducts(false);
+    }
+  };
+
+  // Subir imagen de producto desde el PC. Delega en /api/products/upload-image,
+  // que la asocia de forma atomica (disco + BD + re-embed multimodal del RAG).
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permitir re-subir el mismo archivo
+    if (!file) return;
+    if (!productId || !reference) {
+      setUploadError('Guarda primero el producto (necesita ID y referencia) para subirle una foto.');
+      return;
+    }
+    setUploadingImage(true);
+    setUploadError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('productId', productId);
+      fd.append('reference', reference);
+      fd.append('name', name);
+      const res = await fetch('/api/products/upload-image', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Error HTTP ${res.status}`);
+      }
+      setImageUrl(data.imageUrl);
+    } catch (err: any) {
+      setUploadError(err.message || 'No se pudo subir la imagen.');
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -1136,6 +1169,27 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                       </div>
                     ) : null}
                   </div>
+                  {/* Subir imagen desde el PC (cualquier formato → se convierte a
+                      JPEG y se re-embeda automáticamente para mantener el RAG coherente). */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <label className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all shrink-0 ${uploadingImage ? 'bg-slate-700 text-slate-400 cursor-wait' : 'bg-primary-600/20 text-primary-300 border border-primary-500/40 hover:bg-primary-600/30'}`}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                      {uploadingImage ? 'Subiendo y re-embedando…' : 'Subir imagen desde tu PC'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        disabled={uploadingImage}
+                        className="hidden"
+                      />
+                    </label>
+                    {!productId && (
+                      <span className="text-[10px] text-slate-500">Guarda el producto primero para habilitar la subida.</span>
+                    )}
+                  </div>
+                  {uploadError && (
+                    <p className="text-[11px] text-red-400">{uploadError}</p>
+                  )}
                 </div>
               </div>
 
