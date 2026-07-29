@@ -60,6 +60,10 @@ class ProductResponse(BaseModel):
     has_stock: bool
     image_urls: List[str] = []
     score: float
+    # Produccion propia de ZOOM. El motor ya lo calcula (is_preferente /
+    # classify_origen); se publica para que el agente pueda priorizarlo sin
+    # adivinar por el prefijo de la referencia.
+    es_propio: bool = False
 
 class QueryResponse(BaseModel):
     response: str
@@ -155,9 +159,21 @@ async def query_rag(request: QueryRequest):
                 else:
                     web_imgs.append(f"/images/{rel_path}")
             
+            meta = {}
+            for s in raw_result.get("sources_metadata", []) or []:
+                if s.get("id") == doc_id:
+                    meta = s
+                    break
+            es_propio = bool(
+                meta.get("preferente")
+                or rag_query_engine.is_preferente(prod_detail)
+                or str(doc_id).upper().startswith("ZM-")
+            )
+
             product_data = ProductResponse(
                 product_id=doc_id,
                 name=prod_detail.get("name", ""),
+                es_propio=es_propio,
                 category=prod_detail.get("category", ""),
                 subcategory=prod_detail.get("subcategory", ""),
                 price=prod_detail.get("price"),

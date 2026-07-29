@@ -655,12 +655,21 @@ def _contains_whole_word(needle: str, haystack: str) -> bool:
     Acepta singular y plural: 'tarjeta' SI coincide con 'tarjetas' pero NO con 'portatarjetas'."""
     if not needle or not haystack:
         return False
-    # Buscar la palabra exacta y su plural (singular + 's' o 'es')
+    # Buscar la palabra exacta, su plural y su singular. La comparacion tiene
+    # que ser SIMETRICA: antes solo anadia plurales, asi que "mug" coincidia con
+    # "Mugs" pero "mugs" no coincidia con "Mug". Al buscar "mugs" el importado
+    # "Set De Mugs Metalicos" sumaba dos coincidencias y el propio "Mug Tintero"
+    # una sola, y los ZM- quedaban por debajo de los MU-.
     variantes = [needle]
     if not needle.endswith('s'):
         variantes.append(needle + 's')
         if not needle.endswith('e') and len(needle) > 3:
             variantes.append(needle + 'es')
+    else:
+        if needle.endswith('es') and len(needle) > 4:
+            variantes.append(needle[:-2])
+        if len(needle) > 3:
+            variantes.append(needle[:-1])
     for v in variantes:
         pattern = r'\b' + re.escape(v) + r'\b'
         if re.search(pattern, haystack):

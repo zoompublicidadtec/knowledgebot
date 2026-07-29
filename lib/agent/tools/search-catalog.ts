@@ -194,6 +194,7 @@ export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
 
           let matches = products.map((prod: any) => ({
             product_id: prod.product_id,
+            es_propio: prod.es_propio === true,
             category: prod.category || '',
             name: prod.name,
             unit: prod.unit || 'unidad',
@@ -255,6 +256,25 @@ export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
 
           // Reordenar: primero los cotizables (con precio), luego el resto.
           matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)) || ((b.score || 0) - (a.score || 0)));
+
+          // ZOOM PRIMERO, DE FORMA DETERMINISTA.
+          // El embudo obliga a ofrecer el producto más caro como Premium y los
+          // importados cuestan hasta 10 veces más que los propios, así que la
+          // propuesta salía con 2 importados y 1 ZOOM aunque el motor devolviera
+          // los propios en cabeza. Si hay 3 o más propios cotizables, el modelo
+          // solo recibe propios: no puede ofrecer lo que no se le entregó.
+          const propiosCotizables = matches.filter((m: any) => m.es_propio && m.has_pricing);
+          if (propiosCotizables.length >= 3) {
+            const soloPropios = matches.filter((m: any) => m.es_propio);
+            logger.info('searchCatalog: propuesta restringida a producción propia ZOOM', {
+              query: rawQuery, propios: soloPropios.length, descartados: matches.length - soloPropios.length,
+            });
+            matches = soloPropios;
+            // El Premium se recalcula dentro del conjunto entregado.
+            for (const m of matches) m.is_most_expensive = false;
+            matches = await annotateMatchesWithPricing(supabase, matches);
+            matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)) || ((b.score || 0) - (a.score || 0)));
+          }
 
           const cotizables = matches.filter((m: any) => m.has_pricing).length;
           logger.info('RAG microservice response success', { count: matches.length, cotizables });
