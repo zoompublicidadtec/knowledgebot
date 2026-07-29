@@ -150,8 +150,23 @@ $250 para Textil), pero deberían vivir en la base.
 ### ⚠️ 114 productos activos sin tarifa
 No se ofrecen porque no se les puede dar precio. Visibles en el Centro de Control.
 
-### ⚠️ 24 productos activos sin foto
-Casi todos `ZM-` (bolsas organza/satín/yute, USB metálicos, mugs ZOOM, tarjetas).
+### ⚠️ 10 productos activos sin foto
+`VA-136`, `VA-258 B`, los tres mugs ZOOM (`ZM-MUG-007/008/009`) y los cinco USB
+metálicos (`ZM-TEC-001..005`). Los 14 restantes de la lista anterior eran las
+bolsas fabricadas y se archivaron el 2026-07-29.
+
+> Ya se pueden subir desde el panel: Base de Conocimiento → producto →
+> *Subir imagen desde tu PC*.
+
+### ⚠️ Catálogo: productos sin origen documentado
+**68 de los 514 productos `ZM-` no tienen hoja de origen** en ninguna de sus
+tarifas (`price_tiers.source_sheet` vacío). Ahí aparecieron las 14 bolsas
+fabricadas. Quedan por revisar con el dueño, entre otros, los vinilos
+`ZM-GEN-305/306/307/309/398/406`, que figuran a **$10 el m²**.
+
+La firma del defecto, para reconocerlo: sin hoja de origen + `price_basis`
+`unitario` con precio de lote + rangos abiertos (50‑99, 100‑∞) en vez de lotes
+exactos (50‑50, 100‑100) + sin foto.
 
 ### ⚠️ Precio anómalo en cuadernos
 `Cuaderno Argollado Base 80 hojas`, 1/2 Carta: **$13.000 en lote de 20 pero
