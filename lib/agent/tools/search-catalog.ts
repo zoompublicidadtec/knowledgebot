@@ -144,6 +144,24 @@ async function annotateMatchesWithPricing(supabase: any, matches: any[]): Promis
   }
 }
 
+/**
+ * Marca el orden de presentación de la propuesta.
+ *
+ * Regla del dueño: se ofrecen los 3 PRIMEROS del ranking de la búsqueda —que ya
+ * prioriza la producción propia de ZOOM— y de esos 3 se presenta primero el de
+ * mayor valor. Antes el prompt exigía como "Premium" el producto más caro de
+ * toda la búsqueda, y por eso la propuesta se iba a los importados de gama alta
+ * aunque hubiera mugs propios en cabeza.
+ *
+ * El orden se calcula aquí con max_price, que se elimina del payload: el modelo
+ * sigue sin ver una sola cifra hasta llamar a getProductPrice.
+ */
+function marcarSugeridos(matches: any[]): void {
+  const top3 = matches.filter((m: any) => m.has_pricing).slice(0, 3);
+  top3.sort((a: any, b: any) => (Number(b.max_price) || 0) - (Number(a.max_price) || 0));
+  top3.forEach((m: any, i: number) => { m.sugerido = i + 1; });
+}
+
 export function searchCatalogTool() {
   return tool({
     description:
@@ -277,16 +295,20 @@ export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
           }
 
           const cotizables = matches.filter((m: any) => m.has_pricing).length;
-          logger.info('RAG microservice response success', { count: matches.length, cotizables });
+          marcarSugeridos(matches);
+          logger.info('RAG microservice response success', {
+            count: matches.length, cotizables,
+            sugeridos: matches.filter((m: any) => m.sugerido).map((m: any) => `${m.sugerido}:${m.name}`).join(' | '),
+          });
 
           // El modelo nunca ve cifras: max_price solo sirvió para ordenar aquí.
-          const payload = matches.map(({ max_price, ...rest }: any) => rest);
+          const payload = matches.map(({ max_price, is_most_expensive, ...rest }: any) => rest);
 
           return {
             success: true,
             query: rawQuery,
             matches: payload,
-            note: 'Estos son los ÚNICOS productos que puedes nombrar. Elige 3 (Premium = el que tiene is_most_expensive:true, más una Estándar y una Económica), variando material o gama, y prioriza has_pricing:true. Este resultado NO trae precios: llama getProductPrice con cada product_id para obtener las cifras antes de responder.',
+            note: 'Estos son los ÚNICOS productos que puedes nombrar. Ofrece EXACTAMENTE los 3 marcados con "sugerido" (1, 2 y 3) y en ESE orden: el 1 va primero. No busques el más caro del catálogo, no etiquetes ninguna opción como Premium ni por gama, y no fuerces precios altos. Este resultado NO trae precios: llama getProductPrice con cada product_id antes de responder.',
           };
         } else {
           logger.warn(`RAG microservice returned status ${response.status}, falling back to database search`);
@@ -336,14 +358,15 @@ export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
 
         // Reordenar
         matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)));
+        marcarSugeridos(matches);
 
-        const payload = matches.map(({ max_price, ...rest }: any) => rest);
+        const payload = matches.map(({ max_price, is_most_expensive, ...rest }: any) => rest);
 
         return {
           success: true,
           query,
           matches: payload,
-          note: 'Estos son los ÚNICOS productos que puedes nombrar. Elige 3 (Premium = is_most_expensive:true, más una Estándar y una Económica) y prioriza has_pricing:true. Este resultado NO trae precios: llama getProductPrice con cada product_id antes de responder.',
+          note: 'Estos son los ÚNICOS productos que puedes nombrar. Ofrece EXACTAMENTE los 3 marcados con "sugerido" (1, 2 y 3) y en ESE orden: el 1 va primero. No busques el más caro del catálogo, no etiquetes ninguna opción como Premium ni por gama, y no fuerces precios altos. Este resultado NO trae precios: llama getProductPrice con cada product_id antes de responder.',
         };
       } catch (err: any) {
         logger.error('Search catalog exception', { error: String(err) });

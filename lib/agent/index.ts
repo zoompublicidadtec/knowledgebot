@@ -186,7 +186,8 @@ async function applyOutputGuardrail(
   steps: any[],
   questionStreak = 0,
   approvedPrices: Set<number> = new Set(),
-  catalogHits: any[] = []
+  catalogHits: any[] = [],
+  fraseOfftopic = ''
 ): Promise<{ blocked: boolean; reason: string }> {
   try {
     // 1. Toda referencia citada al cliente tiene que existir de verdad. En
@@ -200,6 +201,20 @@ async function applyOutputGuardrail(
     //    el fallo más caro, porque el cliente se va creyendo que no lo tenemos.
     //    Solo bloquea si además no ofreció ninguna referencia: "no manejamos esa
     //    medida exactamente, pero tengo esta otra" es correcto y debe pasar.
+    // La frase plantilla de "fuera de alcance" es falsa si el catálogo sí tiene
+    // lo que pidió: se bloquea aunque la respuesta cite productos, porque decir
+    // "eso no lo manejamos" y ofrecer tres opciones acto seguido no vende nada.
+    if (catalogHits.length > 0 && fraseOfftopic.length >= 12) {
+      const plana = sinAcentos(responseText.toLowerCase());
+      const plantilla = sinAcentos(fraseOfftopic.toLowerCase()).slice(0, 40);
+      if (plana.includes(plantilla)) {
+        logger.error('GUARDRAIL: usó la frase de fuera-de-alcance teniéndolo en catálogo', {
+          coincidencias: catalogHits.length, ejemplo: catalogHits[0]?.name || '',
+        });
+        return { blocked: true, reason: 'denied-with-catalog-hits' };
+      }
+    }
+
     if (catalogHits.length > 0 && cited.length === 0 && NEGACION_DE_CATALOGO.test(responseText)) {
       logger.error('GUARDRAIL: negó un producto que sí está en el catálogo', {
         coincidencias: catalogHits.length,
@@ -660,6 +675,9 @@ export async function runAgentForMessage(params: {
       .slice(-3)
       .map((m) => m.content);
     const catalogProbe = await probeCatalogo(messageText, historialCliente);
+    // Frase plantilla de Personalización, sin el {scope}: es la que el modelo
+    // usa para despachar lo que cree fuera del negocio.
+    const fraseOfftopic = String(persona.offtopic_redirect || '').split('{scope}')[0].trim();
     const catalogListado = catalogProbe.relevant
       .slice(0, 12)
       .map((m: any) => `${m.product_id} (${m.name})`)
@@ -671,15 +689,12 @@ export async function runAgentForMessage(params: {
         .slice(0, 12)
         .map((m: any) => `- product_id: ${m.product_id} | ${m.name}${m.has_pricing ? '' : ' | SIN TARIFA'}`)
         .join('\n');
+      // Solo DATOS, ninguna instrucción: lo que el bot puede o no puede decir lo
+      // impone el guardrail, no una frase más en el prompt.
       systemPromptFinal = `${systemPrompt}
 
-## Catálogo ya consultado con las palabras del cliente
-La búsqueda automática con el mensaje del cliente devolvió estos productos, que
-EXISTEN en el catálogo y corresponden a lo que pidió:
-${lineas}
-
-No digas que no manejamos ninguno de ellos. Cotízalos con getProductPrice usando
-el product_id tal cual aparece en esta lista.`;
+## Productos del catálogo que coinciden con lo que pidió el cliente
+${lineas}`;
       logger.info('Rail de recuperación: coincidencias con las palabras del cliente', {
         conversationId,
         total: catalogProbe.total,
@@ -777,7 +792,7 @@ el product_id tal cual aparece en esta lista.`;
       // Revisar con el guardrail
       const guardrailResult = await applyOutputGuardrail(
         cleanedResponse, result.steps || [], questionStreak, approvedPrices,
-        catalogProbe.relevant
+        catalogProbe.relevant, fraseOfftopic
       );
 
       // === REPARTIDOR DE FOTOS: capturar fotos+precios del rastro del bot ===
