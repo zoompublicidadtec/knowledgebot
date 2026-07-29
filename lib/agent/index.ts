@@ -374,6 +374,9 @@ const PALABRAS_VACIAS = new Set([
   'algunos', 'todos', 'todas', 'mucho', 'mucha', 'poder', 'puedes', 'puede',
   'seria', 'estoy', 'tengo', 'saber', 'decir', 'dime', 'mandame', 'envia',
   'enviame', 'ustedes', 'nosotros', 'tipo', 'clase', 'mismo', 'misma',
+  'ahora', 'luego', 'entonces', 'tambien', 'ademas', 'mejor', 'quizas',
+  'bueno', 'buenos', 'listo', 'verdad', 'señor', 'señora', 'senor', 'senora',
+  'amigo', 'hermano', 'parcero', 'oiga', 'dijiste', 'dices', 'digame',
 ]);
 
 function sinAcentos(text: string): string {
@@ -387,11 +390,49 @@ function sinAcentos(text: string): string {
 
 function palabrasDeContenido(text: string): Set<string> {
   const out = new Set<string>();
-  const limpio = sinAcentos(String(text || '').toLowerCase()).replace(/[^a-z0-9]+/g, ' ');
+  // Las medidas se escriben "20x30" en el catálogo y "20por30", "20 por 30" o
+  // "20 x 30" en WhatsApp. Se normalizan para que coincidan.
+  const conMedidas = sinAcentos(String(text || '').toLowerCase())
+    .replace(/(\d+)\s*(?:por|x)\s*(\d+)/g, '$1x$2');
+  const limpio = conMedidas.replace(/[^a-z0-9]+/g, ' ');
   for (const w of limpio.split(' ')) {
+    // Se descartan los números sueltos (cantidades) pero NO las medidas como
+    // "20x30", que identifican el producto exacto.
+    const esMedida = /^[0-9]+x[0-9]+$/.test(w);
+    if (esMedida) { out.add(w); continue; }
     if (w.length >= 4 && !PALABRAS_VACIAS.has(w) && !/^[0-9]+$/.test(w)) out.add(w);
   }
   return out;
+}
+
+/**
+ * Cuántos productos activos contienen la palabra en su nombre. Es la medida de
+ * cuán específica es: "organza" está en 7 productos, "bolsas" en cientos.
+ * Consultar con la genérica hunde al producto correcto (medido: la bolsa de
+ * organza 20x30 pasa de la posición 1 a la 9). Se cachea en memoria porque las
+ * mismas palabras se repiten en todas las conversaciones.
+ */
+const frecuenciaCache = new Map<string, number>();
+
+async function frecuenciaEnCatalogo(termino: string): Promise<number> {
+  const cacheado = frecuenciaCache.get(termino);
+  if (cacheado !== undefined) return cacheado;
+  let n = 9999;
+  try {
+    const supabase = createAdminClient();
+    const { count } = await (supabase as any)
+      .from('products')
+      .select('id', { count: 'exact', head: true })
+      .eq('active', true)
+      .ilike('name', `%${termino}%`);
+    if (typeof count === 'number') n = count === 0 ? 1 : count;
+  } catch (err) {
+    logger.warn('Rail de recuperación: no se pudo medir la palabra', {
+      termino, error: String(err),
+    });
+  }
+  frecuenciaCache.set(termino, n);
+  return n;
 }
 
 /**
@@ -401,26 +442,62 @@ function palabrasDeContenido(text: string): Set<string> {
  * es real— de una pregunta fuera de catálogo, en la que la búsqueda vectorial
  * devuelve cualquier cosa. Sin él, el rail bloquearía respuestas legítimas.
  */
-async function probeCatalogo(messageText: string): Promise<{ relevant: any[]; total: number }> {
+async function probeCatalogo(
+  messageText: string,
+  historialCliente: string[] = []
+): Promise<{ relevant: any[]; total: number }> {
   const texto = String(messageText || '');
   // Los avisos internos de media fallida no son una petición del cliente.
   if (texto.trim().startsWith('[El cliente envió')) return { relevant: [], total: 0 };
 
-  // El motor puntúa por palabras clave: la frase entera lo diluye. Medido con
-  // el mensaje real del cliente ("Hola, necesito bolsas de organza, necesito
-  // unas 100 de 5por7") devolvía CERO bolsas de organza; con "bolsas organza"
-  // devuelve las 7. Se consulta con los términos limpios, sin medidas ni
-  // cantidades.
-  const terminosDeConsulta = Array.from(palabrasDeContenido(texto))
-    .filter((w) => !/[0-9]/.test(w));
-  if (terminosDeConsulta.length === 0) return { relevant: [], total: 0 };
+  // El motor puntúa por palabras clave: la frase entera lo diluye y una palabra
+  // genérica lo desvía. Medido: la frase completa devolvía 0 bolsas de organza;
+  // "bolsas organza" dejaba la de 20x30 en la posición 9; "organza 20x30" la
+  // deja primera. Por eso se consulta con las palabras MÁS ESPECÍFICAS.
+  const palabrasActuales = palabrasDeContenido(texto);
 
-  const consultas = [terminosDeConsulta.slice(0, 6).join(' ')];
-  const masEspecifico = terminosDeConsulta.slice().sort((a, b) => b.length - a.length)[0];
-  if (masEspecifico && masEspecifico !== consultas[0]) consultas.push(masEspecifico);
+  // Contexto: "las de 20por30" no repite "organza", así que sin arrastrar los
+  // mensajes anteriores el rail perdía el hilo y el bot cotizaba otra cosa.
+  const palabrasPrevias = new Set<string>();
+  for (const previo of historialCliente) {
+    if (String(previo || '').trim().startsWith('[El cliente envió')) continue;
+    for (const w of palabrasDeContenido(previo)) {
+      if (!palabrasActuales.has(w)) palabrasPrevias.add(w);
+    }
+  }
 
-  const pedidas = new Set(terminosDeConsulta);
+  if (palabrasActuales.size === 0 && palabrasPrevias.size === 0) {
+    return { relevant: [], total: 0 };
+  }
+
+  // Las palabras del mensaje actual son las que mandan en la consulta. Del
+  // historial se arrastra UNA, alfabética (nunca una medida vieja: "las de
+  // 20por30" no debe heredar el 12x15 del mensaje anterior).
+  const ordenarPorEspecificidad = async (palabras: string[]) => {
+    const conFrecuencia: { t: string; n: number }[] = [];
+    for (const t of palabras.slice(0, 8)) {
+      conFrecuencia.push({ t, n: await frecuenciaEnCatalogo(t) });
+    }
+    conFrecuencia.sort((a, b) => a.n - b.n);
+    return conFrecuencia.map((x) => x.t);
+  };
+
+  const actualesOrdenadas = await ordenarPorEspecificidad([...palabrasActuales]);
+  const historialAlfabetico = await ordenarPorEspecificidad(
+    [...palabrasPrevias].filter((w) => !/[0-9]/.test(w))
+  );
+
+  const especificas = [...actualesOrdenadas.slice(0, 2)];
+  if (historialAlfabetico.length > 0) especificas.push(historialAlfabetico[0]);
+  if (especificas.length === 0) especificas.push(...historialAlfabetico.slice(0, 2));
+
+  const consultas = [especificas.join(' ')];
+  if (especificas.length > 1) consultas.push(especificas[0]);
+
+  const medidas = new Set([...palabrasActuales].filter((w) => /^[0-9]+x[0-9]+$/.test(w)));
+  const pedidas = new Set([...palabrasActuales, ...palabrasPrevias]);
   let vistos = 0;
+
   for (const consulta of consultas) {
     try {
       const res: any = await runCatalogSearch(consulta);
@@ -429,7 +506,19 @@ async function probeCatalogo(messageText: string): Promise<{ relevant: any[]; to
       const relevant = matches.filter((m: any) =>
         coincideAlgunaPalabra(pedidas, palabrasDeContenido(`${m.name || ''} ${m.category || ''}`))
       );
-      if (relevant.length > 0) return { relevant, total: vistos };
+      if (relevant.length > 0) {
+        // El modelo suele tomar el primero de la lista: la ordenamos por
+        // parecido real con lo que pidió, y una medida que coincide manda.
+        relevant.sort((a: any, b: any) =>
+          puntajeDeParecido(b, medidas, palabrasActuales, palabrasPrevias) -
+          puntajeDeParecido(a, medidas, palabrasActuales, palabrasPrevias)
+        );
+        logger.info('Rail de recuperación: consulta usada', {
+          consulta, especificas: especificas.join(','), relevantes: relevant.length,
+          primero: relevant[0]?.name || '',
+        });
+        return { relevant, total: vistos };
+      }
     } catch (err) {
       logger.warn('Rail de recuperación: la búsqueda previa falló', {
         consulta, error: String(err),
@@ -438,6 +527,31 @@ async function probeCatalogo(messageText: string): Promise<{ relevant: any[]; to
     }
   }
   return { relevant: [], total: vistos };
+}
+
+/** Parecido de un producto con lo que pidió el cliente. La medida pesa el triple. */
+function puntajeDeParecido(
+  m: any,
+  medidas: Set<string>,
+  actuales: Set<string>,
+  previas: Set<string>
+): number {
+  const suyas = palabrasDeContenido(`${m.name || ''} ${m.category || ''}`);
+  let p = 0;
+  // La medida que dio el cliente en ESTE mensaje identifica el producto exacto.
+  for (const med of medidas) {
+    if (suyas.has(med)) p += 4;
+  }
+  for (const t of actuales) {
+    if (coincideAlgunaPalabra(new Set([t]), suyas)) p += 3;
+  }
+  // El historial solo desempata: si el cliente cambia de tema, no debe arrastrar
+  // la lista hacia lo que se hablaba antes.
+  for (const t of previas) {
+    if (coincideAlgunaPalabra(new Set([t]), suyas)) p += 0.25;
+  }
+  if (m.has_pricing) p += 0.5;
+  return p;
 }
 
 /** Cruce de palabras tolerante a singular/plural: "bolsas" ↔ "bolsa". */
@@ -541,7 +655,11 @@ export async function runAgentForMessage(params: {
     // La búsqueda con las palabras del cliente se ejecuta aquí, no cuando al
     // modelo le parezca. Es lo único que impide que niegue un producto que
     // tenemos sin haber mirado el catálogo.
-    const catalogProbe = await probeCatalogo(messageText);
+    const historialCliente = messages
+      .filter((m) => m.role === 'user' && m.content && m.content.trim() !== messageText.trim())
+      .slice(-3)
+      .map((m) => m.content);
+    const catalogProbe = await probeCatalogo(messageText, historialCliente);
     const catalogListado = catalogProbe.relevant
       .slice(0, 12)
       .map((m: any) => `${m.product_id} (${m.name})`)
