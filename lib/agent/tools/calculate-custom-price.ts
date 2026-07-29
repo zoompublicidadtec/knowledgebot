@@ -30,22 +30,34 @@ export function calculateCustomPriceTool() {
       required: ['product_id', 'quantity', 'piece_width_cm', 'piece_height_cm'],
     }),
     execute: async (args: any) => {
-      const { product_id, quantity, piece_width_cm, piece_height_cm } = args;
+      let { product_id } = args;
+      const { quantity, piece_width_cm, piece_height_cm } = args;
       
       const logMessage = `\n[${new Date().toISOString()}] [TOOL CALL] calculateCustomPriceTool: product=${product_id}, qty=${quantity}, w=${piece_width_cm}, h=${piece_height_cm}`;
       try { fs.appendFileSync('agent_calls.log', logMessage + '\n'); } catch(e) {}
 
       try {
         const supabase = createAdminClient();
-        
-        // 1. Fetch product and category to find pricing rules
-        const { data: prodData } = await (supabase as any)
-          .from('products')
-          .select('id, category_id, subcategory_id, name, unit')
-          .eq('id', product_id)
-          .single();
 
+        // 1. El agente recibe de searchCatalog la referencia comercial
+        //    (ZM-GEN-310), no el UUID. Sin resolverla, DTF UV y DTF Textil
+        //    nunca se podían cotizar: la búsqueda por `id` no encontraba nada.
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+          .test(String(product_id));
+
+        const query = (supabase as any)
+          .from('products')
+          .select('id, category_id, subcategory_id, name, unit, reference');
+
+        const { data: rows } = isUUID
+          ? await query.eq('id', product_id).limit(1)
+          : await query.eq('reference', product_id).eq('active', true).limit(1);
+
+        const prodData = rows?.[0];
         if (!prodData) return { success: false, error: 'Producto no encontrado.' };
+
+        // A partir de aquí siempre se trabaja con el UUID real.
+        product_id = prodData.id;
 
         // 2. Look for a pricing rule matching the category (wrap in try-catch to avoid crashing if table is missing)
         let rule: any = null;

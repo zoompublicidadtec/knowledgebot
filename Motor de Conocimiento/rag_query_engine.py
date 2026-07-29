@@ -756,7 +756,15 @@ def _has_real_photo(product: dict) -> bool:
 
 
 def _has_price(product: dict) -> bool:
-    """True si el producto tiene un precio no vacío."""
+    """True si el producto es cotizable.
+
+    La verdad está en price_tiers (el loader la trae como `has_pricing`), no en
+    products.price, que en Supabase siempre viene vacío. Mientras esto miró solo
+    el campo `price`, NINGÚN producto era preferente y el boost de ZOOM jamás
+    llegó a aplicarse.
+    """
+    if product.get("has_pricing"):
+        return True
     price = product.get("price")
     return bool(price) and str(price).strip() not in ("None", "", "0")
 
@@ -775,6 +783,9 @@ def classify_origen(product: dict) -> str:
     como propios por error. El tipo de ID es la frontera confiable.
     """
     pid = str(product.get("product_id") or "")
+    # La referencia ZM- es el marcador explícito de producción propia de ZOOM.
+    if product.get("is_zoom") or pid.upper().startswith("ZM-"):
+        return "PRODUCCION_INTERNA"
     if _UUID_RE.match(pid):
         return "PRODUCCION_INTERNA"
     # Si tiene código de catálogo (letras-guion-números) es importado
@@ -799,10 +810,11 @@ def is_preferente(product: dict) -> bool:
     Estos son los productos que el bot debe ofrecer primero (preferitismo).
     Los UUID sin foto o sin precio no son preferentes hasta completarse.
     """
-    pid = str(product.get("product_id") or "")
-    if not _UUID_RE.match(pid):
+    if classify_origen(product) != "PRODUCCION_INTERNA":
         return False
-    return _has_real_photo(product) and _has_price(product)
+    # Cotizable es requisito; la foto suma pero no puede ser excluyente, porque
+    # dejaría fuera del preferitismo a productos propios perfectamente vendibles.
+    return _has_price(product)
 
 
 def apply_internal_boost(results: list[dict], query: str, top_k: int) -> list[dict]:
@@ -1192,10 +1204,13 @@ def query(
     
     # 4. Recuperar contexto
     context = retrieve_product_context(search_results)
-    
-    # 5. Generar respuesta
-    response = generate_rag_response(user_query, context)
-    
+
+    # 5. El agente comercial (Gemini) es quien redacta al cliente. Antes aquí se
+    # hacía una segunda llamada al LLM cuyo texto llegaba al bot como contexto:
+    # gastaba tokens en cada búsqueda y afirmaba cosas ("No en stock") que
+    # contradecían al catálogo, induciendo alucinación por conflicto de fuentes.
+    response = f"{len(search_results)} productos recuperados del catálogo."
+
     result = {
         "response": response,
         "sources": [r["id"] for r in search_results[:top_k]],

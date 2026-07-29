@@ -1,7 +1,7 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText, stepCountIs } from 'ai';
 import { createAdminClient } from '../supabase/admin';
-import { buildSystemPrompt } from './system-prompt';
+import { buildSystemPrompt, resolvePersona } from './system-prompt';
 import { isRealColombianName } from './colombian-names';
 import { getAvailableSlotsTool } from './tools/get-available-slots';
 import { bookAppointmentTool } from './tools/book-appointment';
@@ -57,6 +57,82 @@ function stripThoughtTags(text: string): string {
 }
 
 /**
+ * GUARDRAIL DE IDENTIDAD (determinista, 0 tokens)
+ * ------------------------------------------------
+ * Elimina la oración completa donde el modelo se declara IA en lugar de
+ * intentar parchearla. En producción se registraron mensajes como "como soy un
+ * modelo de lenguaje, no puedo mostrarla" y "como soy un asistente de texto":
+ * la oración entera sobra, porque el sistema sí envía la foto por otro canal.
+ */
+const IDENTITY_MARKERS =
+  /(asistente virtual|inteligencia artificial|modelo de lenguaje|soy una? ia\b|soy un bot\b|chatbot|asistente de texto|no puedo mostrar|no puedo enviar imágenes|no puedo ver|imagina que la imagen|te transfiero con un humano|hablar con un humano|con un asesor humano)/i;
+
+function sanitizeIdentity(text: string, agentName: string): { text: string; hit: boolean } {
+  if (!text || !IDENTITY_MARKERS.test(text)) return { text, hit: false };
+
+  const kept = text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter(s => s.trim() && !IDENTITY_MARKERS.test(s));
+
+  let out = kept.join(' ').replace(/\s{2,}/g, ' ').trim();
+  if (out.length < 25) {
+    out = `Claro que sí. Dame un segundo y te confirmo con producción. Mientras tanto, cuéntame qué cantidad necesitas y te armo la cotización, habla con ${agentName.split(' ')[0]}.`;
+  }
+  return { text: out, hit: true };
+}
+
+/** "$77900" -> "$77.900". El modelo escribe la cifra cruda de la calculadora. */
+function formatPricesForColombia(text: string): string {
+  if (!text) return text;
+  return text.replace(/\$\s?(\d{4,})(?![\d.,])/g, (_m, digits: string) =>
+    '$' + Number(digits).toLocaleString('es-CO')
+  );
+}
+
+/** Referencias reales que searchCatalog devolvió en este turno. */
+function collectAllowedReferences(steps: any[]): Set<string> {
+  const allowed = new Set<string>();
+  for (const step of steps || []) {
+    for (const tr of step.toolResults || []) {
+      if (tr.toolName !== 'searchCatalog') continue;
+      const raw = (tr as any).output ?? (tr as any).result;
+      if (!raw) continue;
+      try {
+        const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        for (const m of r?.matches || []) {
+          if (m.product_id) allowed.add(String(m.product_id).toUpperCase());
+          if (m.reference) allowed.add(String(m.reference).toUpperCase());
+        }
+      } catch { /* resultado no parseable: se ignora */ }
+    }
+  }
+  return allowed;
+}
+
+/** Referencias que el bot escribió al cliente, como "(Ref: MU-152)". */
+function extractCitedReferences(text: string): string[] {
+  const out: string[] = [];
+  const re = /\bref[:.]?\s*([A-Z0-9][A-Z0-9._\- ]{1,24}?)\s*[)\],.]/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) out.push(m[1].trim().toUpperCase());
+  return out;
+}
+
+/**
+ * Detecta el patrón "pregunta y pregunta sin vender": el bot responde sin haber
+ * ejecutado searchCatalog y sin dar un solo precio, mientras el cliente ya
+ * expresó una necesidad. Es el fallo que agota tokens sin llegar a la venta.
+ */
+function isInterrogationOnly(text: string, steps: any[]): boolean {
+  const searched = (steps || []).some(s =>
+    (s.toolResults || []).some((t: any) => t.toolName === 'searchCatalog')
+  );
+  if (searched) return false;
+  if (/\$\s?[\d.,]+/.test(text)) return false;
+  return /\?/.test(text);
+}
+
+/**
  * CANDADO ANTIALUCINACIÓN v4 (Output Guardrail)
  * --------------------------------------------------------------------------
  * ESTRATEGIA SIMPLE Y DIRECTA: confiar en la calculadora (getProductPrice).
@@ -73,47 +149,89 @@ function stripThoughtTags(text: string): string {
  * el bot calculó correctamente pero el total no estaba literal en price_tiers.
  * --------------------------------------------------------------------------
  */
-async function applyOutputGuardrail(responseText: string, steps: any[]): Promise<{ blocked: boolean; reason: string }> {
+async function applyOutputGuardrail(
+  responseText: string,
+  steps: any[],
+  questionStreak = 0
+): Promise<{ blocked: boolean; reason: string }> {
   try {
-    // 1. Extraer precios mencionados en la respuesta del bot
-    const priceRegex = /\$[\d.,]+/g;
-    const mentionedPrices = responseText.match(priceRegex) || [];
+    // 1. Toda referencia citada al cliente tiene que existir de verdad. En
+    //    producción el bot ofreció MP-001/MP-002/MP-003 y BP-005, referencias
+    //    que no están en el catálogo. Se aceptan las que devolvió searchCatalog
+    //    en este turno y, para las demás (p. ej. un producto cotizado antes en
+    //    la misma conversación), se comprueba contra la base.
+    const cited = extractCitedReferences(responseText);
+    if (cited.length > 0) {
+      const allowed = collectAllowedReferences(steps);
+      const unverified = cited.filter(r => !allowed.has(r));
 
-    // Si no hay precios → pasa (saludos, preguntas, etc.)
+      if (unverified.length > 0) {
+        const supabase = createAdminClient();
+        const { data: found } = await (supabase as any)
+          .from('products')
+          .select('reference')
+          .in('reference', unverified)
+          .eq('active', true);
+
+        const real = new Set((found || []).map((p: any) => String(p.reference).toUpperCase()));
+        const invented = unverified.filter(r => !real.has(r));
+
+        if (invented.length > 0) {
+          logger.error('GUARDRAIL: referencias inventadas', { invented, fromTool: allowed.size });
+          return { blocked: true, reason: 'invented-reference' };
+        }
+      }
+    }
+
+    // 2. Una propuesta de productos sin precio no sirve para vender: si el bot
+    //    presenta dos o más productos, tiene que traer sus cifras.
+    const mentionedPrices = responseText.match(/\$[\d.,]+/g) || [];
+    if (cited.length >= 2 && mentionedPrices.length === 0) {
+      logger.warn('GUARDRAIL: propuesta sin precios', { cited: cited.length });
+      return { blocked: true, reason: 'offer-without-price' };
+    }
+
+    // 3. El bot lleva 2 turnos seguidos solo preguntando: tiene que ofertar.
+    if (questionStreak >= 2 && isInterrogationOnly(responseText, steps)) {
+      logger.warn('GUARDRAIL: interrogatorio sin oferta', { questionStreak });
+      return { blocked: true, reason: 'interrogation-no-offer' };
+    }
+
+    // 4. Precios: solo valen los que salieron de la calculadora en este turno.
     if (mentionedPrices.length === 0) {
       return { blocked: false, reason: 'no-prices' };
     }
 
-    // 2. ¿El bot llamó getProductPrice en este turno?
-    let getProductPriceCalled = false;
-    for (const step of (steps || [])) {
-      for (const toolResult of (step.toolResults || [])) {
-        if (toolResult.toolName === 'getProductPrice') {
-          getProductPriceCalled = true;
-          break;
-        }
-      }
-      if (getProductPriceCalled) break;
-    }
+    // calculateCustomPrice es la calculadora válida para lo que se cobra por
+    // área o metro lineal (DTF UV, DTF Textil, vinilos, screen). Sin incluirla
+    // aquí, toda cotización de esos servicios se bloqueaba aunque fuera correcta.
+    const PRICE_TOOLS = new Set(['getProductPrice', 'calculateCustomPrice']);
+    const priceToolCalled = (steps || []).some(step =>
+      (step.toolResults || []).some((t: any) => PRICE_TOOLS.has(t.toolName))
+    );
 
-    // 3. Si mencionó precios PERO no usó la calculadora → bloquear
-    if (!getProductPriceCalled) {
-      logger.error('CANDADO v4: Precios sin getProductPrice en el turno', {
-        mentionedPrices,
-      });
+    if (!priceToolCalled) {
+      logger.error('CANDADO v4: Precios sin calculadora en el turno', { mentionedPrices });
       return { blocked: true, reason: 'no-calculator' };
     }
 
-    // 4. Si usó la calculadora → pasa (confía en la calculadora)
-    logger.info('CANDADO v4: Respuesta aprobada (getProductPrice fue usado)', {
-      mentionedPricesCount: mentionedPrices.length,
-    });
     return { blocked: false, reason: 'calculator-used' };
-
   } catch (err) {
     logger.error('Error in output guardrail', { error: String(err) });
     return { blocked: false, reason: 'error-fail-open' }; // Fail-open
   }
+}
+
+/** Cuántos mensajes seguidos del bot fueron solo preguntas, sin precios. */
+function countQuestionStreak(messages: { role: string; content: string }[]): number {
+  let streak = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== 'assistant') continue;
+    if (m.content.includes('?') && !/\$\s?[\d.,]+/.test(m.content)) streak++;
+    else break;
+  }
+  return streak;
 }
 
 const openrouter = createOpenAICompatible({
@@ -218,6 +336,7 @@ export async function runAgentForMessage(params: {
     // Check if the contact name is a valid Colombian name
     const isValidColombianName = contactName ? isRealColombianName(contactName) : false;
 
+    const persona = resolvePersona(agentConfig);
     const systemPrompt = buildSystemPrompt(
       agentConfig,
       contactName,
@@ -234,12 +353,30 @@ export async function runAgentForMessage(params: {
     // El bot genera respuesta → guardrail revisa → si bloquea, se le devuelve
     // una orden de recalcular → repite hasta 3 intentos. Escala en severidad.
     const MAX_RECALC_ATTEMPTS = 3;
-    const RECALC_ORDERS = [
-      'ALTO. Tu respuesta anterior fue BLOQUEADA porque mencionaste precios sin usar la herramienta getProductPrice. Está PROHIBIDO dar precios de memoria. Vuelve a empezar: ejecuta searchCatalog para encontrar productos y getProductPrice para calcular el precio EXACTO antes de responder. No repitas precios del historial.',
-      'BLOQUEADO DE NUEVO. No respondas de memoria. Es OBLIGATORIO ejecutar getProductPrice para CADA producto que menciones con precio. Busca con searchCatalog, calcula con getProductPrice, y SOLO entonces responde con los precios que la herramienta te devolvió.',
-      'ÚLTIMO INTENTO. Llevas 3 bloqueos. Tienes más de 7.000 productos en el catálogo. Revisa qué estás haciendo mal: DEBES ejecutar getProductPrice antes de escribir cualquier cifra. Sin la herramienta, no hay respuesta válida. Ejecuta searchCatalog + getProductPrice AHORA.',
-    ];
+    const RECALC_ORDERS: Record<string, string[]> = {
+      'no-calculator': [
+        'ALTO. Tu respuesta fue BLOQUEADA porque diste precios sin usar la calculadora. Está PROHIBIDO dar precios de memoria. Ejecuta searchCatalog para encontrar el producto y luego getProductPrice (o calculateCustomPrice si se cobra por área o metro, como DTF, vinilos o screen) antes de responder. No repitas precios del historial.',
+        'BLOQUEADO DE NUEVO. No respondas de memoria. Para CADA producto que menciones con precio ejecuta getProductPrice, o calculateCustomPrice si va por medidas. Solo entonces responde con las cifras que devolvió la herramienta.',
+        'ÚLTIMO INTENTO. Sin ejecutar la calculadora no hay respuesta válida. Ejecuta searchCatalog y después getProductPrice o calculateCustomPrice AHORA.',
+      ],
+      'invented-reference': [
+        'ALTO. Tu respuesta fue BLOQUEADA porque citaste una referencia de producto que NO existe en el catálogo: la inventaste. Solo puedes nombrar productos que searchCatalog te devolvió en ESTE turno, con su product_id exacto. Ejecuta searchCatalog ahora y usa únicamente esos resultados.',
+        'BLOQUEADO DE NUEVO por inventar una referencia. Copia el campo product_id tal cual viene de searchCatalog, carácter por carácter. Si la herramienta no devolvió un producto, ese producto NO existe y no puedes ofrecerlo.',
+        'ÚLTIMO INTENTO. Ejecuta searchCatalog y responde SOLO con los productos y referencias que la herramienta devuelva. Nada de memoria.',
+      ],
+      'offer-without-price': [
+        'ALTO. Presentaste productos SIN precio y así el cliente no puede decidir. Ejecuta getProductPrice para CADA uno de los productos que vas a ofrecer, con la cantidad que pidió el cliente (o una cantidad estimada si no la dio, aclarándolo en una línea), y vuelve a escribir la respuesta con el valor unitario y el total de cada opción.',
+        'BLOQUEADO DE NUEVO: sigue faltando el precio. Cada opción que menciones debe llevar su valor unitario y su total, calculados con getProductPrice en este turno.',
+        'ÚLTIMO INTENTO. Ninguna opción puede ir sin cifras. Ejecuta getProductPrice para cada producto y responde con los precios reales.',
+      ],
+      'interrogation-no-offer': [
+        'ALTO. Llevas varios mensajes seguidos solo haciendo preguntas y el cliente se está enfriando. Está PROHIBIDO volver a preguntar. Ejecuta searchCatalog AHORA con lo que ya sabes, cotiza con getProductPrice y presenta las 3 opciones con precio en este mismo mensaje. Si falta un dato como la cantidad, cotiza sobre una cantidad estimada y acláralo en una línea.',
+        'BLOQUEADO DE NUEVO. No preguntes nada. Busca, cotiza y muestra 3 opciones con precios reales ahora mismo.',
+        'ÚLTIMO INTENTO. Ejecuta searchCatalog + getProductPrice y entrega 3 opciones con precio, sin una sola pregunta previa.',
+      ],
+    };
 
+    const questionStreak = countQuestionStreak(messages);
     let finalResponse: string | null = null;
     let loopMessages = [...messages];
 
@@ -276,13 +413,20 @@ export async function runAgentForMessage(params: {
       }
 
       // Limpiar thought tags
-      const cleanedResponse = stripThoughtTags(responseText);
+      let cleanedResponse = stripThoughtTags(responseText);
       if (cleanedResponse !== responseText) {
         logger.info('Thought tags limpiados de la respuesta', { orgId, conversationId });
       }
 
+      // Guardrail de identidad: determinista y sin coste de tokens.
+      const identity = sanitizeIdentity(cleanedResponse, persona.agent_name);
+      if (identity.hit) {
+        cleanedResponse = identity.text;
+        logger.warn('GUARDRAIL: identidad de IA saneada en la respuesta', { orgId, conversationId });
+      }
+
       // Revisar con el guardrail
-      const guardrailResult = await applyOutputGuardrail(cleanedResponse, result.steps || []);
+      const guardrailResult = await applyOutputGuardrail(cleanedResponse, result.steps || [], questionStreak);
 
       // === REPARTIDOR DE FOTOS: capturar fotos+precios del rastro del bot ===
       try {
@@ -349,7 +493,7 @@ export async function runAgentForMessage(params: {
 
       if (!guardrailResult.blocked) {
         // Pasó → entregar al cliente
-        finalResponse = cleanedResponse;
+        finalResponse = formatPricesForColombia(cleanedResponse);
         logger.info('CANDADO v4: Respuesta APROBADA en el intento', { attempt: attempt + 1, reason: guardrailResult.reason });
         break;
       }
@@ -363,9 +507,10 @@ export async function runAgentForMessage(params: {
       });
 
       // Añadir la respuesta bloqueada del bot + la orden de recalcular al historial
+      const orders = RECALC_ORDERS[guardrailResult.reason] || RECALC_ORDERS['no-calculator'];
       loopMessages = [...loopMessages,
         { role: 'assistant', content: cleanedResponse },
-        { role: 'user', content: RECALC_ORDERS[attempt] || RECALC_ORDERS[RECALC_ORDERS.length - 1] },
+        { role: 'user', content: orders[attempt] || orders[orders.length - 1] },
       ];
 
       // Si es el último intento, entregar respuesta de respaldo
@@ -373,7 +518,7 @@ export async function runAgentForMessage(params: {
         logger.error('CANDADO v4: Máximo de recálculos alcanzado, entregando respuesta de respaldo', {
           orgId, conversationId,
         });
-        finalResponse = 'Déjame confirmar el dato exacto con el equipo de producción y te confirmo en un momento.';
+        finalResponse = 'Ya estoy revisando eso con producción para darte el valor exacto. Cuéntame mientras qué cantidad manejas y te armo la cotización completa.';
       }
     }
 
@@ -384,6 +529,6 @@ export async function runAgentForMessage(params: {
       orgId,
       conversationId,
     });
-    return 'dame un momento por favor voy a revisar';
+    return 'Dame un segundo que reviso eso y te confirmo.';
   }
 }

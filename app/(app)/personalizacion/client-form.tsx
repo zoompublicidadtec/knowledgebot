@@ -32,6 +32,7 @@ export default function CustomizationClientForm({ initialConfig }: Customization
   );
 
   const businessInfo = initialConfig?.business_info || {};
+  const persona = initialConfig?.metadata?.persona || {};
 
   function addService() {
     setServices((prev) => [
@@ -111,24 +112,141 @@ export default function CustomizationClientForm({ initialConfig }: Customization
         </div>
       )}
 
+      {/* Identity section */}
+      <div className="card space-y-4">
+        <h2 className="text-base font-bold text-white flex items-center gap-2">
+          <BookOpen size={20} className="text-primary-400" />
+          Identidad del agente
+        </h2>
+        <p className="text-[11px] text-slate-400 -mt-2">
+          Quién es el agente para el cliente. Estos campos mandan sobre el prompt: si cambias
+          el nombre y el rol, el bot cambia de personaje en la siguiente conversación.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">Nombre del agente</label>
+            <input
+              name="agentName"
+              type="text"
+              defaultValue={persona.agent_name || ''}
+              className="input text-sm"
+              placeholder="Oscar Herrera"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">Rol / cargo</label>
+            <input
+              name="agentRole"
+              type="text"
+              defaultValue={persona.role || ''}
+              className="input text-sm"
+              placeholder="asesor comercial"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">Empresa</label>
+            <input
+              name="agentCompany"
+              type="text"
+              defaultValue={persona.company || ''}
+              className="input text-sm"
+              placeholder="ZOOM Publicidad"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">Saludo inicial</label>
+          <input
+            name="agentGreeting"
+            type="text"
+            defaultValue={persona.greeting || ''}
+            className="input text-sm"
+            placeholder="Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">Qué vende (alcance del negocio)</label>
+          <textarea
+            name="agentScope"
+            defaultValue={persona.scope || ''}
+            className="textarea h-20"
+            placeholder="mugs, termos, bolígrafos, cuadernos, gorras, camisetas..."
+          />
+          <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+            <Info size={12} /> Si el cliente pide algo fuera de esta lista, el bot reconduce en una frase
+            en vez de ponerse a preguntar sobre temas que no vendes.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">Frase de reconducción</label>
+          <input
+            name="agentOfftopic"
+            type="text"
+            defaultValue={persona.offtopic_redirect || ''}
+            className="input text-sm"
+            placeholder="Eso puntual no lo manejamos, pero justo en {scope} te puedo ayudar de una."
+          />
+          <p className="text-[10px] text-slate-500 mt-1">
+            Usa <code className="text-primary-400">{'{scope}'}</code> para insertar lo que vendes.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">Medios de pago</label>
+            <input
+              name="paymentMethods"
+              type="text"
+              defaultValue={persona.payment_methods || ''}
+              className="input text-sm"
+              placeholder="Bancolombia, Nequi, Daviplata o PSE"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">Condiciones de pago</label>
+            <input
+              name="paymentTerms"
+              type="text"
+              defaultValue={persona.payment_terms || ''}
+              className="input text-sm"
+              placeholder="50% para iniciar producción y 50% contra entrega"
+            />
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+          <input
+            type="checkbox"
+            name="freeMockup"
+            defaultChecked={persona.free_mockup !== false}
+            className="accent-primary-500"
+          />
+          Ofrecer boceto/montaje digital gratis con el logo del cliente ante objeciones estéticas
+        </label>
+      </div>
+
       {/* Prompts section */}
       <div className="card space-y-4">
         <h2 className="text-base font-bold text-white flex items-center gap-2">
           <BookOpen size={20} className="text-primary-400" />
-          Personalidad y Prompt
+          Tono e indicaciones adicionales
         </h2>
 
         <div>
-          <label className="block text-xs font-semibold mb-1 text-slate-400">System Prompt Principal</label>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">Indicaciones adicionales del negocio</label>
           <textarea
             name="systemPrompt"
             defaultValue={initialConfig?.system_prompt}
-            required
             className="textarea h-32"
-            placeholder="Instrucciones principales sobre cómo el bot debe actuar..."
+            placeholder="Reglas propias del negocio: mínimos de pedido, tiempos de entrega, promociones vigentes..."
           />
-          <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-            <Info size={12} /> Define las reglas principales de comportamiento y flujo del bot.
+          <p className="text-[10px] text-amber-400/80 mt-1 flex items-center gap-1">
+            <Info size={12} /> No escribas aquí que el bot es un asistente virtual o una IA: esas frases
+            se descartan automáticamente porque contradicen la identidad y hacen que el bot se delate.
           </p>
         </div>
 

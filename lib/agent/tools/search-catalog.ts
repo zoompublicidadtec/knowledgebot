@@ -6,6 +6,26 @@ function removeAccentsSimple(t: string): string {
   return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+/**
+ * RETRIEVAL RAIL \u2014 el cat\u00e1logo no le entrega NINGUNA cifra al modelo.
+ *
+ * Mientras searchCatalog devolv\u00eda `price`, `max_price` o descripciones con
+ * "PRECIO BOMBA $12.550", el modelo copiaba esos n\u00fameros en su respuesta sin
+ * llamar a getProductPrice. El candado de precios lo bloqueaba y forzaba hasta
+ * 3 reintentos: 84 segundos por mensaje y el triple de tokens.
+ *
+ * Sin cifras en el contexto, cotizar con la herramienta es el \u00fanico camino
+ * posible. `has_pricing` e `is_most_expensive` bastan para armar el embudo.
+ */
+function stripPrices(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\$\s?[\d.,]+/g, '')
+    .replace(/\b(precio bomba|precio|valor)\b\s*:?\s*/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 // Categorías hermanas cotizables para redirección automática cuando una
 // búsqueda trae <2 productos con precio válido. Cumplen la misma función.
 const SISTER_CATEGORY: Record<string, string> = {
@@ -153,10 +173,9 @@ export function searchCatalogTool() {
             category: prod.category || '',
             name: prod.name,
             unit: prod.unit || 'unidad',
-            price: prod.price || '',
-            description: prod.description || '',
+            description: stripPrices(prod.description || ''),
             instrucciones_venta: prod.instrucciones_venta || '',
-            notes: prod.notes || '',
+            notes: stripPrices(prod.notes || ''),
             requires_area: prod.requires_area || false,
             image_urls: prod.image_urls || [],
             score: prod.score,
@@ -190,9 +209,8 @@ export function searchCatalogTool() {
                       category: sp.category || '',
                       name: sp.name,
                       unit: sp.unit || 'unidad',
-                      price: sp.price || '',
-                      description: sp.description || '',
-                      notes: sp.notes || '',
+                      description: stripPrices(sp.description || ''),
+                      notes: stripPrices(sp.notes || ''),
                       requires_area: sp.requires_area || false,
                       image_urls: sp.image_urls || [],
                       score: sp.score,
@@ -217,12 +235,14 @@ export function searchCatalogTool() {
           const cotizables = matches.filter((m: any) => m.has_pricing).length;
           logger.info('RAG microservice response success', { count: matches.length, cotizables });
 
+          // El modelo nunca ve cifras: max_price solo sirvió para ordenar aquí.
+          const payload = matches.map(({ max_price, ...rest }: any) => rest);
+
           return {
             success: true,
             query: rawQuery,
-            matches,
-            rag_response: data.response,
-            note: 'Se ha realizado una búsqueda semántica usando el Motor de Conocimiento RAG. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente, redactadas en un párrafo fluido o máximo 2 bullets, y sin mencionar precios bajos o "el mejor precio". IMPORTANTE: Prioriza SIEMPRE los productos con has_pricing=true. Si presentas un producto con has_pricing=false, advierte al cliente que necesitas confirmar disponibilidad/precio. EXIGENCIA DE VARIEDAD Y GAMA: Si los resultados contienen productos de diferentes materiales (cerámica, plástico, metal, etc.), presenta un abanico variado al cliente (por ejemplo, una opción Premium en metal/térmica, una Estándar en cerámica y una Económica en plástico) en lugar de ofrecer tres productos del mismo material. NUEVA REGLA COMERCIAL DE FASE 1 (PRODUCTO MÁS CARO OBLIGATORIO): En la Fase 1 del embudo comercial, estás OBLIGADO a que una de las 3 opciones propuestas (la Opción Premium) sea el producto de mayor valor económico de toda la familia buscada. Para lograr esto sin equivocarte, busca en la lista de matches el producto que tenga marcado is_most_expensive = true. Ese producto DEBE ser presentado obligatoriamente como la Opción Premium. Las otras 2 opciones (Estándar y Económica) pueden ser seleccionadas libremente entre los demás matches que tengan has_pricing = true.',
+            matches: payload,
+            note: 'Estos son los ÚNICOS productos que puedes nombrar. Elige 3 (Premium = el que tiene is_most_expensive:true, más una Estándar y una Económica), variando material o gama, y prioriza has_pricing:true. Este resultado NO trae precios: llama getProductPrice con cada product_id para obtener las cifras antes de responder.',
           };
         } else {
           logger.warn(`RAG microservice returned status ${response.status}, falling back to database search`);
@@ -253,14 +273,14 @@ export function searchCatalogTool() {
           };
         }
 
-        let matches = data.slice(0, 100).map((row: any) => ({
+        let matches = data.slice(0, 40).map((row: any) => ({
           product_id: row.id,
           category: row.category,
           name: row.name,
           unit: row.unit,
-          description: row.description,
+          description: stripPrices(row.description || ''),
           instrucciones_venta: row.instrucciones_venta || '',
-          notes: row.notes,
+          notes: stripPrices(row.notes || ''),
           requires_area: row.requires_area,
           image_urls: [],
           has_pricing: false,
@@ -273,11 +293,13 @@ export function searchCatalogTool() {
         // Reordenar
         matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)));
 
+        const payload = matches.map(({ max_price, ...rest }: any) => rest);
+
         return {
           success: true,
           query,
-          matches,
-          note: 'OJO: He retornado hasta 100 resultados de la base de datos de fallback. TU DEBES aplicar OBLIGATORIAMENTE la Fase 1 del Embudo Comercial: NO muestres todos los resultados. Selecciona y presenta EXACTAMENTE 3 opciones (Premium, Estándar, Económica) que apliquen a lo que pidió el cliente, redactadas en un párrafo fluido o máximo 2 bullets, y sin mencionar precios bajos o "el mejor precio". NUEVA REGLA COMERCIAL DE FASE 1 (PRODUCTO MÁS CARO OBLIGATORIO): En la Fase 1 del embudo comercial, estás OBLIGADO a que una de las 3 opciones propuestas (la Opción Premium) sea el producto de mayor valor económico de toda la familia buscada. Para lograr esto sin equivocarte, busca en la lista de matches el producto que tenga marcado is_most_expensive = true. Ese producto DEBE ser presentado obligatoriamente como la Opción Premium. Las otras 2 opciones (Estándar y Económica) pueden ser seleccionadas libremente entre los demás matches que tengan has_pricing = true.',
+          matches: payload,
+          note: 'Estos son los ÚNICOS productos que puedes nombrar. Elige 3 (Premium = is_most_expensive:true, más una Estándar y una Económica) y prioriza has_pricing:true. Este resultado NO trae precios: llama getProductPrice con cada product_id antes de responder.',
         };
       } catch (err: any) {
         logger.error('Search catalog exception', { error: String(err) });

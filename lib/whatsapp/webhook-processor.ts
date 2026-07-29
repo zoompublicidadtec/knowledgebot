@@ -7,11 +7,93 @@ import type { WhatsAppConfig, AgentConfig } from '@/lib/database.types';
 import { transcribeAudio } from './transcribe';
 import { describeImage } from './describe-image';
 import { logLineError } from './log-line-error';
+import { getPhotosForConversation } from '@/lib/agent';
 
 interface ProcessResult {
   success: boolean;
   conversationId?: string;
   response?: string;
+}
+
+/**
+ * Conversaciones con el agente corriendo ahora mismo. WhatsApp reentrega el
+ * mismo mensaje y el puente reenvía cada `message_create`, así que sin este
+ * cerrojo el agente llegaba a ejecutarse dos veces y el cliente recibía la
+ * misma respuesta duplicada (31% de los mensajes salientes en producción).
+ */
+const conversationsInFlight = new Set<string>();
+
+/** El cliente está pidiendo ver el producto. */
+const PHOTO_REQUEST =
+  /\b(foto|fotos|fotico|imagen|imagenes|imágenes|im[aá]genes|ver|muestrame|muéstrame|mu[eé]strame|ense[nñ]ame|enséñame|c[oó]mo se ve|como se ve|pinta|catalogo visual)\b/i;
+
+/**
+ * Envía por WhatsApp las fotos de las propuestas SOLO cuando el cliente las
+ * pide. El agente ya dejó en caché las imágenes de los productos que cotizó
+ * (lib/agent), así que aquí no se consulta el catálogo ni se gastan tokens.
+ */
+async function dispatchRequestedPhotos(params: {
+  supabase: any;
+  orgId: string;
+  conversationId: string;
+  lineKey: string | null;
+  waConfig: WhatsAppConfig;
+  to: string;
+  clientText: string;
+  botText: string;
+}) {
+  const { supabase, orgId, conversationId, lineKey, waConfig, to, clientText, botText } = params;
+
+  try {
+    if (!PHOTO_REQUEST.test(clientText || '')) return;
+
+    const photos = getPhotosForConversation(conversationId).filter(p => p.image_url);
+    if (photos.length === 0) return;
+
+    // Si el cliente o el bot nombran productos concretos, se envían solo esos.
+    const haystack = `${clientText}\n${botText}`.toLowerCase();
+    let selected = photos.filter(p => {
+      const ref = p.reference?.toLowerCase() || '';
+      const name = p.name?.toLowerCase() || '';
+      if (ref && haystack.includes(ref)) return true;
+      const words = name.split(/\s+/).filter(w => w.length > 4);
+      return words.length > 0 && words.some(w => haystack.includes(w));
+    });
+    if (selected.length === 0) selected = photos;
+    selected = selected.slice(0, 3);
+
+    const adapter: WhatsAppAdapter = createAdapter(waConfig, lineKey);
+
+    for (const photo of selected) {
+      const caption = photo.unit_price
+        ? `*${photo.name}* (Ref: ${photo.reference}) — $${photo.unit_price.toLocaleString('es-CO')} COP c/u`
+        : `*${photo.name}* (Ref: ${photo.reference})`;
+
+      const mediaId = await adapter.sendMediaMessage(to, photo.image_url, caption);
+      if (!mediaId) {
+        logger.warn('No se pudo enviar la foto del producto', { reference: photo.reference });
+        continue;
+      }
+
+      await (supabase as any).from('messages').upsert(
+        {
+          conversation_id: conversationId,
+          organization_id: orgId,
+          wa_message_id: mediaId,
+          direction: 'outbound',
+          sender: 'bot',
+          content: caption,
+          line_key: lineKey,
+          raw: { media: { url: photo.image_url, type: 'image' } },
+        },
+        { onConflict: 'wa_message_id', ignoreDuplicates: true }
+      );
+    }
+
+    logger.info('Fotos de propuestas enviadas', { conversationId, count: selected.length });
+  } catch (err) {
+    logger.error('Error enviando fotos de propuestas', { error: String(err), conversationId });
+  }
 }
 
 export async function processInboundMessage(
@@ -267,7 +349,10 @@ export async function processInboundMessage(
     const direction = message.fromMe ? 'outbound' : 'inbound';
     const sender = message.fromMe ? 'bot' : 'contact';
 
-    const { error: msgErr } = await (supabase as any)
+    // `ignoreDuplicates` no devuelve error ante conflicto, así que pedimos la
+    // fila de vuelta: si llega vacía, este mensaje ya se procesó antes y el
+    // agente NO debe volver a responderlo.
+    const { data: insertedRows, error: msgErr } = await (supabase as any)
       .from('messages')
       .upsert(
         {
@@ -281,18 +366,31 @@ export async function processInboundMessage(
           raw: message.raw,
         },
         { onConflict: 'wa_message_id', ignoreDuplicates: true }
-      );
+      )
+      .select('id');
 
     if (msgErr) {
-      // If it's a duplicate, that's fine (idempotency)
       if (!msgErr.message.includes('duplicate')) {
         logger.error('Failed to insert message', { error: msgErr.message, orgId });
       }
       return { success: true, conversationId };
     }
 
+    if (!insertedRows || insertedRows.length === 0) {
+      logger.info('Mensaje ya procesado, se omite el agente', {
+        wa_message_id: message.messageId, conversationId,
+      });
+      return { success: true, conversationId };
+    }
+
     // 5. If bot active and message is not from me, invoke agent
     if (botActive && !message.fromMe) {
+      if (conversationsInFlight.has(conversationId)) {
+        logger.warn('Agente ya corriendo para esta conversación, se omite', { conversationId });
+        return { success: true, conversationId };
+      }
+      conversationsInFlight.add(conversationId);
+      try {
       const { data: agentConfig } = await (supabase as any)
         .from('agent_configs')
         .select('*')
@@ -317,15 +415,24 @@ export async function processInboundMessage(
           // Save outbound message
           await (supabase as any)
             .from('messages')
-            .insert({
-              conversation_id: conversationId,
-              organization_id: orgId,
-              wa_message_id: waMessageId,
-              direction: 'outbound',
-              sender: 'bot',
-              content: agentResponse,
-              line_key: lineKey,
-            });
+            .upsert(
+              {
+                conversation_id: conversationId,
+                organization_id: orgId,
+                wa_message_id: waMessageId,
+                direction: 'outbound',
+                sender: 'bot',
+                content: agentResponse,
+                line_key: lineKey,
+              },
+              { onConflict: 'wa_message_id', ignoreDuplicates: true }
+            );
+
+          // Fotos de las 3 propuestas: se envían solo si el cliente las pidió.
+          await dispatchRequestedPhotos({
+            supabase, orgId, conversationId, lineKey, waConfig,
+            to: message.from, clientText: message.text, botText: agentResponse,
+          });
 
           const latency = Date.now() - startTime;
           logger.info('Message processed', {
@@ -337,6 +444,9 @@ export async function processInboundMessage(
 
           return { success: true, conversationId, response: agentResponse };
         }
+      }
+      } finally {
+        conversationsInFlight.delete(conversationId);
       }
     }
 

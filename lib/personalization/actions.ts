@@ -40,50 +40,64 @@ export async function saveAgentConfigAction(formData: FormData) {
   if (!profile) return { error: 'Sesión expirada. Por favor recarga la página.' };
   const orgId = profile.organization_id;
 
+  // Se lee la config actual para conservar las FAQ y el resto de metadata:
+  // antes se sobrescribían con [] en cada guardado y se perdían.
+  const { data: existing } = await (supabase as any)
+    .from('agent_configs')
+    .select('organization_id, business_info, metadata')
+    .eq('organization_id', orgId)
+    .single();
+
   const businessInfo = {
     name: businessName,
     address: businessAddress,
     phone: businessPhone,
     email: businessEmail,
     cancellation_policy: cancellationPolicy,
-    faq: [],
+    faq: (existing as any)?.business_info?.faq || [],
   };
 
-  // Check if config exists first
-  const { data: existing } = await (supabase as any)
-    .from('agent_configs')
-    .select('organization_id')
-    .eq('organization_id', orgId)
-    .single();
+  // Identidad del agente: lo que se escriba aquí manda sobre el prompt.
+  const persona = {
+    agent_name: ((formData.get('agentName') as string) || '').trim(),
+    role: ((formData.get('agentRole') as string) || '').trim(),
+    company: ((formData.get('agentCompany') as string) || businessName).trim(),
+    greeting: ((formData.get('agentGreeting') as string) || '').trim(),
+    scope: ((formData.get('agentScope') as string) || '').trim(),
+    offtopic_redirect: ((formData.get('agentOfftopic') as string) || '').trim(),
+    payment_methods: ((formData.get('paymentMethods') as string) || '').trim(),
+    payment_terms: ((formData.get('paymentTerms') as string) || '').trim(),
+    free_mockup: formData.get('freeMockup') === 'on',
+  };
+
+  const cleanPersona = Object.fromEntries(
+    Object.entries(persona).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+  );
+
+  const metadata = { ...((existing as any)?.metadata || {}), persona: cleanPersona };
+
+  const payload = {
+    system_prompt: systemPrompt,
+    tone,
+    handoff_message: handoffMessage,
+    business_info: businessInfo,
+    services: services,
+    business_hours: businessHours,
+    metadata,
+    updated_at: new Date().toISOString(),
+  };
 
   let dbError;
   if (existing) {
     const { error } = await (supabase as any)
       .from('agent_configs')
-      .update({
-        system_prompt: systemPrompt,
-        tone,
-        handoff_message: handoffMessage,
-        business_info: businessInfo,
-        services: services,
-        business_hours: businessHours,
-        updated_at: new Date().toISOString(),
-      })
+      .update(payload)
       .eq('organization_id', orgId);
     dbError = error;
   } else {
     const { error } = await (supabase as any)
       .from('agent_configs')
-      .insert({
-        organization_id: orgId,
-        system_prompt: systemPrompt,
-        tone,
-        handoff_message: handoffMessage,
-        business_info: businessInfo,
-        services: services,
-        business_hours: businessHours,
-        updated_at: new Date().toISOString(),
-      });
+      .insert({ organization_id: orgId, ...payload });
     dbError = error;
   }
 

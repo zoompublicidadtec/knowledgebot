@@ -78,6 +78,10 @@ def normalize_image_path(absolute_path: str) -> str:
     try:
         if not absolute_path:
             return ""
+        # Las rutas que llegan de Supabase ya son URLs web servidas por la app
+        # (/api/products/images/<carpeta>/<archivo>). Se devuelven intactas.
+        if absolute_path.startswith("/api/") or absolute_path.startswith("http"):
+            return absolute_path
         # Normalizar separadores Windows -> Unix (clave del fix).
         normalized = absolute_path.replace("\\", "/")
         # Ocasionalmente queda 'D://...' o doble barra; colapsar.
@@ -115,13 +119,22 @@ async def query_rag(request: QueryRequest):
         )
         print(f"[API DEBUG] Query engine returned {len(raw_result.get('sources', []))} sources")
         
-        # Cargar catálogo completo para recuperar imágenes y metadatos adicionales
-        products_file = PRODUCTS_JSON_DIR / "all_products.json"
+        # Detalles del producto: Supabase manda (es lo que edita el panel), y el
+        # JSON local solo completa los campos que Supabase no guarda.
         all_products = {}
+        products_file = PRODUCTS_JSON_DIR / "all_products.json"
         if products_file.exists():
-            products_list = load_json(products_file)
-            all_products = {p["product_id"]: p for p in products_list}
-            
+            for p in load_json(products_file):
+                all_products[p["product_id"]] = p
+        for p in supabase_loader.get_products():
+            pid = p.get("product_id")
+            if not pid:
+                continue
+            base = all_products.get(pid, {})
+            merged = {**base, **{k: v for k, v in p.items() if v}}
+            all_products[pid] = merged
+
+
         matched_products = []
         
         # Mapear las fuentes (product_ids) a respuestas detalladas
@@ -134,8 +147,12 @@ async def query_rag(request: QueryRequest):
             web_imgs = []
             for img in local_imgs:
                 rel_path = normalize_image_path(img)
-                if rel_path:
-                    # Devolver URL relativa que apunta a nuestro mount estático
+                if not rel_path:
+                    continue
+                # Ya es una URL servida por la app Next.js: se usa tal cual.
+                if rel_path.startswith("/api/") or rel_path.startswith("http"):
+                    web_imgs.append(rel_path)
+                else:
                     web_imgs.append(f"/images/{rel_path}")
             
             product_data = ProductResponse(
@@ -242,4 +259,6 @@ async def catalog_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api_service:app", host="0.0.0.0", port=8001, reload=True)
+    # reload=False: con recarga automática, cualquier escritura en el directorio
+    # tumbaba el motor en producción y el bot se quedaba sin catálogo.
+    uvicorn.run("api_service:app", host="0.0.0.0", port=8001, reload=False)

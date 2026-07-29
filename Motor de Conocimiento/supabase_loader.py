@@ -61,6 +61,41 @@ def _is_available() -> bool:
     return bool(SUPABASE_URL and SUPABASE_KEY)
 
 
+def _fetch_priced_product_ids(client: httpx.Client) -> set:
+    """UUIDs que tienen al menos una tarifa válida en price_tiers.
+
+    El motor necesita saber si un producto es cotizable para decidir si puede
+    ser PREFERENTE. Antes se miraba products.price, que en Supabase siempre
+    viene vacío porque los precios viven en price_tiers: por eso el preferitismo
+    de ZOOM nunca llegaba a activarse.
+    """
+    priced: set = set()
+    offset, page = 0, 1000
+    try:
+        while True:
+            resp = client.get(
+                f"{SUPABASE_URL}/rest/v1/price_tiers",
+                params={"select": "product_id,price", "limit": page, "offset": offset},
+                headers=_headers(),
+                timeout=30,
+            )
+            if resp.status_code not in (200, 206):
+                break
+            batch = resp.json()
+            for t in batch:
+                try:
+                    if t.get("price") is not None and float(t["price"]) > 0:
+                        priced.add(t["product_id"])
+                except (TypeError, ValueError):
+                    continue
+            if len(batch) < page:
+                break
+            offset += page
+    except Exception as e:
+        logger.warning(f"[SUPABASE] No se pudieron cargar price_tiers: {e}")
+    return priced
+
+
 def _map_supabase_row(row: dict, category_name: str) -> dict:
     """Convierte una fila de products (Supabase) al formato-motor.
 
@@ -86,6 +121,8 @@ def _map_supabase_row(row: dict, category_name: str) -> dict:
         "category": category_name or "",
         "subcategory": "",  # Supabase no la separa; va dentro de notes/search_text
         "price": price,
+        "has_pricing": bool(row.get("_has_pricing")),
+        "is_zoom": ref.upper().startswith("ZM-"),
         "description": row.get("description", "") or "",
         "search_text": row.get("search_text", "") or "",
         "notes": row.get("notes", "") or "",
@@ -132,6 +169,9 @@ def _fetch_products_from_supabase() -> Optional[list]:
             categories = _fetch_categories(client)
             logger.info(f"[SUPABASE] {len(categories)} categorías cargadas")
 
+            priced_ids = _fetch_priced_product_ids(client)
+            logger.info(f"[SUPABASE] {len(priced_ids)} productos con tarifa válida")
+
             products: list = []
             page_size = 1000
             offset = 0
@@ -172,6 +212,7 @@ def _fetch_products_from_supabase() -> Optional[list]:
 
                 for row in batch:
                     cat_name = categories.get(row.get("category_id", ""), "")
+                    row["_has_pricing"] = row.get("id") in priced_ids
                     products.append(_map_supabase_row(row, cat_name))
 
                 if len(batch) < page_size:
