@@ -113,6 +113,12 @@
   rojo/ámbar indica la causa y la acción de reparación. Lo alimenta `/api/health`.
 - ✅ **Base de Conocimiento → Servicios y Marcaciones** lee las tarifas reales
   de la base (antes estaban escritas a mano en el código con cifras inexistentes).
+- ✅ **Subir foto de producto desde el editor** (Base de Conocimiento). Una sola
+  operación deja coherentes los 3 niveles que el RAG necesita: archivo en disco
+  (normalizado a JPEG ≤1024 px con `sharp`), `image_url` en Supabase y re-embed
+  multimodal del producto. Si el re-embed falla, se restaura el `image_url`
+  anterior y se borra la carpeta, para no dejar una foto sin vector.
+  Verificado end-to-end el 2026-07-29 (10,8 s por foto).
 
 ### Mensajería
 - ✅ Idempotencia real: un mensaje reentregado ya no dispara el agente dos veces.
@@ -152,8 +158,9 @@ Casi todos `ZM-` (bolsas organza/satín/yute, USB metálicos, mugs ZOOM, tarjeta
 $16.700 en lote de 50**. El precio sube al aumentar el volumen; parece un error
 de captura en el Excel de origen.
 
-### ⚠️ `linea_2` desconectada
-La sesión no está iniciada. Requiere escanear QR desde Integraciones.
+### ✅ `linea_2` reconectada (2026-07-29 18:05 UTC)
+Ambas líneas responden (`keepAliveErrors: 0`). Se deja anotado porque el estado
+de las líneas cambia solo: comprobar siempre en el Centro de Control.
 
 ### 🟡 Meta: 8 líneas
 Hoy hay 2 líneas de prueba configuradas.
@@ -243,4 +250,5 @@ ls /root/knowledgebot/backups/products_*.json
 |---|---|
 | 2026-07-18 | Creación inicial. |
 | 2026-07-23 | Actualización tras el intento de migración a Baileys. |
+| 2026-07-29 | Reparado el upload de fotos desde el panel (volumen `:ro`, rollback destructivo, re-embed bloqueante). `linea_2` reconectada. |
 | 2026-07-29 | **Reescritura tras auditoría directa del VPS.** Se corrige la arquitectura (no existe el puente Baileys en producción), se documentan los guardrails, la deduplicación del catálogo, el preferitismo ZOOM y el panel con datos reales. |

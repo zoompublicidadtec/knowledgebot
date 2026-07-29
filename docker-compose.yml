@@ -20,7 +20,7 @@ services:
       - VOLUME_PATH=/data
     volumes:
       - ./attachments:/data/attachments
-      - ./catalogo_catalogospromocionales/imagenes_productos:/data/imagenes_productos:ro
+      - ./catalogo_catalogospromocionales/imagenes_productos:/data/imagenes_productos
     logging:
       driver: "json-file"
       options:

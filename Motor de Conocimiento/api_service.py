@@ -272,8 +272,11 @@ async def reembed_product_endpoint(payload: dict):
     if not pid:
         raise HTTPException(status_code=400, detail="product_id requerido")
     try:
+        import asyncio
         from embedding_pipeline import reembed_product
-        datapoint = reembed_product(pid)
+        # to_thread: re-embedar tarda ~12s. Llamarlo directo bloquea el event
+        # loop y el bot se queda sin /query mientras el panel sube una foto.
+        datapoint = await asyncio.to_thread(reembed_product, pid)
         if not datapoint:
             raise HTTPException(status_code=500, detail=f"No se pudo re-embedar {pid}")
         return {

@@ -9,6 +9,7 @@ combinados texto+imagen usando gemini-embedding-2 (3072 dimensiones).
 
 import asyncio
 import json
+import threading
 import time
 from io import BytesIO
 from pathlib import Path
@@ -368,6 +369,56 @@ def _resolve_image_to_disk(image_path: str) -> str:
 # ============================================================================
 # 4b. RE-EMBED DE UN SOLO PRODUCTO (para upload de imagen)
 # ============================================================================
+# Serializa la escritura del indice vectorial. reembed_product hace un
+# read-modify-write del JSON completo (2.252 datapoints, ~138 MB): dos re-embeds
+# simultaneos leerian la misma lista y el ultimo en guardar borraria el vector
+# del otro sin avisar.
+_REEMBED_LOCK = threading.Lock()
+
+
+def _upsert_datapoint(datapoint: dict, embeddings_output: Path,
+                      jsonl_output: Path) -> int:
+    """Sustituye (o anade) un datapoint en el indice y lo persiste.
+
+    Devuelve el total de datapoints. Todo el read-modify-write ocurre bajo
+    _REEMBED_LOCK. save_json escribe a .tmp y renombra, asi que el indice nunca
+    queda a medias aunque el proceso muera durante el guardado.
+    """
+    with _REEMBED_LOCK:
+        all_datapoints = []
+        if embeddings_output.exists():
+            try:
+                all_datapoints = load_json(embeddings_output)
+            except Exception as e:
+                logger.warning(f"[REEMBED] error cargando embeddings: {e}")
+                all_datapoints = []
+
+        pid = datapoint["id"]
+        all_datapoints = [dp for dp in all_datapoints if dp["id"] != pid]
+        all_datapoints.append(datapoint)
+
+        save_json(all_datapoints, embeddings_output)
+        try:
+            with open(jsonl_output, "w", encoding="utf-8") as f:
+                for dp in all_datapoints:
+                    line = {
+                        "id": dp["id"],
+                        "embedding": dp["embedding"],
+                        "restricts": [
+                            {"namespace": "category", "allow": [dp["metadata"]["category"]]},
+                            {"namespace": "subcategory", "allow": [dp["metadata"]["subcategory"]]},
+                        ],
+                        "numeric_restricts": [
+                            {"namespace": "total_stock", "value_int": dp["metadata"]["total_stock"]},
+                        ],
+                    }
+                    f.write(json.dumps(line, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.warning(f"[REEMBED] JSONL no actualizado (no critico): {e}")
+
+        return len(all_datapoints)
+
+
 def reembed_product(product_id: str, product: Optional[dict] = None) -> Optional[dict]:
     """
     Re-genera el embedding multimodal de UN solo producto y lo actualiza en
@@ -431,15 +482,6 @@ def reembed_product(product_id: str, product: Optional[dict] = None) -> Optional
     embeddings_output = EMBEDDINGS_DIR / "product_embeddings.json"
     jsonl_output = EMBEDDINGS_DIR / "product_embeddings.jsonl"
 
-    # Cargar embeddings existentes (lista de datapoints)
-    all_datapoints = []
-    if embeddings_output.exists():
-        try:
-            all_datapoints = load_json(embeddings_output)
-        except Exception as e:
-            logger.warning(f"[REEMBED] error cargando embeddings: {e}")
-            all_datapoints = []
-
     # Re-embeddar con manejo de rate limit (igual que el pipeline masivo)
     retries = 0
     max_429_retries = 10
@@ -462,32 +504,11 @@ def reembed_product(product_id: str, product: Optional[dict] = None) -> Optional
         logger.error(f"[REEMBED] embedding vacio para {product_id}")
         return None
 
-    # Dedup + append (mismo patron que run_embedding_pipeline)
+    # Dedup + append + persistencia, serializados (ver _upsert_datapoint)
     pid = datapoint["id"]
-    all_datapoints = [dp for dp in all_datapoints if dp["id"] != pid]
-    all_datapoints.append(datapoint)
+    total = _upsert_datapoint(datapoint, embeddings_output, jsonl_output)
 
-    # Persistir JSON + JSONL (igual que el pipeline masivo)
-    save_json(all_datapoints, embeddings_output)
-    try:
-        with open(jsonl_output, "w", encoding="utf-8") as f:
-            for dp in all_datapoints:
-                line = {
-                    "id": dp["id"],
-                    "embedding": dp["embedding"],
-                    "restricts": [
-                        {"namespace": "category", "allow": [dp["metadata"]["category"]]},
-                        {"namespace": "subcategory", "allow": [dp["metadata"]["subcategory"]]},
-                    ],
-                    "numeric_restricts": [
-                        {"namespace": "total_stock", "value_int": dp["metadata"]["total_stock"]},
-                    ],
-                }
-                f.write(json.dumps(line, ensure_ascii=False) + "\n")
-    except Exception as e:
-        logger.warning(f"[REEMBED] JSONL no actualizado (no critico): {e}")
-
-    logger.info(f"[REEMBED] [OK] {pid} re-embedado a {len(datapoint['embedding'])}d (total: {len(all_datapoints)})")
+    logger.info(f"[REEMBED] [OK] {pid} re-embedado a {len(datapoint['embedding'])}d (total: {total})")
     return datapoint
 def run_embedding_pipeline(products_file: Optional[str] = None) -> list[dict]:
     """
