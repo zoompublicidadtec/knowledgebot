@@ -18,6 +18,7 @@ load_dotenv()
 import rag_query_engine
 from config import LOCAL_CATALOG_PATH, EMBEDDINGS_DIR, PRODUCTS_JSON_DIR
 from utils import load_json
+import supabase_loader  # FASE 1: fuente única de productos desde el panel
 
 app = FastAPI(
     title="KnowledgeBot RAG Engine API",
@@ -55,10 +56,6 @@ class ProductResponse(BaseModel):
     subcategory: str
     price: Optional[str] = None
     description: str
-    # Instrucciones comerciales opcionales que viajan con el producto
-    # (ej. cuadernos: lógica de venta cruzada, cuál es premium). Genérico:
-    # cualquier producto futuro puede usarlo. Vacío si no aplica.
-    instrucciones_venta: str = ""
     stock: int
     has_stock: bool
     image_urls: List[str] = []
@@ -70,17 +67,38 @@ class QueryResponse(BaseModel):
     filters: dict
 
 def normalize_image_path(absolute_path: str) -> str:
-    """Normaliza ruta de imagen local a URL relativa web."""
+    """Normaliza ruta de imagen local a URL relativa web.
+
+    FASE 2a — FIX CRÍTICO: las rutas del catálogo vienen en formato Windows
+    ('D:\\\\KNOWLEDGE...\\\\galeria_1.jpg'). En Linux, las barras invertidas (\\\\)
+    son caracteres NORMALES del nombre, no separadores, así que Path( ).parts
+    no las divide y la función devolvía siempre "" (por eso image_urls llegaba
+    vacío al bot). Solución: normalizar \\\\ -> / antes de parsear.
+    """
     try:
-        abs_p = Path(absolute_path)
-        parts = abs_p.parts
+        if not absolute_path:
+            return ""
+        # Normalizar separadores Windows -> Unix (clave del fix).
+        normalized = absolute_path.replace("\\", "/")
+        # Ocasionalmente queda 'D://...' o doble barra; colapsar.
+        while "//" in normalized:
+            normalized = normalized.replace("//", "/")
+
+        parts = Path(normalized).parts
         if "imagenes_productos" in parts:
             idx = parts.index("imagenes_productos")
-            rel_parts = parts[idx+1:]
-            # Reemplazar espacios y caracteres raros
-            return "/".join(rel_parts)
-    except Exception:
-        pass
+            rel_parts = parts[idx + 1:]
+            # Codificar espacios/acentos para URL. rel_parts ya es string ascii-safe
+            # por la estructura de carpetas, pero por seguridad usamos quote.
+            from urllib.parse import quote
+            return "/".join(quote(p) for p in rel_parts)
+        # Fallback: si por algún motivo no está 'imagenes_productos' pero hay
+        # un segmento con galeria/principal, devolver el último segmento útil.
+        if parts:
+            from urllib.parse import quote
+            return quote(parts[-1])
+    except Exception as e:
+        print(f"[normalize_image_path] error: {e} para {absolute_path[:80]}")
     return ""
 
 @app.post("/query", response_model=QueryResponse)
@@ -125,9 +143,8 @@ async def query_rag(request: QueryRequest):
                 name=prod_detail.get("name", ""),
                 category=prod_detail.get("category", ""),
                 subcategory=prod_detail.get("subcategory", ""),
-                price=str(prod_detail.get("price")) if prod_detail.get("price") is not None else None,
+                price=prod_detail.get("price"),
                 description=prod_detail.get("description", ""),
-                instrucciones_venta=prod_detail.get("instrucciones_venta", "") or "",
                 stock=prod_detail.get("stock", {}).get("total", 0),
                 has_stock=prod_detail.get("stock", {}).get("has_stock", False),
                 image_urls=web_imgs,
@@ -165,6 +182,63 @@ async def health_check():
             "count": num_embeddings
         }
     }
+
+@app.post("/reindex")
+async def reindex_catalog():
+    """
+    FASE 1 — Invalida el caché del catálogo para que la próxima búsqueda lea
+    los productos actualizados desde Supabase (lo que edita el panel).
+
+    El panel llama a este endpoint cada vez que se guarda/edita/elimina un
+    producto. Así el bot refleja el cambio de inmediato (en <1s) sin pasos
+    manuales ni reinicios.
+
+    Nota: el re-embedding vectorial (3072D) de productos específicos puede
+    añadirse aquí después como mejora incremental; hoy la búsqueda por
+    palabras clave (motor principal) ya cubre los productos nuevos al instante.
+    """
+    try:
+        supabase_loader.clear_cache()
+        stats = supabase_loader.get_stats()
+        return {
+            "success": True,
+            "message": "Caché invalidado. El próximo query leerá de Supabase.",
+            "stats": stats,
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stats")
+async def catalog_stats():
+    """
+    FASE 4 — Diagnóstico del catálogo para el panel (/motor).
+    Devuelve: cuántos productos cargados, desde qué fuente, embeddings activos
+    y cobertura (productos vs embeddings).
+    """
+    try:
+        loader_stats = supabase_loader.get_stats()
+        embeddings_file = EMBEDDINGS_DIR / "product_embeddings.json"
+        num_embeddings = 0
+        if embeddings_file.exists():
+            try:
+                num_embeddings = len(load_json(embeddings_file))
+            except Exception:
+                pass
+        count = loader_stats.get("count", 0)
+        coverage = round((num_embeddings / count * 100), 1) if count else 0
+        return {
+            "catalog": loader_stats,
+            "embeddings": num_embeddings,
+            "vector_coverage_pct": coverage,
+            "images_mount": bool(LOCAL_CATALOG_PATH and
+                                 (Path(LOCAL_CATALOG_PATH) / "imagenes_productos").exists()),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
