@@ -322,6 +322,173 @@ def process_product_embedding(product: dict) -> Optional[dict]:
     return datapoint
 
 
+
+
+# ============================================================================
+# Resolvedor de ruta de imagen (HTTP relativa -> disco) para reembed
+# ============================================================================
+def _resolve_image_to_disk(image_path: str) -> str:
+    """
+    Convierte una ruta de imagen (HTTP relativa del loader, o ruta absoluta)
+    en una ruta de disco que PIL pueda abrir.
+
+    El loader entrega local_image_paths como rutas HTTP relativas:
+    '/api/products/images/3272_REF__.../principal.jpg' o '/images/...'.
+    Esas rutas NO existen en disco tal cual; el archivo vive en
+    {LOCAL_CATALOG_PATH}/imagenes_productos/{parte final}.
+
+    Si la ruta ya es de disco y existe, se devuelve intacta.
+    """
+    from config import LOCAL_CATALOG_PATH
+
+    p = Path(image_path)
+    if p.exists():
+        return str(p)
+
+    base = LOCAL_CATALOG_PATH or '/root/knowledgebot/catalogo_catalogospromocionales'
+    img_root = Path(base) / 'imagenes_productos'
+
+    s = image_path
+    for prefix in ('/api/products/images/', '/images/', '/api/catalog-images/'):
+        if s.startswith(prefix):
+            rel = s[len(prefix):]
+            candidate = img_root / rel
+            if candidate.exists():
+                return str(candidate)
+            break
+
+    if 'imagenes_productos/' in s:
+        rel = s.split('imagenes_productos/', 1)[1]
+        candidate = img_root / rel
+        if candidate.exists():
+            return str(candidate)
+
+    return image_path
+
+# ============================================================================
+# 4b. RE-EMBED DE UN SOLO PRODUCTO (para upload de imagen)
+# ============================================================================
+def reembed_product(product_id: str, product: Optional[dict] = None) -> Optional[dict]:
+    """
+    Re-genera el embedding multimodal de UN solo producto y lo actualiza en
+    data/embeddings/product_embeddings.json (lista de datapoints).
+
+    Esto es obligatorio tras subir/cambiar la imagen de un producto: el
+    embedding es MULTIMODAL (texto+imagen en el mismo vector), asi que si la
+    imagen cambia, el vector debe regenerarse para que el RAG sea coherente.
+
+    Args:
+        product_id: referencia comercial del producto (ej. "ZM-MUG-007").
+        product: dict del producto (formato-motor) ya cargado. Si es None,
+                 se busca en la fuente canonica (loader Supabase -> all_products.json).
+
+    Returns:
+        El datapoint actualizado, o None si fallo.
+    """
+    if product is None:
+        # Fuente canonica: loader Supabase (trae local_image_paths desde image_url).
+        # Cae a all_products.json si Supabase no responde (red de seguridad del loader).
+        try:
+            import supabase_loader
+            # force_refresh=True: el panel acaba de actualizar image_url en
+            # Supabase; forzamos recarga para no leer el caché con la ruta vieja.
+            productos = supabase_loader.get_products(force_refresh=True)
+            if productos:
+                product = next((p for p in productos
+                                if p.get("product_id") == product_id), None)
+        except Exception as e:
+            logger.warning(f"[REEMBED] loader fallo para {product_id}: {e}")
+            product = None
+        if product is None:
+            # Red de seguridad: all_products.json
+            try:
+                todos = load_json(PRODUCTS_JSON_DIR / "all_products.json")
+                product = next((p for p in todos
+                                if p.get("product_id") == product_id), None)
+            except Exception as e:
+                logger.error(f"[REEMBED] no se encontro {product_id}: {e}")
+                return None
+
+    if product is None:
+        logger.error(f"[REEMBED] producto no encontrado: {product_id}")
+        return None
+
+    # CRITICO: el loader entrega local_image_paths como rutas HTTP relativas
+    # ('/api/products/images/.../principal.jpg'). PIL no puede abrirlas tal cual,
+    # asi que las resolvemos a rutas de disco reales. Sin esto el embedding
+    # quedaria solo-texto (la imagen nunca se incorpora al vector).
+    product = dict(product)  # copia para no mutar el original en cache
+    raw_imgs = product.get("local_image_paths") or []
+    resolved_imgs = []
+    for img in raw_imgs:
+        r = _resolve_image_to_disk(img)
+        if r != img:
+            logger.info(f"[REEMBED] ruta resuelta: {img} -> {r}")
+        resolved_imgs.append(r)
+    if resolved_imgs:
+        product["local_image_paths"] = resolved_imgs
+
+    embeddings_output = EMBEDDINGS_DIR / "product_embeddings.json"
+    jsonl_output = EMBEDDINGS_DIR / "product_embeddings.jsonl"
+
+    # Cargar embeddings existentes (lista de datapoints)
+    all_datapoints = []
+    if embeddings_output.exists():
+        try:
+            all_datapoints = load_json(embeddings_output)
+        except Exception as e:
+            logger.warning(f"[REEMBED] error cargando embeddings: {e}")
+            all_datapoints = []
+
+    # Re-embeddar con manejo de rate limit (igual que el pipeline masivo)
+    retries = 0
+    max_429_retries = 10
+    datapoint = None
+    while datapoint is None and retries < max_429_retries:
+        try:
+            datapoint = process_product_embedding(product)
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg or "Quota exceeded" in error_msg:
+                retries += 1
+                wait_time = 60 * retries
+                logger.warning(f"[REEMBED] 429 para {product_id}. Reintento {retries}/{max_429_retries} - Esperando {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"[REEMBED] error procesando {product_id}: {e}")
+                return None
+
+    if not datapoint:
+        logger.error(f"[REEMBED] embedding vacio para {product_id}")
+        return None
+
+    # Dedup + append (mismo patron que run_embedding_pipeline)
+    pid = datapoint["id"]
+    all_datapoints = [dp for dp in all_datapoints if dp["id"] != pid]
+    all_datapoints.append(datapoint)
+
+    # Persistir JSON + JSONL (igual que el pipeline masivo)
+    save_json(all_datapoints, embeddings_output)
+    try:
+        with open(jsonl_output, "w", encoding="utf-8") as f:
+            for dp in all_datapoints:
+                line = {
+                    "id": dp["id"],
+                    "embedding": dp["embedding"],
+                    "restricts": [
+                        {"namespace": "category", "allow": [dp["metadata"]["category"]]},
+                        {"namespace": "subcategory", "allow": [dp["metadata"]["subcategory"]]},
+                    ],
+                    "numeric_restricts": [
+                        {"namespace": "total_stock", "value_int": dp["metadata"]["total_stock"]},
+                    ],
+                }
+                f.write(json.dumps(line, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning(f"[REEMBED] JSONL no actualizado (no critico): {e}")
+
+    logger.info(f"[REEMBED] [OK] {pid} re-embedado a {len(datapoint['embedding'])}d (total: {len(all_datapoints)})")
+    return datapoint
 def run_embedding_pipeline(products_file: Optional[str] = None) -> list[dict]:
     """
     Pipeline principal: procesa todos los productos y genera embeddings.

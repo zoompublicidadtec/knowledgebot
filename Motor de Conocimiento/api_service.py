@@ -257,6 +257,37 @@ async def catalog_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+@app.post("/reembed")
+async def reembed_product_endpoint(payload: dict):
+    """
+    Re-genera el embedding multimodal de UN producto.
+    Llamado por el panel tras subir/cambiar la imagen de un producto, para
+    mantener coherente el indice vectorial (texto+imagen en el mismo vector).
+
+    Body: {"product_id": "ZM-MUG-007"}
+    """
+    pid = (payload or {}).get("product_id")
+    if not pid:
+        raise HTTPException(status_code=400, detail="product_id requerido")
+    try:
+        from embedding_pipeline import reembed_product
+        datapoint = reembed_product(pid)
+        if not datapoint:
+            raise HTTPException(status_code=500, detail=f"No se pudo re-embedar {pid}")
+        return {
+            "success": True,
+            "product_id": datapoint["id"],
+            "dimensions": len(datapoint.get("embedding", [])),
+            "image_count": datapoint.get("metadata", {}).get("image_count", 0),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 if __name__ == "__main__":
     import uvicorn
     # reload=False: con recarga automática, cualquier escritura en el directorio
