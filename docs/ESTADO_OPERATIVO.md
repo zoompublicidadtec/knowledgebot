@@ -161,8 +161,13 @@ bolsas fabricadas y se archivaron el 2026-07-29.
 ### ⚠️ Catálogo: productos sin origen documentado
 **68 de los 514 productos `ZM-` no tienen hoja de origen** en ninguna de sus
 tarifas (`price_tiers.source_sheet` vacío). Ahí aparecieron las 14 bolsas
-fabricadas. Quedan por revisar con el dueño, entre otros, los vinilos
-`ZM-GEN-305/306/307/309/398/406`, que figuran a **$10 el m²**.
+fabricadas, así que la lista completa hay que revisarla con el dueño.
+
+No todo lo que está en esa lista es un error: los vinilos
+`ZM-GEN-305/306/307/309/398/406` cobran **$10 por cm²** (`price_basis='cm2'`,
+la calculadora por área), y las camisetas `ZM-TEX-*` tienen varias tarifas en el
+mismo rango porque son **variantes de marcación** legítimas (Base, Bordado
+bolsillo/carta, DTF bolsillo/carta). Falta la hoja de origen, no el sentido.
 
 La firma del defecto, para reconocerlo: sin hoja de origen + `price_basis`
 `unitario` con precio de lote + rangos abiertos (50‑99, 100‑∞) en vez de lotes
