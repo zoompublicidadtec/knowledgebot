@@ -197,6 +197,97 @@ export async function GET() {
       fix: dupes === 0 ? undefined : 'Fusionar los duplicados desde Base de Conocimiento.',
     });
 
+    // ── Precios sospechosos ────────────────────────────────────────────────
+    // Dos patrones que producen cotizaciones absurdas y que el bot no puede
+    // detectar por su cuenta, porque la cifra viene de la calculadora:
+    //   a) el precio SUBE al aumentar el volumen (error de captura);
+    //   b) el precio se dispara frente al resto de su categoría.
+    const suspects: Array<{ reference: string; name: string; issue: string }> = [];
+    try {
+      const tiersByProd = new Map<string, any[]>();
+      for (let from = 0; from < 30000; from += 1000) {
+        const { data: page } = await (admin as any)
+          .from('price_tiers').select('product_id, variant, min_qty, price')
+          .range(from, from + 999);
+        if (!page?.length) break;
+        for (const t of page) {
+          if (!tiersByProd.has(t.product_id)) tiersByProd.set(t.product_id, []);
+          tiersByProd.get(t.product_id)!.push(t);
+        }
+        if (page.length < 1000) break;
+      }
+
+      const { data: prodMeta } = await (admin as any)
+        .from('products').select('id, reference, name').eq('active', true).limit(1000);
+
+      for (const p of (prodMeta || [])) {
+        const ts = tiersByProd.get(p.id) || [];
+        const byVariant = new Map<string, any[]>();
+        for (const t of ts) {
+          const k = String(t.variant || '');
+          if (!byVariant.has(k)) byVariant.set(k, []);
+          byVariant.get(k)!.push(t);
+        }
+        for (const [, list] of byVariant) {
+          const ord = list.slice().sort((a, b) => a.min_qty - b.min_qty);
+          for (let i = 1; i < ord.length; i++) {
+            if (Number(ord[i].price) > Number(ord[i - 1].price) * 1.05) {
+              suspects.push({
+                reference: p.reference, name: p.name,
+                issue: `sube de $${Number(ord[i - 1].price).toLocaleString('es-CO')} (${ord[i - 1].min_qty} uds) a $${Number(ord[i].price).toLocaleString('es-CO')} (${ord[i].min_qty} uds)`,
+              });
+              break;
+            }
+          }
+        }
+      }
+    } catch { /* el diagnóstico nunca debe tumbar la página */ }
+
+    checks.push({
+      id: 'precios_raros', label: 'Precios incoherentes',
+      level: suspects.length === 0 ? 'ok' : 'warn',
+      value: String(suspects.length),
+      detail: suspects.length === 0
+        ? 'Ningún producto encarece al aumentar la cantidad.'
+        : `${suspects.length} producto(s) cuestan más al pedir más unidades. Ejemplo: ${suspects[0].reference} ${suspects[0].issue}.`,
+      fix: suspects.length === 0 ? undefined
+        : 'Revisar sus rangos en Base de Conocimiento: suele ser un error de captura del Excel de origen.',
+    });
+
+    // Precios imposibles: la importación dejó celdas concatenadas (unas gafas
+    // a $850.010.900). El bot los ignora, pero hay que corregirlos.
+    const corruptos: Array<{ reference: string; name: string; price: number }> = [];
+    try {
+      // Solo tarifas unitarias: una cifra alta con base "lote_total" es legítima
+      // (es el precio del pedido completo, no de una unidad).
+      const { data: caros } = await (admin as any)
+        .from('price_tiers')
+        .select('price, price_basis, products!inner(reference, name, active)')
+        .eq('products.active', true)
+        .eq('price_basis', 'unitario')
+        .gt('price', 1_500_000)
+        .order('price', { ascending: false })
+        .limit(500);
+      const vistos = new Set<string>();
+      for (const t of (caros || [])) {
+        const p = (t as any).products;
+        if (!p || vistos.has(p.reference)) continue;
+        vistos.add(p.reference);
+        corruptos.push({ reference: p.reference, name: p.name, price: Number(t.price) });
+      }
+    } catch { /* nunca tumbar el diagnóstico */ }
+
+    checks.push({
+      id: 'precios_imposibles', label: 'Precios imposibles',
+      level: corruptos.length === 0 ? 'ok' : 'error',
+      value: String(corruptos.length),
+      detail: corruptos.length === 0
+        ? 'Ningún producto tiene una cifra fuera de rango.'
+        : `${corruptos.length} producto(s) superan $1.500.000 por unidad, señal de celdas concatenadas al importar. Ejemplo: ${corruptos[0].reference} (${corruptos[0].name.slice(0, 34)}) a $${corruptos[0].price.toLocaleString('es-CO')}. El bot los descarta para no cotizarlos.`,
+      fix: corruptos.length === 0 ? undefined
+        : 'Corregir su precio real en Base de Conocimiento; mientras tanto no se ofrecen.',
+    });
+
     // ── Configuración del agente ───────────────────────────────────────────
     const { data: cfg } = await (admin as any)
       .from('agent_configs').select('metadata, system_prompt, bot_globally_enabled')

@@ -81,6 +81,38 @@ function sanitizeIdentity(text: string, agentName: string): { text: string; hit:
   return { text: out, hit: true };
 }
 
+/**
+ * Reconstruye la respuesta completa a partir de todos los pasos.
+ *
+ * `result.text` solo trae el texto del ÚLTIMO paso, así que cuando el modelo
+ * escribe algo, llama a una herramienta y luego sigue escribiendo, la primera
+ * parte se perdía: el cliente recibía frases cortadas ("...no los manejamos.
+ * Pero con") o cotizaciones sin la frase de reconducción que las introducía.
+ */
+function assembleText(finalText: string, steps: any[]): string {
+  const tail = (finalText || '').trim();
+
+  // Una respuesta cerrada termina en signo de puntuación o paréntesis.
+  const estaCompleta = (t: string) => t.length >= 40 && /[.!?:;)\]"'*]$/.test(t);
+
+  // Caso normal: el último paso ya trae el mensaje definitivo, y los pasos
+  // previos son borradores suyos. Concatenarlos duplicaría el texto.
+  if (estaCompleta(tail)) return tail;
+
+  // El último paso quedó cortado o vacío: se recupera el fragmento completo
+  // más largo que el modelo llegó a escribir.
+  const candidatos = (steps || [])
+    .map((s: any) => (s?.text || '').trim())
+    .filter(Boolean);
+  if (tail) candidatos.push(tail);
+
+  const completos = candidatos.filter(estaCompleta);
+  if (completos.length > 0) {
+    return completos.reduce((a, b) => (b.length > a.length ? b : a));
+  }
+  return candidatos.reduce((a, b) => (b.length > a.length ? b : a), tail);
+}
+
 /** "$77900" -> "$77.900". El modelo escribe la cifra cruda de la calculadora. */
 function formatPricesForColombia(text: string): string {
   if (!text) return text;
@@ -152,7 +184,8 @@ function isInterrogationOnly(text: string, steps: any[]): boolean {
 async function applyOutputGuardrail(
   responseText: string,
   steps: any[],
-  questionStreak = 0
+  questionStreak = 0,
+  approvedPrices: Set<number> = new Set()
 ): Promise<{ blocked: boolean; reason: string }> {
   try {
     // 1. Toda referencia citada al cliente tiene que existir de verdad. En
@@ -211,6 +244,16 @@ async function applyOutputGuardrail(
     );
 
     if (!priceToolCalled) {
+      // Si todas las cifras ya se le dieron al cliente antes en esta misma
+      // conversación, es el bot confirmando lo cotizado (típico del cierre),
+      // no inventando precios.
+      const todasConocidas = mentionedPrices.every(p => approvedPrices.has(parseCOP(p)));
+      if (todasConocidas) {
+        logger.info('CANDADO v4: precios ya aprobados en la conversación', {
+          count: mentionedPrices.length,
+        });
+        return { blocked: false, reason: 'previously-approved' };
+      }
       logger.error('CANDADO v4: Precios sin calculadora en el turno', { mentionedPrices });
       return { blocked: true, reason: 'no-calculator' };
     }
@@ -220,6 +263,32 @@ async function applyOutputGuardrail(
     logger.error('Error in output guardrail', { error: String(err) });
     return { blocked: false, reason: 'error-fail-open' }; // Fail-open
   }
+}
+
+/** "$1.843.500" -> 1843500 */
+function parseCOP(s: string): number {
+  return Number(String(s).replace(/[^\d]/g, '')) || 0;
+}
+
+/**
+ * Precios que el bot ya entregó antes en esta conversación y que, por tanto,
+ * pasaron el candado en su momento. Repetirlos no es hablar de memoria: es
+ * continuidad. Sin esto, al cerrar la venta ("me quedo con esos, ¿cómo pago?")
+ * el bot volvía a cotizar en lugar de pedir los datos y explicar el pago.
+ */
+function collectApprovedPrices(messages: { role: string; content: string }[]): Set<number> {
+  const out = new Set<number>();
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    for (const p of m.content.match(/\$\s?[\d.,]+/g) || []) {
+      const n = parseCOP(p);
+      if (n <= 0) continue;
+      out.add(n);
+      // El anticipo y el saldo son la mitad exacta de un total ya aprobado.
+      if (n % 2 === 0) out.add(n / 2);
+    }
+  }
+  return out;
 }
 
 /** Cuántos mensajes seguidos del bot fueron solo preguntas, sin precios. */
@@ -377,6 +446,7 @@ export async function runAgentForMessage(params: {
     };
 
     const questionStreak = countQuestionStreak(messages);
+    const approvedPrices = collectApprovedPrices(messages);
     let finalResponse: string | null = null;
     let loopMessages = [...messages];
 
@@ -403,9 +473,14 @@ export async function runAgentForMessage(params: {
         temperature: 0.4,
       } as any);
 
-      logger.info('Agent finished', { orgId, conversationId, steps: result.steps?.length || 0, attempt: attempt + 1 });
+      logger.info('Agent finished', {
+        orgId, conversationId,
+        steps: result.steps?.length || 0,
+        attempt: attempt + 1,
+        finishReason: (result as any).finishReason,
+      });
 
-      let responseText = result.text;
+      let responseText = assembleText(result.text, result.steps || []);
       if (!responseText?.trim()) {
         logger.warn('Agent returned empty response', { orgId, conversationId, attempt: attempt + 1 });
         finalResponse = null;
@@ -426,7 +501,9 @@ export async function runAgentForMessage(params: {
       }
 
       // Revisar con el guardrail
-      const guardrailResult = await applyOutputGuardrail(cleanedResponse, result.steps || [], questionStreak);
+      const guardrailResult = await applyOutputGuardrail(
+        cleanedResponse, result.steps || [], questionStreak, approvedPrices
+      );
 
       // === REPARTIDOR DE FOTOS: capturar fotos+precios del rastro del bot ===
       try {

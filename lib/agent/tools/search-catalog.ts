@@ -76,15 +76,29 @@ async function annotateMatchesWithPricing(supabase: any, matches: any[]): Promis
 
     const { data: tiers } = await (supabase as any)
       .from('price_tiers')
-      .select('product_id, price')
+      .select('product_id, price, price_basis')
       .in('product_id', resolvedUuids)
       .limit(5000);
 
-    const isSane = (p: any) => { const n = Number(p); return Number.isFinite(n) && n > 0 && n < 1e9; };
+    // Techo de cordura para artículos promocionales. La importación desde Excel
+    // dejó ~16 productos con celdas concatenadas (unas Gafas Bamboo a
+    // $850.010.900, un Cepillo a $47.554.950). Como el embudo obliga a ofrecer
+    // el producto más caro como opción Premium, esas cifras llegaban al cliente.
+    // Se descartan hasta que se corrijan desde el panel.
+    const MAX_PRECIO_RAZONABLE = 1_500_000;
+    const isSane = (p: any) => {
+      const n = Number(p);
+      return Number.isFinite(n) && n > 0 && n <= MAX_PRECIO_RAZONABLE;
+    };
 
     const uuidMaxPrice = new Map<string, number>();
     for (const t of (tiers || [])) {
-      if (isSane(t.price)) {
+      // El techo solo aplica a tarifas unitarias: "lote_total" es el precio del
+      // pedido completo y puede ser legítimamente alto.
+      const sane = t.price_basis === 'unitario' || !t.price_basis
+        ? isSane(t.price)
+        : Number(t.price) > 0 && Number(t.price) < 1e9;
+      if (sane) {
         const val = Number(t.price);
         const current = uuidMaxPrice.get(t.product_id) || 0;
         if (val > current) {
