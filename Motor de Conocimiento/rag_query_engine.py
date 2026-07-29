@@ -24,6 +24,7 @@ from config import (
     FIRESTORE_COLLECTION, PRODUCTS_JSON_DIR, EMBEDDINGS_DIR,
 )
 from utils import setup_logger, load_json
+from supabase_loader import get_products  # FASE 1: fuente única = Supabase
 
 logger = setup_logger("rag_engine", "rag_query_audit.log")
 
@@ -394,12 +395,10 @@ def keyword_fallback_search(query: str, filters: Optional[dict] = None, top_k: i
       (prefijo 'explicit_').
     """
     logger.info(f"[KEYWORD SEARCH] Buscando coincidencia de texto para: '{query}'")
-    products_file = PRODUCTS_JSON_DIR / "all_products.json"
-    if not products_file.exists():
-        logger.warning(f"[KEYWORD SEARCH] No existe all_products.json en {products_file}")
-        return []
+    # FASE 1: la fuente es Supabase vía get_products(); el fallback al JSON
+    # vive dentro del loader, así que aquí no hace falta chequear el archivo.
 
-    products = load_json(products_file)
+    products = get_products()  # FASE 1: Supabase (fallback a JSON automático)
 
     # Filtros EXPLÍCITOS del caller (no los derivados automáticamente).
     explicit_category = None
@@ -548,11 +547,11 @@ def retrieve_product_context(
         Texto de contexto formateado para inyectar en el LLM.
     """
     # Cargar catálogo completo para lookup
-    products_file = PRODUCTS_JSON_DIR / "all_products.json"
+    # FASE 1: fuente única Supabase (fallback a JSON dentro del loader).
     all_products = {}
     
-    if products_file.exists():
-        products_list = load_json(products_file)
+    if True:  # FASE 1: get_products() ya gestiona la disponibilidad
+        products_list = get_products()
         all_products = {p["product_id"]: p for p in products_list}
     
     context_parts = []
@@ -824,10 +823,10 @@ def apply_internal_boost(results: list[dict], query: str, top_k: int) -> list[di
     if not results:
         return results
 
-    products_file = PRODUCTS_JSON_DIR / "all_products.json"
+    # FASE 1: fuente única Supabase (fallback a JSON dentro del loader).
     all_products: dict = {}
-    if products_file.exists():
-        for p in load_json(products_file):
+    if True:  # FASE 1: get_products() ya gestiona la disponibilidad
+        for p in get_products():
             all_products[p.get("product_id")] = p
 
     # Término canónico principal de la consulta (ya con jerga+stemming)
