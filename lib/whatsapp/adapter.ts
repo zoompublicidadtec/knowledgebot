@@ -93,6 +93,19 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
             body: JSON.stringify({ chatId, text }),
           }
         );
+
+        // Sin esta comprobación, un rechazo del puente (por ejemplo, la línea
+        // reconectándose devuelve 400) caía igual en el `??` de abajo, se
+        // inventaba un identificador y la app guardaba la respuesta COMO
+        // ENVIADA. El cliente no recibía nada y el panel decía que sí.
+        if (!res.ok) {
+          const detalle = await res.text().catch(() => '');
+          logger.error('El puente rechazó el envío de texto', {
+            status: res.status, to, sessionId, detalle: detalle.slice(0, 300),
+          });
+          return null;
+        }
+
         const data = await res.json() as { data?: { id?: string } };
         return data.data?.id ?? `openwa_${Date.now()}`;
       } catch (err) {
@@ -112,6 +125,15 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
             body: JSON.stringify({ chatId, mediaUrl, caption }),
           }
         );
+
+        if (!res.ok) {
+          const detalle = await res.text().catch(() => '');
+          logger.error('El puente rechazó el envío de la foto', {
+            status: res.status, to, sessionId, mediaUrl, detalle: detalle.slice(0, 300),
+          });
+          return null;
+        }
+
         const data = await res.json() as { data?: { id?: string } };
         return data.data?.id ?? `openwa_media_${Date.now()}`;
       } catch (err) {

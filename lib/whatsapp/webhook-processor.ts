@@ -61,6 +61,28 @@ interface ProcessResult {
  */
 const conversationsInFlight = new Set<string>();
 
+/**
+ * Espera a que el agente termine con esa conversación, hasta `maxMs`.
+ *
+ * Antes, si llegaba un mensaje mientras el agente estaba respondiendo al
+ * anterior, se DESCARTABA y el cliente se quedaba sin contestación. Observado
+ * el 2026-07-30 en linea_2: la imagen de las 13:26:46 y el audio de las
+ * 13:27:03 llegaron durante los 26 s que tardó el mensaje previo y ninguno de
+ * los dos recibió respuesta propia.
+ *
+ * Esperar es mejor que descartar: cuando el agente arranca lee el historial de
+ * la conversación, así que contesta con los dos mensajes ya a la vista. Si la
+ * espera se agota se sigue descartando, para no acumular peticiones colgadas.
+ */
+async function esperarTurno(conversationId: string, maxMs = 45_000): Promise<boolean> {
+  const hasta = Date.now() + maxMs;
+  while (conversationsInFlight.has(conversationId)) {
+    if (Date.now() > hasta) return false;
+    await new Promise(r => setTimeout(r, 500));
+  }
+  return true;
+}
+
 /** El cliente está pidiendo ver el producto. */
 const PHOTO_REQUEST =
   /\b(foto|fotos|fotico|imagen|imagenes|imágenes|im[aá]genes|ver|muestrame|muéstrame|mu[eé]strame|ense[nñ]ame|enséñame|c[oó]mo se ve|como se ve|pinta|catalogo visual)\b/i;
@@ -335,7 +357,16 @@ export async function processInboundMessage(
           if (result.success && result.messages?.length > 0) {
             logger.info('Syncing chat history from WhatsApp', { from: message.from, count: result.messages.length });
             
-            const messagesToInsert = result.messages.map((m: any) => {
+            // El mensaje que se esta procesando AHORA no puede venir en esta
+            // sincronizacion. El puente lo guarda en su historial antes de
+            // reenviarlo, asi que se colaba aqui, se insertaba primero, y al
+            // llegar al paso 4 la idempotencia lo veia repetido y se saltaba
+            // el agente: el PRIMER mensaje de cada conversacion nueva se
+            // quedaba sin respuesta. Observado el 2026-07-30: el "Hola" de las
+            // 13:24:40 en linea_2 nunca recibio contestacion.
+            const messagesToInsert = result.messages
+              .filter((m: any) => String(m.id) !== String(message.messageId))
+              .map((m: any) => {
               const direction = m.fromMe ? 'outbound' : 'inbound';
               const sender = m.fromMe ? 'bot' : 'contact';
               
@@ -536,8 +567,14 @@ export async function processInboundMessage(
     // 5. If bot active and message is not from me, invoke agent
     if (botActive && !message.fromMe) {
       if (conversationsInFlight.has(conversationId)) {
-        logger.warn('Agente ya corriendo para esta conversación, se omite', { conversationId });
-        return { success: true, conversationId };
+        logger.info('El agente está ocupado con esta conversación; se espera turno', { conversationId });
+        const huboTurno = await esperarTurno(conversationId);
+        if (!huboTurno) {
+          logger.warn('Se agotó la espera del turno del agente, se omite el mensaje', {
+            conversationId, wa_message_id: message.messageId,
+          });
+          return { success: true, conversationId };
+        }
       }
       conversationsInFlight.add(conversationId);
       try {
@@ -563,6 +600,29 @@ export async function processInboundMessage(
           // Send response via WhatsApp
           const adapter: WhatsAppAdapter = createAdapter(waConfig, lineKey);
           const waMessageId = await adapter.sendTextMessage(message.from, agentResponse);
+
+          // Si el puente no pudo enviarla, NO se guarda como enviada: el panel
+          // mostraría una respuesta que el cliente nunca recibió. Se deja el
+          // rastro en el registro de errores de la línea para que el Centro de
+          // Control lo pueda mostrar con su causa.
+          if (!waMessageId) {
+            logger.error('La respuesta del agente NO se pudo enviar por WhatsApp', {
+              conversationId, lineKey, to: message.from,
+            });
+            if (lineKey) {
+              await logLineError({
+                lineKey,
+                orgId,
+                // Se usa un tipo YA existente a propósito: el panel mapea las
+                // etiquetas de line_error_log y uno nuevo saldría sin traducir.
+                errorType: 'connection',
+                severity: 'error',
+                message: 'El puente rechazó el envío de la respuesta del agente. El cliente no la recibió.',
+                context: { conversationId, wa_message_id: message.messageId },
+              });
+            }
+            return { success: false, conversationId, response: agentResponse };
+          }
 
           // Save outbound message
           await (supabase as any)

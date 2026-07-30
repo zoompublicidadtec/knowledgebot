@@ -22,9 +22,19 @@ export function MessageBubble({ message }: { message: Message }) {
   const isBot = message.sender === 'bot';
   const isHuman = message.sender === 'human';
 
-  const time = new Date(message.created_at).toLocaleTimeString('es-MX', {
+  /**
+   * Zona horaria FIJA a proposito.
+   *
+   * Sin `timeZone`, el servidor formatea la hora en UTC (el contenedor no
+   * tiene zona) y el navegador en la del equipo. El texto no coincide y React
+   * lanza el error #418 de hidratacion, que es el que aparecia en la consola.
+   * Fijando Bogota, servidor y navegador escriben exactamente lo mismo, que
+   * ademas es la hora que le sirve al dueno.
+   */
+  const time = new Date(message.created_at).toLocaleTimeString('es-CO', {
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'America/Bogota',
   });
 
   const rawObj = message.raw as any;
@@ -94,7 +104,15 @@ export function MessageBubble({ message }: { message: Message }) {
   const hayImagen = esImagen && !!src;
   const hayAudio = esAudio && !!src;
 
-  const displayText = message.content || '';
+  /**
+   * El puente mete la cita dentro del texto (`[En respuesta a: "…"]`) porque el
+   * agente necesita el referente para entender "de ese, cuanto por 200". Aqui
+   * se quita, porque la cita ya se pinta arriba en su propia caja y si no
+   * saldria dos veces.
+   */
+  const displayText = (message.content || '')
+    .replace(/\n?\[En respuesta a: "[\s\S]*?"\]/g, '')
+    .trim();
   let imageCaption = '';
   let aiDescription = '';
 

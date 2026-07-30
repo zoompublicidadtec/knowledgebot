@@ -282,29 +282,74 @@ function storeRead(line, chatJid, limit = 15) {
 // ADAPTADOR — contrato inmutable del webhook
 // ============================================================
 
+/** Texto plano del mensaje, sin la cita. */
 function extractBody(msg) {
     const m = msg.message || {};
-    let body =
+    return (
         m.conversation ||
         m.extendedTextMessage?.text ||
         m.imageMessage?.caption ||
         m.videoMessage?.caption ||
         m.documentMessage?.caption ||
+        m.audioMessage?.caption ||
+        ''
+    );
+}
+
+/**
+ * Mensaje citado, cuando el cliente usa "responder" sobre un mensaje anterior.
+ *
+ * Se devuelve como objeto aparte porque hacen falta las DOS cosas:
+ *   - El panel pinta una caja de cita leyendo `data.message.quoted.body`.
+ *     Ese campo no lo mandaba NINGUNO de los dos puentes, asi que la caja
+ *     llevaba tiempo sin datos y la funcion parecia rota.
+ *   - El agente necesita el referente dentro del texto, o no entiende a que
+ *     se refiere el cliente cuando dice "de ese, cuanto por 200".
+ *
+ * `contextInfo` puede venir colgando de cualquier tipo de mensaje, no solo del
+ * texto: tambien de una foto, un audio o un video con "responder".
+ */
+function extractQuoted(msg) {
+    const m = msg.message || {};
+    const ctx =
+        m.extendedTextMessage?.contextInfo ||
+        m.imageMessage?.contextInfo ||
+        m.videoMessage?.contextInfo ||
+        m.audioMessage?.contextInfo ||
+        m.documentMessage?.contextInfo ||
+        m.stickerMessage?.contextInfo;
+
+    const q = ctx?.quotedMessage;
+    if (!q) return null;
+
+    const cuerpo =
+        q.conversation ||
+        q.extendedTextMessage?.text ||
+        q.imageMessage?.caption ||
+        q.videoMessage?.caption ||
+        q.documentMessage?.caption ||
+        (q.imageMessage ? '[imagen]' : '') ||
+        (q.audioMessage ? '[nota de voz]' : '') ||
+        (q.videoMessage ? '[video]' : '') ||
+        (q.documentMessage ? '[documento]' : '') ||
         '';
 
-    // Mensaje citado: el cliente responde a algo concreto y sin esto se
-    // pierde el referente (commit 376092a).
-    const ctx = m.extendedTextMessage?.contextInfo || m.imageMessage?.contextInfo;
-    const quoted = ctx?.quotedMessage;
-    if (quoted) {
-        const qc =
-            quoted.conversation ||
-            quoted.extendedTextMessage?.text ||
-            quoted.imageMessage?.caption ||
-            '';
-        if (qc) body = `${body}\n[En respuesta a: "${qc}"]`;
-    }
-    return body;
+    if (!cuerpo) return null;
+
+    return {
+        id: ctx.stanzaId || null,
+        body: cuerpo,
+        // `participant` es quien escribio el mensaje citado.
+        fromMe: ctx.participant ? ctx.participant === (msg.key.remoteJid || '') : null,
+    };
+}
+
+/** Texto que ve el AGENTE: incluye la cita, porque necesita el referente. */
+function bodyParaElAgente(msg) {
+    const body = extractBody(msg);
+    const q = extractQuoted(msg);
+    if (!q) return body;
+    return body ? `${body}\n[En respuesta a: "${q.body}"]` : `[En respuesta a: "${q.body}"]`;
 }
 
 function normalizeIncomingMessage(msg, lineKey, mediaData, msgType, mediaError) {
@@ -317,7 +362,9 @@ function normalizeIncomingMessage(msg, lineKey, mediaData, msgType, mediaError) 
                 from: msg.key.remoteJid,
                 to: msg.key.remoteJid,
                 fromMe: msg.key.fromMe === true,
-                body: extractBody(msg),
+                body: bodyParaElAgente(msg),
+                // El panel pinta la caja de cita con esto.
+                quoted: extractQuoted(msg),
                 type: msgType,
                 mediaType: msgType,
                 media: mediaData
@@ -732,7 +779,7 @@ async function handleIncoming(line, msg, sock) {
         id: msg.key.id,
         chatJid: jid,
         fromMe,
-        body: extractBody(msg),
+        body: bodyParaElAgente(msg),
         type: msgType,
         timestamp: msg.messageTimestamp
             ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
@@ -740,7 +787,7 @@ async function handleIncoming(line, msg, sock) {
         hadMedia: !!mediaData,
     });
 
-    const body = extractBody(msg);
+    const body = bodyParaElAgente(msg);
     // Sin texto, sin archivo y sin error no hay nada que contarle a la app.
     if (!body && !mediaData && !mediaError) return;
 
