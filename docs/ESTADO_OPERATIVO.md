@@ -51,19 +51,58 @@
    └──────────────────────────┘
 ```
 
-> ⚠️ **Corrección importante (2026-07-29):** las versiones anteriores de este
-> documento describían un puente Baileys en el puerto 3005 atendiendo `linea_1`
-> con multimodalidad funcional. **Eso no existe en producción.** No hay
-> contenedor Baileys corriendo; ambas líneas dependen del puente `whatsapp-web.js`
-> en 3004. El código de `wa-server-baileys/` está en disco pero no desplegado.
+> ⚠️ **Cambio de arquitectura (2026-07-30): ahora hay DOS puentes.** El diagrama
+> de arriba describe el estado del 29-jul. Desde el 30-jul, `linea_2` se atiende
+> con Baileys en el puerto 3005 y `linea_1` sigue en `whatsapp-web.js` (3004).
+> El motivo está medido: el puente viejo **no puede descargar la media entrante**
+> (0 archivos en 328 mensajes; el log dice `ERROR descargando media (type=ptt):
+> [Error] r || r`). Baileys sí: imagen de 22 KB en 59 ms, audio de 11 KB en
+> 154 ms, en producción.
 
-### Los 3 pilares reales
+### Los pilares reales
 
 | Pilar | Tecnología | Rol |
 |---|---|---|
-| **Puente WhatsApp** | Node.js + `whatsapp-web.js` (Puppeteer) | Envía y recibe. Único puente activo. |
+| **Puente `linea_1`** | Node.js + `whatsapp-web.js` (Puppeteer), 3004 | Envía y recibe. **No descarga media.** |
+| **Puente `linea_2`** | Node.js + Baileys (sin Chrome), 3005 | Envía, recibe **y descarga audio e imagen**. |
 | **App Next.js** | Next.js 16 + React 19 + Vercel AI SDK | Panel SaaS, webhooks, agente comercial. |
 | **Motor RAG** | FastAPI (systemd) en 8001 | Búsqueda de productos: keyword + vectorial. |
+| **Cloudflare R2** | bucket `knowledgebot-fotos` | Guarda los audios y fotos del cliente. |
+
+### Cómo se reparten las líneas (dos compuertas en código)
+
+1. **`BRIDGE_LINES`** en cada puente: la lista de líneas que ese puente atiende.
+   La comprobación vive dentro de `startSession()`, el único punto por el que se
+   crea una sesión, así que **ninguna ruta HTTP puede colar una línea ajena**.
+   Sin esta compuerta los dos puentes atenderían la misma línea y el cliente
+   recibiría cada respuesta dos veces.
+2. **`WHATSAPP_BRIDGE_ROUTES`** en `.env.production` (`linea_2=http://localhost:3005`):
+   le dice a la app a qué puente hablarle por línea, vía `getBridgeUrl(lineKey)`.
+   Sin la variable, todo va al puente por defecto: el comportamiento de antes.
+
+Para migrar otra línea: añadirla a `BRIDGE_LINES` del 3005, quitarla del 3004,
+añadir su ruta y escanear un QR. **No hay código nuevo que escribir.**
+
+### 🚫 La trampa del `@lid` — error 463
+
+WhatsApp puede identificar un chat por **`@lid`**, un identificador interno de
+14-15 dígitos que **no es un teléfono**. Enviar a esa dirección **parece
+funcionar**: Baileys resuelve el envío, devuelve un id válido, las métricas
+dicen `send_errors: 0` y la app guarda la respuesta como enviada. Pero WhatsApp
+la rechaza después, en el acuse:
+
+```
+from: 181290854776961@lid  class: message  error: 463  "received error in ack"
+```
+
+**El cliente no recibe nada y el panel dice que sí respondió.** Costó una tarde
+encontrarlo porque no hay ningún error en el camino de envío.
+
+Solución en `wa-server-baileys/server.js`: Baileys 6.7.24 trae el teléfono real
+en `key.senderPn` del mensaje entrante. El puente **aprende la correspondencia
+`@lid` → teléfono** en cuanto esa persona escribe, la guarda en el volumen, y
+traduce la dirección al enviar. Si no la conoce, devuelve **503 con la causa**
+en vez de fingir un envío. Visible en `/diagnostic` como `telefonosAprendidos`.
 
 ---
 
@@ -154,6 +193,25 @@
 ---
 
 ## 4. Qué está ROTO o pendiente 🔴⚠️
+
+### 🔴 El bot no entiende los audios: es SALDO, no código
+La transcripción devuelve **402** de OpenRouter:
+
+```
+"This request requires at least $0.50 in balance for audio"
+limit_source: openrouter_key_limit
+```
+
+El audio **se descarga y se guarda en R2 sin problema** (se oye en el panel),
+pero la transcripción se rechaza antes de empezar. **Lo resuelve el dueño** en
+`openrouter.ai/settings/keys`: subir el saldo o quitarle el límite a esa clave.
+Hasta entonces el bot responde "no pude escuchar tu nota de voz".
+
+### ⚠️ Latencia de respuesta: 7 a 26 segundos
+Medido el 2026-07-30 en `linea_2`: **7,4 s** un mensaje simple y **25,9 s** uno
+que dispara búsqueda de catálogo y cotización, con dos mensajes más entrando a
+la vez. El tiempo se va en el modelo y la búsqueda, no en la infraestructura:
+la subida a R2 tarda **200 ms** y la entrega del webhook **6 ms**.
 
 ### 🔴 Faltan las tarifas de marcación
 La hoja `MARCAS` del Excel define tampografía, screen y láser por técnica y

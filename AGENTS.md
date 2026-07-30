@@ -86,10 +86,19 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
      **No usa pgvector.**
    - **Glosario y base de conocimiento** → **1536D** en Supabase
      `knowledge_chunks` (Gemini truncado a 1536 por el esquema `vector(1536)`).
-3. **El puente de WhatsApp es `whatsapp-web.js` en el puerto 3004** y atiende
-   `linea_1` y `linea_2`. `wa-server-baileys/` existe en disco pero **no está
-   desplegado**. Cualquier documento que diga que Baileys corre en 3005 con
-   multimodalidad funcionando es falso.
+3. **Hay DOS puentes de WhatsApp a la vez, y cada línea va al suyo**
+   (desde el 2026-07-30). Esto cambió: cualquier documento que diga que solo
+   existe el 3004, o que Baileys no está desplegado, está desactualizado.
+   - **`linea_1` → `whatsapp-web.js`, puerto 3004** (`wa-server/`). **No puede
+     descargar media**: 0 archivos de 328 mensajes entrantes medidos.
+   - **`linea_2` → Baileys, puerto 3005** (`wa-server-baileys/`). Sí descarga:
+     imagen de 22 KB en 59 ms, audio de 11 KB en 154 ms, medido en producción.
+   - Quién atiende cada línea lo deciden **dos compuertas en código**:
+     `BRIDGE_LINES` en cada puente (ninguno arranca una línea ajena) y
+     `WHATSAPP_BRIDGE_ROUTES` en `.env.production`, que le dice a la app a qué
+     puente hablarle por línea (`getBridgeUrl(lineKey)`).
+   - Para migrar otra línea: añadirla a `BRIDGE_LINES` del puente Baileys,
+     quitarla del viejo, añadir su ruta y escanear un QR. No hay código nuevo.
 4. **Nunca Meta Cloud API.** La memoria técnica menciona "Meta Cloud API
    (Producción)": está prohibido y no existe en el sistema.
 5. **El despliegue es Docker sobre un VPS Hostinger** (2.25.169.103). El README
