@@ -1,0 +1,17 @@
+{
+  "name": "wa-server-baileys",
+  "version": "1.0.0",
+  "description": "Puente WhatsApp multi-linea con Baileys (sin Puppeteer/Chrome) para KnowledgeBot",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^6.7.9",
+    "express": "^4.19.2",
+    "pino": "^9.4.0",
+    "qrcode": "^1.5.4"
+  }
+}

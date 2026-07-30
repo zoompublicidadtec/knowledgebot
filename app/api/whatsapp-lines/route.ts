@@ -74,9 +74,9 @@ export async function POST(request: NextRequest) {
        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Call bridge to start session. URL + key come from env (WHATSAPP_BRIDGE_URL / BRIDGE_API_KEY)
-    // so this works in Railway where each service has its own container.
-    const baseUrl = getBridgeUrl();
+    // Se arranca la sesión en el puente que atiende ESA línea: durante la
+    // migración a Baileys cada línea puede estar en un puerto distinto.
+    const baseUrl = getBridgeUrl(line_key);
 
     // FIRST: check if the session is already connected in the bridge.
     // If it is, we do NOT regenerate a QR (that would destroy the working session).

@@ -31,8 +31,9 @@ export async function DELETE(
       .update({ status: 'disconnected', qr_code: null })
       .eq('line_key', line_key);
 
-    // Bridge URL + key come from env (WHATSAPP_BRIDGE_URL / BRIDGE_API_KEY).
-    const baseUrl = getBridgeUrl();
+    // El puente depende de la línea: durante la migración a Baileys cada
+    // línea puede vivir en un puerto distinto (WHATSAPP_BRIDGE_ROUTES).
+    const baseUrl = getBridgeUrl(line_key);
 
     // Send logout request to bridge
     try {

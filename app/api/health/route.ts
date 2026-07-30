@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getBridgeUrl, bridgeHeaders } from '@/lib/whatsapp/bridge';
+import { fetchMergedBridgeState } from '@/lib/whatsapp/bridge';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -84,22 +84,36 @@ export async function GET() {
       .select('line_key, display_name, phone_number, status')
       .eq('organization_id', orgId);
 
-    const bridge: any = await timed(
-      fetch(`${getBridgeUrl()}/diagnostic`, {
-        headers: bridgeHeaders({}), signal: AbortSignal.timeout(6000),
-      }).then(r => r.ok ? r.json() : null),
-      7000
-    );
+    // Se pregunta a TODOS los puentes configurados y se une por línea. Con la
+    // migración a Baileys hay más de un puente y cada línea vive en uno solo:
+    // consultar únicamente el puente por defecto haría que el Centro de Control
+    // diera por caída una línea que está sana en el otro.
+    const bridge: any = await timed(fetchMergedBridgeState(6000), 7000);
 
-    if (!bridge) {
+    if (!bridge || !bridge.anyReachable) {
+      const urls = (bridge?.probes || []).map((p: any) => p.url).join(', ');
       checks.push({
         id: 'bridge', label: 'Puente de WhatsApp', level: 'error',
         value: 'Inalcanzable',
-        detail: 'No responde el servicio que envía y recibe los mensajes. Ninguna línea puede operar.',
-        fix: 'Reiniciar el contenedor: docker compose up -d whatsapp-bridge',
+        detail: `No responde ningún puente${urls ? ` (${urls})` : ''}. Es el servicio que envía y recibe los mensajes: ninguna línea puede operar.`,
+        fix: 'Reiniciar los contenedores: docker compose up -d whatsapp-bridge whatsapp-bridge-baileys',
       });
     } else {
       const sessions = bridge.sessions || {};
+
+      // Un puente caído con otro en pie: el Centro de Control lo dice en vez
+      // de mostrar solo las líneas afectadas sin explicar por qué.
+      for (const p of bridge.probes) {
+        if (!p.reachable) {
+          checks.push({
+            id: `bridge-${p.url}`, label: `Puente ${p.isDefault ? 'principal' : 'secundario'}`,
+            level: 'error',
+            value: 'Inalcanzable',
+            detail: `El puente en ${p.url} no responde${p.lines.length ? `, y atiende: ${p.lines.join(', ')}` : ''}. Error: ${p.error || 'sin detalle'}.`,
+            fix: 'Revisar el contenedor de ese puente con docker ps y docker logs.',
+          });
+        }
+      }
       const lines = (dbLines || []).map((l: any) => {
         const s = sessions[l.line_key] || {};
         const connected = s.loaded === true && s.status === 'connected';

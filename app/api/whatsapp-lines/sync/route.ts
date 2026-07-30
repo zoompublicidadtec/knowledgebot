@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getBridgeUrl, bridgeHeaders } from '@/lib/whatsapp/bridge';
+import { fetchMergedBridgeState } from '@/lib/whatsapp/bridge';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -41,44 +41,55 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ synced: 0 });
     }
 
-    const baseUrl = getBridgeUrl();
-    const headers = bridgeHeaders({});
+    // Estado real de todos los puentes, unido por línea. Antes se preguntaba
+    // solo al puente por defecto: con la migración a Baileys eso habría puesto
+    // en 'disconnected' las líneas del otro puente, que están perfectamente
+    // conectadas.
+    const bridgeState = await fetchMergedBridgeState(5000);
+    const bridgeSessions = bridgeState.sessions;
 
-    // First, get the full bridge status in one call (health endpoint)
-    let bridgeSessions: Record<string, any> = {};
-    try {
-      const healthRes = await fetch(`${baseUrl}/health`, {
-        headers,
-        signal: AbortSignal.timeout(5000),
-      });
-      if (healthRes.ok) {
-        const healthData = await healthRes.json();
-        bridgeSessions = healthData.sessions || {};
+    for (const p of bridgeState.probes) {
+      if (!p.reachable) {
+        logger.warn('Sync: puente inalcanzable', { url: p.url, lines: p.lines, error: p.error });
       }
-    } catch (e) {
-      logger.warn('Bridge health check failed during sync', { error: String(e) });
+    }
+
+    // Con TODOS los puentes caídos no se sabe nada del runtime: tocar la base
+    // aquí marcaría como perdidas líneas que quizá están bien. Mejor no hacer nada.
+    if (!bridgeState.anyReachable) {
+      logger.warn('Sync abortado: ningún puente responde', { total: lines.length });
+      return NextResponse.json({ synced: 0, total: lines.length, bridgeReachable: false });
     }
 
     let syncedCount = 0;
     for (const line of lines) {
       const bridgeState = bridgeSessions[line.line_key];
 
-      if (bridgeState?.status === 'connected' && line.status !== 'connected') {
-        // Bridge says connected but DB doesn't — fix it
+      // El estado unido siempre devuelve un objeto para una línea con puente
+      // asignado, incluso para decir que ese puente no responde. Así que la
+      // condición no puede ser "no hay dato": hay que mirar el estado.
+      const connectedInBridge = bridgeState?.status === 'connected';
+      const bridgeUnknown = !bridgeState || bridgeState.status === 'bridge_unreachable';
+      const lostInBridge = !!bridgeState && !bridgeUnknown && !connectedInBridge;
+
+      if (connectedInBridge && line.status !== 'connected') {
+        // El puente la tiene viva y la base no lo sabía: se corrige.
         await (adminSupabase as any)
           .from('whatsapp_lines')
           .update({ status: 'connected', qr_code: null })
           .eq('line_key', line.line_key);
         syncedCount++;
-      } else if (!bridgeState && line.status === 'connected') {
-        // DB says connected but bridge has no session — it was lost
+      } else if ((lostInBridge || !bridgeState) && line.status === 'connected') {
+        // La base la da por conectada y el puente que la atiende dice que no.
+        // Con el puente inalcanzable NO se toca: no se sabe, y marcarla caída
+        // sería inventar. El diagnóstico ya la reporta como tal.
         await (adminSupabase as any)
           .from('whatsapp_lines')
           .update({ status: 'disconnected', qr_code: null })
           .eq('line_key', line.line_key);
         syncedCount++;
-      } else if (!bridgeState && line.status === 'awaiting_qr' && line.qr_code) {
-        // Stale QR with no active bridge session — clear it so the user can re-request
+      } else if ((lostInBridge || !bridgeState) && line.status === 'awaiting_qr' && line.qr_code) {
+        // QR viejo sin sesión activa: se limpia para poder pedir uno nuevo.
         await (adminSupabase as any)
           .from('whatsapp_lines')
           .update({ qr_code: null })

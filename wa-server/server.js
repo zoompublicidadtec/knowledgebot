@@ -45,6 +45,32 @@ const CHROMIUM_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROM
 const VOLUME_PATH = process.env.VOLUME_PATH || '/data';
 const SESSION_DATA_PATH = path.join(VOLUME_PATH, 'wwebjs_sessions');
 
+/**
+ * Compuerta de propiedad de lineas (30-Jul-2026).
+ *
+ * Este puente no puede descargar la media entrante (0 archivos de 328
+ * mensajes medidos), asi que las lineas se van migrando al puente Baileys
+ * del 3005 de una en una. Mientras conviven los dos, cada linea tiene que
+ * ser atendida por UNO SOLO: si los dos la atienden, el cliente recibe la
+ * respuesta dos veces y el agente se ejecuta dos veces.
+ *
+ * BRIDGE_LINES es la lista de lineas que este puente atiende. Vacia o sin
+ * definir = todas, que es el comportamiento de siempre.
+ *
+ * La comprobacion vive dentro de startSession(), que es el unico punto por
+ * el que se crea una sesion (autoload, el endpoint /start y la reconexion
+ * pasan todos por ahi). Asi ninguna ruta HTTP puede colarse.
+ */
+const BRIDGE_LINES = (process.env.BRIDGE_LINES || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+function ownsLine(sessionName) {
+    if (BRIDGE_LINES.length === 0) return true;
+    return BRIDGE_LINES.includes(sessionName);
+}
+
 // Ensure session data directory exists
 try {
     if (!fs.existsSync(SESSION_DATA_PATH)) {
@@ -244,6 +270,12 @@ function clearReconnectState(sessionName) {
 }
 
 function startSession(sessionName) {
+    // Compuerta: esta linea la atiende otro puente. No se arranca aqui.
+    if (!ownsLine(sessionName)) {
+        console.log(`[${sessionName}] IGNORADA: no pertenece a este puente (BRIDGE_LINES=${BRIDGE_LINES.join(',')}).`);
+        return null;
+    }
+
     if (sessions.has(sessionName)) {
         const existing = sessions.get(sessionName);
         // Starting the same LocalAuth profile twice races Chromium and can

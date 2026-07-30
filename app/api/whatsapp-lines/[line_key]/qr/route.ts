@@ -27,8 +27,9 @@ export async function GET(
       .single();
     if (!profile) return NextResponse.json({ error: 'No org' }, { status: 401 });
 
-    // Bridge URL + key come from env (WHATSAPP_BRIDGE_URL / BRIDGE_API_KEY)
-    const baseUrl = getBridgeUrl();
+    // El QR lo tiene el puente que atiende ESA línea, no necesariamente el
+    // puente por defecto (ver WHATSAPP_BRIDGE_ROUTES).
+    const baseUrl = getBridgeUrl(line_key);
 
     // Pull QR from bridge
     const bridgeRes = await fetch(`${baseUrl}/api/sessions/${line_key}/qr`, {

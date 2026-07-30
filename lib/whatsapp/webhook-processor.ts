@@ -8,6 +8,40 @@ import { transcribeAudio } from './transcribe';
 import { describeImage } from './describe-image';
 import { logLineError } from './log-line-error';
 import { getPhotosForConversation } from '@/lib/agent';
+import { contactIdVariants, pickCanonicalContact, waDigits, type ContactRow } from './contact-identity';
+
+/**
+ * Quita el base64 del archivo antes de guardar el mensaje en la base.
+ *
+ * `raw` guarda el payload completo del webhook. Mientras el puente no podía
+ * descargar nada, `media` venía `null` y no había problema; en cuanto Baileys
+ * empieza a descargar, cada nota de voz y cada foto se guardarían como base64
+ * dentro de una columna JSONB, inflando la base y volviendo lento el panel.
+ *
+ * Se conservan mimetype, nombre y tamaño, que es lo que sirve para mostrar
+ * "nota de voz" o "imagen" en el panel sin arrastrar los bytes.
+ */
+function stripMediaBytes(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  try {
+    const clone: any = JSON.parse(JSON.stringify(raw));
+    const msg = clone?.data?.message;
+    if (msg?.media?.data) {
+      const bytes = Buffer.byteLength(String(msg.media.data), 'base64');
+      msg.media = {
+        mimetype: msg.media.mimetype || null,
+        filename: msg.media.filename || null,
+        size_bytes: bytes,
+        // Los bytes no se guardan aquí a propósito. Para que el dueño pueda
+        // reproducir el archivo en el panel hace falta subirlo a R2.
+        data: null,
+      };
+    }
+    return clone;
+  } catch {
+    return raw;
+  }
+}
 
 interface ProcessResult {
   success: boolean;
@@ -114,21 +148,48 @@ export async function processInboundMessage(
   const supabase = createAdminClient();
 
   try {
-    // 1. Upsert contact
-    const { data: existingContact } = await (supabase as any)
+    // 1. Resolver el contacto.
+    //
+    // Se busca por TODAS las formas con que un puente puede nombrar a la misma
+    // persona (dígitos sueltos, @c.us, @s.whatsapp.net, @lid). Antes se buscaba
+    // solo por el identificador exacto que acababa de llegar, y por eso la
+    // misma persona acumulaba varias fichas y el bot perdía su historial:
+    // `victor ramirez` llegó a tener tres. Ver lib/whatsapp/contact-identity.ts.
+    const variants = contactIdVariants(message.from);
+    const { data: candidateContacts } = await (supabase as any)
       .from('contacts')
-      .select('id, full_name')
+      .select('id, full_name, wa_phone, created_at')
       .eq('organization_id', orgId)
-      .eq('wa_phone', message.from)
-      .single();
+      .in('wa_phone', variants);
+
+    const existingContact = pickCanonicalContact(
+      (candidateContacts || []) as ContactRow[],
+      message.from
+    );
+
+    if ((candidateContacts?.length || 0) > 1) {
+      logger.warn('Varias fichas para el mismo contacto: se usa la canónica', {
+        digits: waDigits(message.from),
+        encontradas: candidateContacts.map((c: any) => c.wa_phone),
+        elegida: existingContact?.wa_phone,
+      });
+    }
 
     let contactId: string;
     let contactName: string | null = null;
+    /**
+     * Identificador con el que el contacto está guardado. Es el que se le pasa
+     * al agente, porque sus herramientas buscan por `wa_phone` exacto: si se
+     * les pasara el identificador entrante en otro formato, no encontrarían al
+     * cliente y perderían sus datos guardados.
+     */
+    let contactPhoneKey: string = message.from;
 
     if (existingContact) {
       contactId = existingContact.id;
       contactName = existingContact.full_name || message.customerName || null;
-      
+      contactPhoneKey = existingContact.wa_phone || message.from;
+
       // Update name if it was empty but we have it now
       if (!existingContact.full_name && message.customerName) {
         await (supabase as any).from('contacts').update({ full_name: message.customerName }).eq('id', contactId);
@@ -152,13 +213,31 @@ export async function processInboundMessage(
       contactName = message.customerName || null;
     }
 
-    // 2. Upsert conversation
-    const { data: existingConv } = await (supabase as any)
+    // 2. Resolver la conversación, que es por contacto Y POR LÍNEA.
+    //
+    // Antes se buscaba solo por contacto. Con las fichas duplicadas eso pasaba
+    // desapercibido, pero al unificarlas el mismo cliente escribiendo a dos
+    // líneas caería en un único hilo y el panel lo mostraría bajo la línea
+    // equivocada. Con 8 líneas centralizadas eso es inaceptable: cada línea
+    // tiene su propia conversación con el mismo cliente.
+    let convQuery = (supabase as any)
       .from('conversations')
-      .select('id, bot_active')
+      .select('id, bot_active, created_at')
       .eq('organization_id', orgId)
-      .eq('contact_id', contactId)
-      .single();
+      .eq('contact_id', contactId);
+    convQuery = lineKey ? convQuery.eq('line_key', lineKey) : convQuery.is('line_key', null);
+
+    // Se ordena y se toma la primera en vez de usar `.single()`: con dos filas
+    // `.single()` devuelve error y el código habría creado una tercera
+    // conversación en silencio.
+    const { data: convRows } = await convQuery.order('created_at', { ascending: true });
+    const existingConv = (convRows || [])[0] || null;
+
+    if ((convRows?.length || 0) > 1) {
+      logger.warn('Varias conversaciones para el mismo contacto y línea: se usa la más antigua', {
+        contactId, lineKey, total: convRows.length,
+      });
+    }
 
     let conversationId: string;
     let botActive: boolean;
@@ -199,9 +278,12 @@ export async function processInboundMessage(
       const hasNoHistoryInDb = count === 0;
 
       if (hasNoHistoryInDb && waConfig.provider === 'openwa') {
-        const baseUrl = getBridgeUrl();
-        const sessionId = waConfig.openwa_session_id || 'default';
-        
+        // El historial lo tiene el puente de ESA línea. Antes se preguntaba al
+        // puente por defecto con la sesión 'default': para una línea migrada
+        // eso consultaba el puente equivocado y devolvía cero mensajes.
+        const baseUrl = getBridgeUrl(lineKey);
+        const sessionId = lineKey || waConfig.openwa_session_id || 'default';
+
         // Fetch last 15 messages for context
         const res = await fetch(
           `${baseUrl}/api/sessions/${sessionId}/chats/${message.from}/history?limit=15`,
@@ -363,7 +445,7 @@ export async function processInboundMessage(
           sender,
           content: message.text,
           line_key: lineKey,
-          raw: message.raw,
+          raw: stripMediaBytes(message.raw),
         },
         { onConflict: 'wa_message_id', ignoreDuplicates: true }
       )
@@ -400,7 +482,9 @@ export async function processInboundMessage(
       if (agentConfig) {
         const agentResponse = await runAgent({
           orgId,
-          contactPhone: message.from,
+          // El identificador con el que el contacto está GUARDADO, no el que
+          // llegó: las herramientas del agente buscan por `wa_phone` exacto.
+          contactPhone: contactPhoneKey,
           contactName,
           conversationId,
           messageText: message.text,

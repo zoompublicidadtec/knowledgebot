@@ -75,7 +75,9 @@ export function createMetaAdapter(config: WhatsAppConfig): WhatsAppAdapter {
 
 /** OpenWA adapter for testing */
 export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | null): WhatsAppAdapter {
-  const baseUrl = getBridgeUrl();
+  // Enviar por el puente de ESA línea. Sin esto, un mensaje de una línea ya
+  // migrada saldría por el puente viejo y fallaría.
+  const baseUrl = getBridgeUrl(lineKey);
   const sessionId = lineKey || config.openwa_session_id || 'default';
 
   return {

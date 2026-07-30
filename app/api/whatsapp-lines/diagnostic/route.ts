@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getBridgeUrl, bridgeHeaders } from '@/lib/whatsapp/bridge';
+import { fetchMergedBridgeState } from '@/lib/whatsapp/bridge';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -49,29 +49,21 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const baseUrl = getBridgeUrl();
-    const headers = bridgeHeaders({});
+    // 2) Diagnóstico de TODOS los puentes configurados, unido por línea.
+    //    Durante la migración a Baileys conviven dos puentes y cada línea
+    //    vive en uno; preguntar solo al puente por defecto haría que el panel
+    //    reportara caída una línea que está sana en el otro.
+    const bridgeState = await fetchMergedBridgeState(6000);
+    const bridgeDiagnostic = bridgeState.sessions;
+    const bridgeReachable = bridgeState.anyReachable;
+    const bridgeTime = bridgeState.probes.find(p => p.reachable)?.bridgeTime || null;
 
-    // 2) Diagnóstico del puente (puede estar caído o inalcanzable).
-    let bridgeDiagnostic: Record<string, any> = {};
-    let bridgeReachable = true;
-    let bridgeTime: string | null = null;
-    try {
-      const res = await fetch(`${baseUrl}/diagnostic`, {
-        headers,
-        signal: AbortSignal.timeout(6000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        bridgeDiagnostic = data.sessions || {};
-        bridgeTime = data.bridgeTime || null;
-      } else {
-        bridgeReachable = false;
-        logger.warn('Diagnostic: puente respondió con error HTTP', { status: res.status });
+    for (const p of bridgeState.probes) {
+      if (!p.reachable) {
+        logger.warn('Diagnostic: puente inalcanzable', {
+          url: p.url, lines: p.lines, error: p.error,
+        });
       }
-    } catch (e) {
-      bridgeReachable = false;
-      logger.warn('Diagnostic: puente inalcanzable', { error: String(e) });
     }
 
     // 3) Combinar ambas fuentes por line_key.
@@ -101,6 +93,10 @@ export async function GET() {
         keepAliveErrors: bd.keepAliveErrors || 0,
         sessionOnDisk,
         isZombie,
+        // Qué puente atiende esta línea, para que el panel no tenga que
+        // adivinarlo mientras coexisten el puente viejo y Baileys.
+        bridge: bd.bridge || 'whatsapp-web.js',
+        bridgeUrl: bd.bridgeUrl || null,
       };
     });
 
@@ -108,6 +104,13 @@ export async function GET() {
       lines,
       bridgeReachable,
       bridgeTime,
+      bridges: bridgeState.probes.map(p => ({
+        url: p.url,
+        lines: p.lines,
+        isDefault: p.isDefault,
+        reachable: p.reachable,
+        error: p.error || null,
+      })),
       checkedAt: new Date().toISOString(),
     });
   } catch (err: any) {
