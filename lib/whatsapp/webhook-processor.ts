@@ -9,19 +9,21 @@ import { describeImage } from './describe-image';
 import { logLineError } from './log-line-error';
 import { getPhotosForConversation } from '@/lib/agent';
 import { contactIdVariants, pickCanonicalContact, waDigits, type ContactRow } from './contact-identity';
+import { uploadBase64ToR2, isR2Configured } from '@/lib/r2-storage';
 
 /**
- * Quita el base64 del archivo antes de guardar el mensaje en la base.
+ * Cambia el base64 del archivo por su clave en R2 antes de guardar el mensaje.
  *
  * `raw` guarda el payload completo del webhook. Mientras el puente no podía
- * descargar nada, `media` venía `null` y no había problema; en cuanto Baileys
- * empieza a descargar, cada nota de voz y cada foto se guardarían como base64
+ * descargar nada, `media` venía `null` y no había problema; en cuanto se
+ * descarga de verdad, cada nota de voz y cada foto se guardarían como base64
  * dentro de una columna JSONB, inflando la base y volviendo lento el panel.
  *
- * Se conservan mimetype, nombre y tamaño, que es lo que sirve para mostrar
- * "nota de voz" o "imagen" en el panel sin arrastrar los bytes.
+ * Así que los bytes van a Cloudflare R2 y aquí solo queda la clave del objeto,
+ * más mimetype, nombre y tamaño. Con eso el panel pide una URL firmada y el
+ * dueño puede oír el audio o ver la foto (ver components/chat/message-bubble).
  */
-function stripMediaBytes(raw: unknown): unknown {
+function replaceMediaBytesWithKey(raw: unknown, r2Key: string | null): unknown {
   if (!raw || typeof raw !== 'object') return raw;
   try {
     const clone: any = JSON.parse(JSON.stringify(raw));
@@ -32,8 +34,10 @@ function stripMediaBytes(raw: unknown): unknown {
         mimetype: msg.media.mimetype || null,
         filename: msg.media.filename || null,
         size_bytes: bytes,
-        // Los bytes no se guardan aquí a propósito. Para que el dueño pueda
-        // reproducir el archivo en el panel hace falta subirlo a R2.
+        // La clave del objeto en R2. Si la subida falló queda en null y el
+        // panel lo dice, en vez de mostrar un reproductor que no suena.
+        r2_key: r2Key,
+        // Los bytes NO se guardan aquí, a propósito.
         data: null,
       };
     }
@@ -268,6 +272,40 @@ export async function processInboundMessage(
       botActive = newConv.bot_active;
     }
 
+    // 2a. Eco del puente.
+    //
+    // Los puentes reenvían TODO lo que pasa por la línea, incluido el mensaje
+    // que la propia app acaba de enviar. La idempotencia por `wa_message_id`
+    // solo lo detecta si el identificador coincide, y no siempre coincide: el
+    // puente viejo devolvía `sent_<timestamp>` al enviar y luego reenviaba el
+    // mensaje con otro identificador, así que cada respuesta del bot quedaba
+    // DOS VECES en el panel. Medido el 2026-07-30: 15 de las últimas 40
+    // respuestas duplicadas, siempre el par `sent_*` + `openwa_*`.
+    //
+    // Esta compuerta no depende del identificador: si ya hay una salida idéntica
+    // en esta conversación hace muy poco, lo que llega es el eco. Va antes de
+    // procesar la media para no gastar transcripción ni visión en un eco.
+    if (message.fromMe) {
+      const desde = new Date(Date.now() - 90_000).toISOString();
+      const { data: yaRegistrado } = await (supabase as any)
+        .from('messages')
+        .select('id, wa_message_id')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'outbound')
+        .eq('content', message.text || '')
+        .gte('created_at', desde)
+        .limit(1);
+
+      if (yaRegistrado && yaRegistrado.length > 0) {
+        logger.info('Eco del puente descartado: esta salida ya estaba registrada', {
+          conversationId,
+          wa_message_id: message.messageId,
+          ya_guardado_como: yaRegistrado[0].wa_message_id,
+        });
+        return { success: true, conversationId };
+      }
+    }
+
     // 2b. Sync history from WhatsApp if this conversation has no messages in the database
     try {
       const { count } = await (supabase as any)
@@ -332,7 +370,23 @@ export async function processInboundMessage(
       logger.error('Error syncing history from WhatsApp web bridge', { error: String(historyErr) });
     }
 
-    // 3. Process media message if present (audio transcription / image description 100% in-memory)
+    // 3. Process media message if present (audio transcription / image description)
+    /** Clave del archivo en R2, para que el dueño pueda verlo/oírlo en el panel. */
+    let r2Key: string | null = null;
+    /**
+     * La subida arranca AHORA y se espera al final: así el archivo viaja a R2
+     * mientras Whisper o Gemini lo procesan, y no se le suma latencia al
+     * cliente, que ya espera entre 5 y 15 segundos por respuesta.
+     */
+    let subidaR2: Promise<string | null> | null = null;
+
+    if (message.media && message.media.data && isR2Configured()) {
+      subidaR2 = uploadBase64ToR2(message.media.data, message.media.mimetype || '').catch(err => {
+        logger.error('Fallo la subida del archivo a R2', { error: String(err) });
+        return null;
+      });
+    }
+
     if (message.media && message.media.data) {
       const mimetype = message.media.mimetype || '';
 
@@ -427,6 +481,20 @@ export async function processInboundMessage(
       }
     }
 
+    // 3b. Recoger la clave de R2 antes de guardar el mensaje.
+    if (subidaR2) {
+      r2Key = await subidaR2;
+      if (r2Key) {
+        logger.info('Archivo del cliente guardado en R2', {
+          r2Key, conversationId, tipo: message.mediaType || message.media?.mimetype,
+        });
+      } else {
+        logger.warn('El archivo no se pudo guardar en R2: el panel no podrá reproducirlo', {
+          conversationId, tipo: message.mediaType || message.media?.mimetype,
+        });
+      }
+    }
+
     // 4. Insert message (idempotent)
     const direction = message.fromMe ? 'outbound' : 'inbound';
     const sender = message.fromMe ? 'bot' : 'contact';
@@ -445,7 +513,7 @@ export async function processInboundMessage(
           sender,
           content: message.text,
           line_key: lineKey,
-          raw: stripMediaBytes(message.raw),
+          raw: replaceMediaBytesWithKey(message.raw, r2Key),
         },
         { onConflict: 'wa_message_id', ignoreDuplicates: true }
       )

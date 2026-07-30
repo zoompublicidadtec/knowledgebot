@@ -396,11 +396,54 @@ function blankState() {
         lastQRDataUrl: null,
         reconnectDelay: 2000,
         starting: false,
+        /**
+         * Generacion del socket vivo. Cada socket nuevo incrementa este numero
+         * y sus manejadores comparan contra el suyo: asi los eventos de un
+         * socket viejo se ignoran en vez de disparar otra reconexion.
+         *
+         * SIN ESTO (medido el 2026-07-30 en produccion): 64 sockets abiertos y
+         * 114 errores `conflict: replaced` en pocos minutos. WhatsApp da UNA
+         * ranura por dispositivo vinculado, asi que dos sockets con las mismas
+         * credenciales se expulsan entre si; cada expulsion disparaba otra
+         * reconexion y la linea nunca llegaba a atender nada
+         * (`webhooks_sent: 0` con 8 mensajes recibidos).
+         */
+        epoch: 0,
+        reconnectTimer: null,
     };
 }
 
 function authDir(line) {
     return path.join(SESSIONS_ROOT, `session-${line}`);
+}
+
+/**
+ * Cierra el socket anterior y le quita los manejadores ANTES de crear otro.
+ * `end()` cierra el websocket sin cerrar la sesion en WhatsApp: las
+ * credenciales del disco siguen sirviendo y no hace falta otro QR.
+ */
+function teardownSocket(st, line) {
+    const old = st.sock;
+    st.sock = null;
+    if (!old) return;
+    try { old.ev.removeAllListeners(); } catch { /* ya estaba desmontado */ }
+    try { old.end(undefined); } catch { /* ya estaba cerrado */ }
+    logger.info({ line }, 'Socket anterior cerrado antes de reconectar');
+}
+
+/** Un solo reintento en vuelo por linea. */
+function scheduleReconnect(st, line, delay, motivo) {
+    if (st.reconnectTimer) {
+        logger.info({ line, motivo }, 'Ya hay un reintento programado, no se duplica');
+        return;
+    }
+    st.reconnectTimer = setTimeout(() => {
+        st.reconnectTimer = null;
+        startSession(line, motivo).catch(e =>
+            logger.error({ err: e.message, line }, 'Fallo el reintento de conexion')
+        );
+    }, delay);
+    logger.warn({ line, delay_ms: delay, motivo }, 'Reconexion programada');
 }
 
 /**
@@ -433,7 +476,7 @@ function classifyMedia(msg) {
     return null;
 }
 
-async function startSession(line) {
+async function startSession(line, motivo = 'inicial') {
     // Compuerta: este puente no arranca líneas que no le pertenecen.
     if (!BRIDGE_LINES.includes(line)) {
         logger.warn({ line, owned: BRIDGE_LINES }, 'Se ignora el arranque: la línea no pertenece a este puente');
@@ -445,11 +488,27 @@ async function startSession(line) {
         st = blankState();
         sessions.set(line, st);
     }
+
+    // Si habia un reintento programado, este arranque lo sustituye.
+    if (st.reconnectTimer) {
+        clearTimeout(st.reconnectTimer);
+        st.reconnectTimer = null;
+    }
+
     if (st.starting) {
-        logger.info({ line }, 'Arranque ya en curso, se ignora');
+        logger.info({ line, motivo }, 'Arranque ya en curso, se ignora');
         return;
     }
     st.starting = true;
+
+    // Nunca dos sockets vivos con las mismas credenciales: se expulsan entre
+    // si (`conflict: replaced`) y la linea queda inservible.
+    teardownSocket(st, line);
+
+    const epoch = st.epoch + 1;
+    st.epoch = epoch;
+    /** Los eventos de un socket ya sustituido se descartan. */
+    const esViejo = () => st.epoch !== epoch;
 
     const dir = authDir(line);
     fs.mkdirSync(dir, { recursive: true });
@@ -471,9 +530,11 @@ async function startSession(line) {
         });
 
         st.sock = sock;
+        logger.info({ line, epoch, motivo }, 'Socket creado');
         sock.ev.on('creds.update', saveCreds);
 
         sock.ev.on('connection.update', async (update) => {
+            if (esViejo()) return;
             const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
@@ -516,29 +577,61 @@ async function startSession(line) {
 
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                const loggedOut = statusCode === DisconnectReason.loggedOut;
-                st.keepAliveErrors++;
+                st.starting = false;
                 st.lastError = lastDisconnect?.error?.message || 'conexión cerrada';
                 st.lastErrorAt = new Date().toISOString();
-                st.starting = false;
+                // El socket ya esta muerto: se desmonta para que no siga
+                // emitiendo eventos que provoquen mas reconexiones.
+                teardownSocket(st, line);
 
-                if (loggedOut) {
+                // 401 — la sesion se cerro desde el telefono. Reconectar no
+                // sirve: hace falta borrar las credenciales y escanear un QR.
+                if (statusCode === DisconnectReason.loggedOut) {
                     st.status = 'logged_out';
+                    st.keepAliveErrors++;
                     logger.error({ line }, 'Sesión cerrada desde el teléfono. Hay que borrar la sesión y escanear un QR nuevo.');
                     await callbackToApp('/api/whatsapp-lines/status', { line_key: line, status: 'disconnected' });
                     return;
                 }
 
+                // 515 — Baileys pide reiniciar el socket. Es lo NORMAL justo
+                // despues de escanear el QR, no un fallo: se reconecta rapido y
+                // no cuenta como error, o el panel mostraria la linea enferma
+                // en su primer minuto de vida.
+                if (statusCode === DisconnectReason.restartRequired) {
+                    st.status = 'initializing';
+                    logger.info({ line }, 'WhatsApp pide reiniciar el socket (normal tras vincular)');
+                    scheduleReconnect(st, line, 1000, 'restart-required');
+                    return;
+                }
+
+                // 440 — otra conexion tomo la ranura de este dispositivo.
+                // Reconectar en seguida es pelearse por la ranura, y es
+                // exactamente lo que produjo 114 conflictos seguidos. Se espera
+                // de verdad y se deja dicho en claro para el panel.
+                if (statusCode === DisconnectReason.connectionReplaced) {
+                    st.status = 'disconnected';
+                    st.keepAliveErrors++;
+                    st.lastError =
+                        'Otra conexión tomó esta línea. Suele ser otro puente o otra instancia usando las mismas credenciales.';
+                    logger.error({ line }, 'Conexión reemplazada por otra sesión');
+                    await callbackToApp('/api/whatsapp-lines/status', { line_key: line, status: 'disconnected' });
+                    scheduleReconnect(st, line, 30000, 'connection-replaced');
+                    return;
+                }
+
                 st.status = 'disconnected';
+                st.keepAliveErrors++;
                 const delay = Math.min(st.reconnectDelay, 60000);
                 st.reconnectDelay = Math.min(delay * 2, 60000);
-                logger.warn({ line, statusCode, delay }, 'Conexión cerrada, se reintenta');
+                logger.warn({ line, statusCode }, 'Conexión cerrada');
                 await callbackToApp('/api/whatsapp-lines/status', { line_key: line, status: 'disconnected' });
-                setTimeout(() => startSession(line), delay);
+                scheduleReconnect(st, line, delay, `close-${statusCode || 'sin-codigo'}`);
             }
         });
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (esViejo()) return;
             if (type !== 'notify') return;
             for (const msg of messages) {
                 try {
@@ -555,10 +648,11 @@ async function startSession(line) {
         st.status = 'disconnected';
         st.lastError = err.message;
         st.lastErrorAt = new Date().toISOString();
+        teardownSocket(st, line);
         const delay = Math.min(st.reconnectDelay, 60000);
         st.reconnectDelay = Math.min(delay * 2, 60000);
-        logger.error({ err: err.message, line, delay }, 'No se pudo iniciar la sesión, se reintenta');
-        setTimeout(() => startSession(line), delay);
+        logger.error({ err: err.message, line }, 'No se pudo iniciar la sesión');
+        scheduleReconnect(st, line, delay, 'error-de-arranque');
     }
 }
 
@@ -788,16 +882,35 @@ app.post('/api/sessions/:session/logout', async (req, res) => {
     if (!line) return res.status(404).json({ error: `Línea "${req.params.session}" no pertenece a este puente` });
 
     try {
-        const st = sessions.get(line);
-        if (st?.sock) {
+        const st = sessions.get(line) || blankState();
+        if (st.reconnectTimer) {
+            clearTimeout(st.reconnectTimer);
+            st.reconnectTimer = null;
+        }
+        if (st.sock) {
             try { await st.sock.logout(); } catch { /* puede estar ya caída */ }
         }
+        // Se sube la generación en vez de reiniciar el estado: con `epoch` de
+        // vuelta a 0, el socket que se acaba de cerrar volveria a parecer el
+        // vivo y sus eventos dispararian reconexiones fantasma.
+        teardownSocket(st, line);
+        st.epoch += 1;
+        st.status = 'logged_out';
+        st.connectedAt = null;
+        st.phoneNumber = null;
+        st.lastQR = null;
+        st.lastQRDataUrl = null;
+        st.lastError = 'logout manual';
+        st.lastErrorAt = new Date().toISOString();
+        st.reconnectDelay = 2000;
+        st.starting = false;
+        sessions.set(line, st);
+
         fs.rmSync(authDir(line), { recursive: true, force: true });
-        sessions.set(line, { ...blankState(), status: 'logged_out', lastError: 'logout manual' });
         logger.warn({ line }, 'Logout manual desde el panel');
         await callbackToApp('/api/whatsapp-lines/status', { line_key: line, status: 'disconnected' });
         res.json({ success: true });
-        setTimeout(() => startSession(line), 3000);
+        scheduleReconnect(st, line, 3000, 'tras-logout-manual');
     } catch (err) {
         logger.error({ err: err.message, line }, 'Error en logout');
         res.status(500).json({ success: false, error: err.message });

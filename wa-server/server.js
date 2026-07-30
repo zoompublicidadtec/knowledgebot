@@ -645,8 +645,13 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
             await new Promise(r => setTimeout(r, 1500));
             await chat.clearState();
         } catch {}
-        await client.sendMessage(chatId, String(text));
-        res.json({ data: { id: 'sent_' + Date.now() } });
+        // Se devuelve el identificador REAL de WhatsApp, no uno inventado.
+        // Con 'sent_' + Date.now() la app guardaba un id que jamas volvia a
+        // ver, asi que cuando el propio puente reenviaba este mismo mensaje por
+        // message_create no podia reconocerlo como repetido y la respuesta
+        // quedaba DOS VECES en el panel (86 casos medidos el 30-Jul-2026).
+        const sentMsg = await client.sendMessage(chatId, String(text));
+        res.json({ data: { id: sentMsg?.id?._serialized || ('sent_' + Date.now()) } });
     } catch (e) {
         console.error(`[${sessionName}] Error al enviar:`, e.message);
         res.status(500).json({ error: e.toString() });
