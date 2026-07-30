@@ -42,7 +42,10 @@ Embeddings are generated via an OpenAI-compatible API (default: `text-embedding-
 2. Fill Supabase, OpenRouter, embeddings, Google OAuth and encryption values.
 3. Start the WhatsApp bridge:
    ```bash
-   # In a separate terminal, from wa-server-knowledge/
+   # CORRECCIÓN (2026-07-29): el directorio se llama wa-server/, no
+   # wa-server-knowledge/. En el VPS no se arranca a mano: es el contenedor
+   # knowledgebot-wa-bridge (docker compose up -d --build whatsapp-bridge).
+   # In a separate terminal, from wa-server/
    node server.js
    ```
 4. Apply Supabase migrations in order:

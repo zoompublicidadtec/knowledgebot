@@ -133,6 +133,13 @@ Para lidiar con las miles de referencias de productos y sus escalas de precios, 
 *   **Resiliencia ante Cuotas y Rate Limits (Gemini 429)**: Ante bloqueos de cuota o rate limits de la API Key de Gemini, el RAG degrada con gracia y formatea estáticamente los productos recuperados del catálogo local en un mensaje legible y exacto en español, garantizando que el bot de WhatsApp siga respondiendo.
 *   **Integración Resiliente en Next.js**: Se reescribió la tool `searchCatalog` en Next.js para consultar el servicio RAG FastAPI. En caso de caída de la API de Python, se captura la excepción mediante un bloque `catch` y el sistema ejecuta automáticamente la búsqueda clásica en la base de datos SQL de Supabase.
 *   **Persistencia Garantizada de Sesión (Fix de Desconexión)**: Se corrigió el volumen montado del contenedor `whatsapp-bridge` en `docker-compose.yml` para apuntar a la ruta host `../wa-server-knowledge/wwebjs_sessions` hacia `/data/wwebjs_sessions`. Esto asegura que los archivos y tokens de autenticación de las líneas de WhatsApp se almacenen físicamente en el disco del Hostinger VPS y sobrevivan a cualquier rebuild (`docker compose up --build`) o actualización del repositorio sin desconectarse.
+
+    > `CORRECCIÓN (2026-07-29)`: la ruta real hoy es `./wwebjs_sessions:/data/wwebjs_sessions`
+    > y el directorio del puente se llama `wa-server/`, no `wa-server-knowledge/`.
+    > **Ese volumen contiene la autenticación de las líneas: borrarlo obliga a
+    > escanear el QR de nuevo.** Está en la lista de "no tocar" de
+    > `docs/ESTADO_OPERATIVO.md` §7. Este párrafo aparece dos veces en este
+    > documento, más abajo, con la misma ruta antigua.
 *   **Integración con Context7 (`ctx7`)**: Se configuró el CLI y la skill `find-docs` para buscar documentación actualizada de librerías en tiempo real.
 *   **Dockerización y Red en Host Mode**: Se configuró el docker-compose en `network_mode: "host"` para simplificar la interconexión mediante `localhost` sin exponer puertos sensibles.
 *   **TypeScript y Builds Seguros**: Se resolvieron los errores de compilación estricta y se aisló la carpeta `scripts/` para evitar bloqueos en el build final.
