@@ -9,6 +9,53 @@ This version has breaking changes — APIs, conventions, and file structure may 
 > Verificado contra el VPS de producción el **2026-07-29**.
 > `CLAUDE.md` solo contiene `@AGENTS.md`: este archivo es la puerta de entrada.
 
+## 0. Knowledge Graph del código (LEER PRIMERO)
+
+El proyecto tiene un **grafo de conocimiento del código real** generado con
+Graphify. Antes de asumir cómo funciona el sistema o de buscar archivos a
+ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
+`EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
+
+El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
+Está generado contra el commit **`f76eef3`**. **Si el código cambió desde
+entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
+
+### Cómo consultarlo (por SSH al VPS)
+
+```bash
+# El binario NO está en el PATH por defecto. Exportar SIEMPRE antes:
+export PATH=$HOME/.local/bin:$PATH
+cd /root/knowledgebot
+
+# 1) ¿El grafo sigue vigente? Comparar commit actual con el del grafo:
+git rev-parse HEAD                       # si difiere de f76eef3, regenerar (paso 4)
+
+# 2) Entender un símbolo / concepto / archivo:
+graphify explain "processInboundMessage"
+graphify explain "applyOutputGuardrail"
+graphify explain "api_service"
+
+# 3) Trazar la ruta entre dos partes del sistema:
+graphify path "processInboundMessage" "getProductPrice"
+graphify path "runAgentForMessage" "searchCatalog"
+
+# 4) Regenerar el grafo tras cambios de código (~30s, sin costo, sin LLM):
+graphify update .
+
+# 5) Salud del grafo (nodos/aristas rotas o duplicadas):
+graphify diagnose multigraph
+```
+
+### Qué contiene el grafo
+
+- `graph.json` (1.2 MB) — 1.203 nodos + 2.050 aristas, consultable.
+- `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
+- `graph.html` (1 MB) — visualización interactiva (abrir en navegador).
+
+**Regla:** para entender arquitectura, dependencias o "qué rompe si cambio X",
+consultá el grafo antes de leer código suelto. Para datos vivos (estado real de
+servicios, catálogo, logs), el VPS sigue siendo la fuente de verdad (ver §4).
+
 ## 1. Mapa de la documentación, y quién gana cuando se contradicen
 
 Hay 9 archivos `.md` en el proyecto y **se contradecían entre sí**. Este es el
