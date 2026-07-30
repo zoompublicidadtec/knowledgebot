@@ -1,0 +1,55 @@
+# .graphifyignore — exclusiones para el grafo de conocimiento.
+# Graphify respeta .gitignore por defecto; este archivo ANADE exclusiones
+# extra para que el grafo sea solo codigo de produccion real y preciso.
+
+# --- Respaldos (numerosos .bak.*) ---
+*.bak
+*.bak.*
+**/*.bak
+**/*.bak.*
+
+# --- Scripts temporales de auditoria/diagnostico (no son de produccion) ---
+_*.py
+_*.ts
+_*.js
+_audit*
+_diag*
+_patch*
+_test*
+_*.txt
+_vps_*
+~$*
+
+# --- Datos grandes (no son codigo; sin LLM no se parsean bien) ---
+*.xlsx
+*.pdf
+*.csv
+*.tar.gz
+*.json.bak*
+
+# --- Logs y artefactos ---
+*.log
+*.tsbuildinfo
+*.pyc
+__pycache__/
+**/__pycache__/
+
+# --- Estado / cache de puentes (datos, no codigo) ---
+wa-server/.wwebjs_cache/
+wa-server/.wwebjs_auth/
+wwebjs_sessions/
+baileys_sessions/
+baileys_store/
+
+# --- Output del propio graphify y git ---
+graphify-out/
+.git/
+.next/
+node_modules/
+Motor de Conocimiento/.venv/
+Motor de Conocimiento/logs/
+Motor de Conocimiento/data/embeddings/
+Motor de Conocimiento/data/checkpoints/
+catalogo_catalogospromocionales/
+attachments/
+backups/
