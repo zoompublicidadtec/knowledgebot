@@ -1,5 +1,20 @@
 # KnowledgeBot SaaS - WhatsApp AI with Supabase RAG
 
+> ## ⚠️ Documento parcialmente obsoleto — leer con `AGENTS.md` al lado
+>
+> Este README describe la instalación original del proyecto. **La sección de
+> despliegue (Railway) ya no aplica**: hoy corre con Docker sobre un VPS
+> Hostinger. Ver las correcciones marcadas `CORRECCIÓN (2026-07-29)`.
+>
+> - Estado real del sistema → **`docs/ESTADO_OPERATIVO.md`**
+> - Reglas y mapa de documentos → **`AGENTS.md`**
+>
+> Aviso sobre las dimensiones de los vectores, que es la confusión más habitual:
+> las **1536D** que menciona este documento son correctas **solo para
+> `knowledge_chunks`** (glosario y base de conocimiento en Supabase). El catálogo
+> de productos es un sistema aparte con **3072D multimodales** en archivo, dentro
+> de `Motor de Conocimiento/`, sin pgvector.
+
 KnowledgeBot is a multi-tenant WhatsApp assistant for businesses with large knowledge bases. It keeps the same operational base as the existing SaaS bots, but replaces vertical-specific knowledge with a Supabase vector memory/RAG layer.
 
 ## Stack
@@ -51,7 +66,25 @@ npm run ingest -- path/to/your-file.csv
 
 The default schema expects 1536-dimensional embeddings. If you choose another embedding model, update both `knowledge_chunks.embedding vector(1536)` and the `match_knowledge_chunks` function signature.
 
-## Docker & Production Deployment (Railway)
+## Docker & Production Deployment
+
+> ### `CORRECCIÓN (2026-07-29)` — todo lo que sigue sobre Railway es histórico
+>
+> El sistema **no** está en Railway. Corre con Docker Compose en un VPS Hostinger
+> (`2.25.169.103`), desde `/root/knowledgebot`:
+>
+> | Servicio | Puerto | Cómo se despliega |
+> |---|---|---|
+> | `knowledgebot-app` (Next.js: panel, webhooks, agente) | 3003 | `docker compose build app && docker compose up -d app` |
+> | `knowledgebot-wa-bridge` (`wa-server/`, whatsapp-web.js) | 3004 | `docker compose up -d --build whatsapp-bridge` |
+> | `knowledgebot-rag` (FastAPI, `Motor de Conocimiento/`) | 8001 | `systemctl restart knowledgebot-rag` (systemd, no Docker) |
+>
+> nginx publica el 3003 en https://zoompublicidad.tech. El directorio del puente
+> se llama **`wa-server/`** (el README lo llama `wa-server-knowledge`, nombre
+> antiguo) y las sesiones viven en el volumen `./wwebjs_sessions`, que **no se
+> debe borrar**: contiene la autenticación de las líneas.
+
+### Histórico: Railway
 
 ### Running Locally with Docker Compose
 

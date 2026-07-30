@@ -8,6 +8,11 @@
 
 ## 0. Cómo leer este archivo
 
+> **Este documento manda sobre cualquier otro `.md` del proyecto.** El mapa
+> completo de la documentación, con el orden de autoridad y la lista de datos que
+> los documentos viejos tienen mal, está en **`AGENTS.md` §1 y §2**. Los 9 `.md`
+> deben mantenerse iguales en el VPS y en el repo local.
+
 - ✅ = verificado y funcionando.
 - ⚠️ = funciona con salvedades / degradado / frágil.
 - 🔴 = roto o no implementado.

@@ -1,5 +1,13 @@
 # Base de datos de productos — catalogospromocionales.com
 
+> **Describe el catálogo DE ORIGEN de los importados, no el catálogo vivo.** El
+> que usa el bot está en Supabase, con **2.238 productos activos**. Estado real →
+> `docs/ESTADO_OPERATIVO.md`.
+>
+> Este archivo es **idéntico** a
+> `catalogo_catalogospromocionales/BASE_DE_DATOS/README_BASE_DE_DATOS.md`. Si
+> editas uno, edita el otro.
+
 Generado: 2026-06-25T12:30:03.087Z
 Fuente: https://www.catalogospromocionales.com/seccion/subcategorias.html
 Acceso: sesión de distribuidor (para precios)
