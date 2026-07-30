@@ -109,3 +109,11 @@ Motor de Conocimiento/logs/
 
 # Scratch y snapshots locales
 /scratch/
+
+# === 30-Jul-2026: migracion linea_2 a Baileys ===
+# Store de mensajes de Baileys: contiene texto de clientes, no va a git
+/baileys_store/
+# Respaldos de catalogo y de datos (historial en disco)
+/backups/
+# Scripts de diagnostico y parches de un solo uso
+/_*.py
