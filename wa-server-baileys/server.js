@@ -175,6 +175,92 @@ function normalizeJid(chatId) {
     return `${s}@s.whatsapp.net`;
 }
 
+// ============================================================
+// CORRESPONDENCIA @lid -> TELEFONO
+// ============================================================
+
+/**
+ * WhatsApp puede identificar un chat por `@lid`, un identificador interno que
+ * NO es un telefono. Enviar a esa direccion parece funcionar —Baileys resuelve
+ * el envio sin error y devuelve un id— pero WhatsApp lo RECHAZA despues con un
+ * acuse `error: 463` y el mensaje nunca se entrega.
+ *
+ * Medido en produccion el 2026-07-30, con el bot respondiendo en el panel pero
+ * sin que llegara nada al telefono del cliente:
+ *   from: 181290854776961@lid  class: message  error: 463  "received error in ack"
+ *
+ * Baileys 6.7.24 SI trae el telefono real en la clave del mensaje entrante
+ * (`key.senderPn`, del atributo `sender_pn` del stanza). Aqui se guarda esa
+ * correspondencia en disco al recibir, y se usa al enviar. Persiste en el
+ * volumen para sobrevivir a un reinicio del contenedor.
+ */
+const lidMaps = new Map(); // line -> { '<lid>': '<telefono@s.whatsapp.net>' }
+
+function lidMapPath(line) {
+    return path.join(STORE_ROOT, line, '_lid_map.json');
+}
+
+function loadLidMap(line) {
+    if (lidMaps.has(line)) return lidMaps.get(line);
+    let map = {};
+    try {
+        const f = lidMapPath(line);
+        if (fs.existsSync(f)) map = JSON.parse(fs.readFileSync(f, 'utf8') || '{}');
+    } catch (e) {
+        logger.warn({ err: e.message, line }, 'No se pudo leer la correspondencia @lid');
+    }
+    lidMaps.set(line, map);
+    return map;
+}
+
+/** Guarda el telefono real que WhatsApp adjunta a un mensaje de un chat @lid. */
+function recordLidMapping(line, msg) {
+    try {
+        const k = msg.key || {};
+        const lid = k.remoteJid && String(k.remoteJid).endsWith('@lid') ? k.remoteJid : null;
+        if (!lid) return;
+
+        const pnCrudo = k.senderPn || k.participantPn || null;
+        if (!pnCrudo) return;
+
+        const pn = normalizeJid(pnCrudo);
+        if (!pn || pn.endsWith('@lid')) return;
+
+        const map = loadLidMap(line);
+        if (map[lid] === pn) return;
+
+        map[lid] = pn;
+        const f = lidMapPath(line);
+        fs.mkdirSync(path.dirname(f), { recursive: true });
+        fs.writeFileSync(f, JSON.stringify(map, null, 2));
+        logger.info({ line, lid, telefono: pn }, 'Aprendido el telefono real de un chat @lid');
+    } catch (e) {
+        logger.warn({ err: e.message, line }, 'No se pudo guardar la correspondencia @lid');
+    }
+}
+
+/**
+ * Direccion a la que se debe ENVIAR de verdad.
+ * Devuelve { jid, problema } — si es un @lid del que no se conoce el telefono,
+ * `problema` explica por que no se puede entregar, en vez de fingir un envio.
+ */
+function resolveSendJid(line, chatId) {
+    const jid = normalizeJid(chatId);
+    if (!jid.endsWith('@lid')) return { jid, problema: null };
+
+    const map = loadLidMap(line);
+    const pn = map[jid];
+    if (pn) return { jid: pn, problema: null };
+
+    return {
+        jid,
+        problema:
+            `El destinatario ${jid} es un identificador interno (@lid) y todavia no se conoce su ` +
+            `telefono real. WhatsApp rechaza los envios a esa direccion con error 463. Se aprende ` +
+            `en cuanto esa persona escriba una vez a esta linea.`,
+    };
+}
+
 /**
  * Aviso autenticado a la app (QR y estado de línea), igual que el 3004.
  *
@@ -711,6 +797,25 @@ async function handleIncoming(line, msg, sock) {
 
     metrics.messages_received++;
     const fromMe = msg.key.fromMe === true;
+
+    // Se aprende el telefono real del chat ANTES de nada: es lo unico que
+    // permite responderle a un contacto @lid sin que WhatsApp lo rechace.
+    recordLidMapping(line, msg);
+
+    // Trazas de la clave, para poder diagnosticar el direccionamiento sin
+    // tener que pedirle al dueno que repita la prueba.
+    logger.info(
+        {
+            line,
+            remoteJid: msg.key.remoteJid,
+            senderPn: msg.key.senderPn || null,
+            senderLid: msg.key.senderLid || null,
+            participantPn: msg.key.participantPn || null,
+            fromMe,
+        },
+        'Mensaje recibido'
+    );
+
     const cls = classifyMedia(msg);
 
     // Los stickers no aportan a una cotización y ensucian el hilo.
@@ -833,6 +938,9 @@ function describeSessions() {
             hasQr: !!st.lastQR,
             sessionOnDisk: fs.existsSync(path.join(authDir(line), 'creds.json')),
             bridge: 'baileys',
+            // Cuantos contactos @lid tienen ya su telefono real aprendido. Sin
+            // el, WhatsApp rechaza los envios a ese contacto con error 463.
+            telefonosAprendidos: Object.keys(loadLidMap(line)).length,
         };
     }
     return out;
@@ -995,7 +1103,16 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
     const content = message || text;
     if (!chatId || !content) return res.status(400).json({ error: 'chatId y message/text son obligatorios' });
 
-    const jid = normalizeJid(chatId);
+    // Un @lid sin telefono conocido se rechaza AQUI. Antes se enviaba igual,
+    // Baileys devolvia un id valido y la app daba la respuesta por entregada,
+    // mientras WhatsApp la tiraba con error 463 y el cliente no recibia nada.
+    const destino = resolveSendJid(line, chatId);
+    if (destino.problema) {
+        logger.error({ line, chatId, jid: destino.jid }, destino.problema);
+        return res.status(503).json({ error: destino.problema });
+    }
+    const jid = destino.jid;
+
     try {
         await typing(st.sock, jid);
         const sent = await st.sock.sendMessage(jid, { text: content });
@@ -1029,7 +1146,12 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
     const { chatId, mediaUrl, caption } = req.body || {};
     if (!chatId || !mediaUrl) return res.status(400).json({ error: 'chatId y mediaUrl son obligatorios' });
 
-    const jid = normalizeJid(chatId);
+    const destino = resolveSendJid(line, chatId);
+    if (destino.problema) {
+        logger.error({ line, chatId, jid: destino.jid }, destino.problema);
+        return res.status(503).json({ error: destino.problema });
+    }
+    const jid = destino.jid;
     const fullUrl = String(mediaUrl).startsWith('/') ? `${APP_URL}${mediaUrl}` : String(mediaUrl);
 
     try {
