@@ -34,6 +34,12 @@ export default function CustomizationClientForm({ initialConfig }: Customization
   const businessInfo = initialConfig?.business_info || {};
   const persona = initialConfig?.metadata?.persona || {};
 
+  // Temas libres del negocio. Va DESPUÉS de businessInfo: si se declara antes,
+  // se leería una constante que todavía no existe.
+  const [topics, setTopics] = useState<any[]>(
+    Array.isArray(businessInfo?.topics) ? businessInfo.topics : []
+  );
+
   function addService() {
     setServices((prev) => [
       ...prev,
@@ -218,6 +224,40 @@ export default function CustomizationClientForm({ initialConfig }: Customization
           </div>
         </div>
 
+        <div>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">
+            A dónde paga el cliente (cuenta, titular, identificación)
+          </label>
+          <textarea
+            name="paymentDetails"
+            rows={2}
+            defaultValue={persona.payment_details || ''}
+            className="input text-sm"
+            placeholder="Bancolombia Ahorros 123-456789-00 a nombre de Mi Empresa S.A.S., NIT 900.123.456-7"
+          />
+          <p className="text-[10px] text-slate-500 mt-1">
+            Sin esto, el bot no puede responder «¿a dónde pago?» y solo dirá que lo consulta
+            con el equipo. Nunca inventa una cuenta.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">
+            Datos que se le piden al cliente para cerrar
+          </label>
+          <input
+            name="closingData"
+            type="text"
+            defaultValue={persona.closing_data || ''}
+            className="input text-sm"
+            placeholder="nombre o razón social, NIT o cédula, correo, dirección de envío"
+          />
+          <p className="text-[10px] text-slate-500 mt-1">
+            Cámbielos según su negocio: un despacho de abogados o un cliente de otro país
+            piden datos distintos.
+          </p>
+        </div>
+
         <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
           <input
             type="checkbox"
@@ -328,6 +368,40 @@ export default function CustomizationClientForm({ initialConfig }: Customization
           </div>
         </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">Página web</label>
+            <input
+              name="businessWebsite"
+              type="text"
+              defaultValue={businessInfo.website || ''}
+              className="input text-sm"
+              placeholder="www.miempresa.com"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">Tiempos de entrega</label>
+            <input
+              name="deliveryTimes"
+              type="text"
+              defaultValue={businessInfo.delivery_times || ''}
+              className="input text-sm"
+              placeholder="5 a 8 días hábiles después de aprobar el diseño"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">Garantía</label>
+          <textarea
+            name="warranty"
+            rows={2}
+            defaultValue={businessInfo.warranty || ''}
+            className="input text-sm"
+            placeholder="Garantía de 6 meses por defectos de fabricación. No cubre daños por mal uso."
+          />
+        </div>
+
         <div>
           <label className="block text-xs font-semibold mb-1 text-slate-400">Política de Cancelación</label>
           <input
@@ -338,6 +412,78 @@ export default function CustomizationClientForm({ initialConfig }: Customization
             placeholder="Las citas pueden cancelarse con al menos 2 horas de anticipación."
           />
         </div>
+      </div>
+
+      {/* ── Temas propios del negocio ─────────────────────────────────────────
+          Lo que hace que el sistema sirva para cualquier oficio sin tocar
+          código: una imprenta escribe "Formas de envío", un despacho de
+          abogados "Honorarios", una clínica "Preparación para exámenes".
+          El bot los consulta por su título y responde SOLO con lo que hay
+          escrito aquí. Lo que no esté, admite que no lo sabe. */}
+      <div className="card space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold text-white">Información del negocio para el bot</h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Todo lo que el bot debe saber responder y no es un producto: formas de envío,
+              requisitos, procesos, condiciones. Si no está aquí, el bot dirá que lo consulta
+              con el equipo en vez de inventarlo.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTopics([...topics, { titulo: '', contenido: '' }])}
+            className="btn-secondary text-xs shrink-0"
+          >
+            + Agregar tema
+          </button>
+        </div>
+
+        <input type="hidden" name="topicsJson" value={JSON.stringify(topics)} />
+
+        {topics.length === 0 && (
+          <p className="text-xs text-slate-500 italic">
+            Sin temas todavía. Ejemplos: «Formas de envío», «Requisitos para pedidos al por mayor»,
+            «Qué incluye el servicio».
+          </p>
+        )}
+
+        {topics.map((t: any, i: number) => (
+          <div key={i} className="p-3 rounded-lg bg-white/5 border border-white/10 space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={t.titulo || ''}
+                onChange={e => {
+                  const copia = [...topics];
+                  copia[i] = { ...copia[i], titulo: e.target.value };
+                  setTopics(copia);
+                }}
+                className="input text-sm flex-1"
+                placeholder="Título del tema (por ejemplo: Formas de envío)"
+              />
+              <button
+                type="button"
+                onClick={() => setTopics(topics.filter((_: any, j: number) => j !== i))}
+                className="text-xs text-red-400 hover:text-red-300 px-2"
+                title="Eliminar este tema"
+              >
+                Eliminar
+              </button>
+            </div>
+            <textarea
+              value={t.contenido || ''}
+              onChange={e => {
+                const copia = [...topics];
+                copia[i] = { ...copia[i], contenido: e.target.value };
+                setTopics(copia);
+              }}
+              rows={3}
+              className="input text-sm"
+              placeholder="La respuesta exacta que debe dar el bot sobre este tema."
+            />
+          </div>
+        ))}
       </div>
 
       {/* Services List section */}

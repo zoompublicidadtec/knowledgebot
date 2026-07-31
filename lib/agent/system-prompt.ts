@@ -14,6 +14,10 @@ export interface AgentPersona {
   offtopic_redirect: string;
   payment_methods: string;
   payment_terms: string;
+  /** A dónde paga el cliente: cuenta, titular, identificación fiscal. */
+  payment_details: string;
+  /** Qué datos se le piden al cliente para cerrar la venta. */
+  closing_data: string;
   free_mockup: boolean;
 }
 
@@ -28,8 +32,20 @@ export const DEFAULT_PERSONA: AgentPersona = {
     'USB y tecnología, y material impreso (tarjetas, volantes, botones, manillas).',
   offtopic_redirect:
     'Eso puntual no lo manejamos. Lo nuestro es el material publicitario con tu logo, que es justo lo que la gente usa para darse a conocer.',
-  payment_methods: 'Bancolombia, Nequi, Daviplata o PSE',
-  payment_terms: '50% para iniciar producción y 50% contra entrega',
+  /**
+   * VACÍOS A PROPÓSITO. Antes decían "Bancolombia, Nequi, Daviplata o PSE" y
+   * "50% para iniciar producción y 50% contra entrega". Eran datos de UN
+   * negocio escritos en el código: si el panel estaba vacío, el bot los soltaba
+   * como ciertos. Para ZOOM sonaban razonables; para un despacho de abogados o
+   * un cliente de otro país habrían sido mentiras dichas con total seguridad.
+   *
+   * Vacíos, el prompt omite la frase entera y el bot dice que lo consulta.
+   * La única fuente de estos datos es el panel.
+   */
+  payment_methods: '',
+  payment_terms: '',
+  payment_details: '',
+  closing_data: '',
   free_mockup: true,
 };
 
@@ -113,6 +129,24 @@ export function buildSystemPrompt(
   const ownerNotes = sanitizeOwnerNotes(config.system_prompt);
   const offtopic = persona.offtopic_redirect.replace('{scope}', persona.scope);
 
+  /**
+   * El cierre se arma SOLO con lo que el dueño configuró.
+   *
+   * Si no configuró medios de pago, el prompt no menciona el pago y el bot no
+   * puede inventarse un banco. Si no configuró la cuenta, no puede inventarse
+   * un número. Callar es correcto; rellenar no.
+   */
+  const cierreDatos = persona.closing_data
+    ? `, pide estos datos: ${persona.closing_data}`
+    : '';
+  const cierrePago =
+    persona.payment_methods || persona.payment_terms
+      ? `, y explica el pago: ${[persona.payment_methods, persona.payment_terms].filter(Boolean).join(', ')}`
+      : '';
+  const cierreCuenta = persona.payment_details
+    ? `. Si pregunta a dónde paga, dale exactamente estos datos: ${persona.payment_details}`
+    : `. Si pregunta a dónde paga y no tienes los datos de la cuenta, dile con naturalidad que se los confirma el equipo enseguida. NUNCA inventes un número de cuenta, un banco ni un titular.`;
+
   return `Eres ${persona.agent_name}, ${persona.role} de ${persona.company}. Atiendes por WhatsApp y tu único objetivo es VENDER.
 
 ## Identidad (inquebrantable)
@@ -157,7 +191,7 @@ Dispara la oferta de inmediato, sin indagar, si el cliente: pide ver opciones/ca
 - "Está caro": aplica downselling con otra opción real y más económica de la misma búsqueda, cotizada con la herramienta.
 - "No me gusta / están feos": ejecuta searchCatalog otra vez con alternativas reales y ofrece 3 nuevas opciones${persona.free_mockup ? ', y ofrece proactivamente que el equipo de diseño hace el boceto digital con su logo GRATIS antes de producir' : ''}.
 
-**Fase 4 — Cierre.** Se dispara apenas el cliente acepta ("lo quiero", "me quedo con ese", "cómo pago"). No vuelvas a preguntar cantidad ni color. En UN solo mensaje: confirma la opción y su total, pide los 4 datos (nombre o razón social, NIT o cédula, correo, dirección de envío) y explica el pago: ${persona.payment_methods}, ${persona.payment_terms}.
+**Fase 4 — Cierre.** Se dispara apenas el cliente acepta ("lo quiero", "me quedo con ese", "cómo pago"). No vuelvas a preguntar cantidad ni color. En UN solo mensaje: confirma la opción y su total${cierreDatos}${cierrePago}${cierreCuenta}
 
 **Fase 5 — Posventa.** Cuando confirme el pago: confirma recepción, avisa que se envía el boceto con su logo para aprobación antes de producir y pregunta por su experiencia.
 

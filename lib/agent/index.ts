@@ -273,10 +273,37 @@ async function applyOutputGuardrail(
     );
 
     if (!priceToolCalled) {
+      /**
+       * Cifras que vienen de lo que el DUENO configuro en el panel.
+       *
+       * Una politica puede llevar un monto ("envio gratis sobre $200.000",
+       * "anticipo minimo de $50.000"). Ese numero no sale de la calculadora de
+       * productos, y el candado lo bloqueaba: el bot no podia responder algo
+       * que el propio dueno habia escrito.
+       *
+       * No es un agujero. Solo se aceptan las cifras que aparecen en el texto
+       * devuelto por queryKnowledgeBase EN ESTE MISMO TURNO, es decir las que
+       * el dueno escribio en el panel. Un precio de producto sigue exigiendo
+       * la calculadora.
+       */
+      const desdeElPanel = new Set<number>();
+      for (const step of steps || []) {
+        for (const t of (step.toolResults || []) as any[]) {
+          if (t.toolName !== 'queryKnowledgeBase') continue;
+          const texto = JSON.stringify(t.result ?? t.output ?? '');
+          for (const monto of texto.match(/\$\s?[\d.,]+/g) || []) {
+            const n = parseCOP(monto);
+            if (n > 0) desdeElPanel.add(n);
+          }
+        }
+      }
+
       // Si todas las cifras ya se le dieron al cliente antes en esta misma
       // conversación, es el bot confirmando lo cotizado (típico del cierre),
       // no inventando precios.
-      const todasConocidas = mentionedPrices.every(p => approvedPrices.has(parseCOP(p)));
+      const todasConocidas = mentionedPrices.every(
+        p => approvedPrices.has(parseCOP(p)) || desdeElPanel.has(parseCOP(p))
+      );
       if (todasConocidas) {
         logger.info('CANDADO v4: precios ya aprobados en la conversación', {
           count: mentionedPrices.length,

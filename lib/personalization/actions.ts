@@ -16,6 +16,33 @@ export async function saveAgentConfigAction(formData: FormData) {
   const businessPhone = (formData.get('businessPhone') as string) || '';
   const businessEmail = (formData.get('businessEmail') as string) || '';
   const cancellationPolicy = (formData.get('cancellationPolicy') as string) || '';
+  // Datos del negocio que el bot necesita para responder sin inventar. Son
+  // genéricos a propósito: valen para una imprenta, un despacho de abogados o
+  // una clínica. Lo específico de cada oficio va en `topics`.
+  const businessWebsite = (formData.get('businessWebsite') as string) || '';
+  const warranty = (formData.get('warranty') as string) || '';
+  const deliveryTimes = (formData.get('deliveryTimes') as string) || '';
+
+  /**
+   * Temas libres: pares título + contenido que el dueño escribe en el panel.
+   *
+   * Es lo que hace al sistema servir para cualquier mercado sin tocar código:
+   * un abogado añade "Honorarios" y "Horarios de audiencia", una clínica añade
+   * "Preparación para exámenes". El bot los consulta por su título.
+   */
+  const topicsRaw = formData.get('topicsJson') as string;
+  let topics: Array<{ titulo: string; contenido: string }> = [];
+  try {
+    const parsed = topicsRaw ? JSON.parse(topicsRaw) : [];
+    topics = (Array.isArray(parsed) ? parsed : [])
+      .map((t: any) => ({
+        titulo: String(t?.titulo || '').trim(),
+        contenido: String(t?.contenido || '').trim(),
+      }))
+      .filter(t => t.titulo && t.contenido);
+  } catch {
+    return { error: 'Formato de temas inválido. Intenta de nuevo.' };
+  }
 
   // Services JSON parse
   const servicesRaw = formData.get('servicesJson') as string;
@@ -54,6 +81,10 @@ export async function saveAgentConfigAction(formData: FormData) {
     phone: businessPhone,
     email: businessEmail,
     cancellation_policy: cancellationPolicy,
+    website: businessWebsite,
+    warranty,
+    delivery_times: deliveryTimes,
+    topics,
     faq: (existing as any)?.business_info?.faq || [],
   };
 
@@ -67,6 +98,18 @@ export async function saveAgentConfigAction(formData: FormData) {
     offtopic_redirect: ((formData.get('agentOfftopic') as string) || '').trim(),
     payment_methods: ((formData.get('paymentMethods') as string) || '').trim(),
     payment_terms: ((formData.get('paymentTerms') as string) || '').trim(),
+    /**
+     * A DONDE paga el cliente: cuenta, titular, identificacion fiscal. El panel
+     * solo tenia los nombres de los bancos, asi que cuando el cliente preguntaba
+     * "listo, a donde pago" el bot no tenia el dato y lo rellenaba.
+     */
+    payment_details: ((formData.get('paymentDetails') as string) || '').trim(),
+    /**
+     * Que datos se le piden al cliente para cerrar. Estaban fijos en el codigo
+     * ("nombre o razon social, NIT o cedula, correo, direccion de envio"), lo
+     * que solo vale para una empresa colombiana que envia mercancia.
+     */
+    closing_data: ((formData.get('closingData') as string) || '').trim(),
     free_mockup: formData.get('freeMockup') === 'on',
   };
 
