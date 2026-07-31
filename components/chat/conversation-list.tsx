@@ -10,12 +10,33 @@ import { createClient } from '@/lib/supabase/client';
 interface WhatsAppLine {
   line_key: string;
   display_name: string;
+  phone_number?: string | null;
 }
 
+/**
+ * Un color por línea, con su versión de etiqueta.
+ *
+ * Antes solo existía el punto de 6 px: con dos líneas se toleraba, con las 8
+ * previstas es indescifrable — nadie recuerda que el cian es la línea 4. Ahora
+ * el nombre de la línea va escrito al lado del color.
+ *
+ * Clases completas y no interpoladas: Tailwind necesita verlas literales.
+ */
 const LINE_COLORS = [
-  'bg-pink-500', 'bg-violet-500', 'bg-indigo-500', 
-  'bg-cyan-500', 'bg-teal-500', 'bg-lime-500', 
+  'bg-pink-500', 'bg-violet-500', 'bg-indigo-500',
+  'bg-cyan-500', 'bg-teal-500', 'bg-lime-500',
   'bg-yellow-500', 'bg-orange-500'
+];
+
+const LINE_CHIPS = [
+  'bg-pink-500/15 text-pink-300 border-pink-500/30',
+  'bg-violet-500/15 text-violet-300 border-violet-500/30',
+  'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
+  'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+  'bg-teal-500/15 text-teal-300 border-teal-500/30',
+  'bg-lime-500/15 text-lime-300 border-lime-500/30',
+  'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
+  'bg-orange-500/15 text-orange-300 border-orange-500/30',
 ];
 
 interface ConversationItem {
@@ -89,7 +110,7 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
 
   useEffect(() => {
     const fetchLines = async () => {
-      const { data } = await (supabase as any).from('whatsapp_lines').select('line_key, display_name').order('created_at');
+      const { data } = await (supabase as any).from('whatsapp_lines').select('line_key, display_name, phone_number').order('created_at');
       if (data) setLines(data);
     };
     fetchLines();
@@ -242,12 +263,25 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
                       <span className="text-sm font-medium text-slate-200 truncate" suppressHydrationWarning>
                         {name}
                       </span>
-                      {conv.line_key && lines.length > 0 && (
-                        <div 
-                          className={`w-1.5 h-1.5 rounded-full ${LINE_COLORS[lines.findIndex(l => l.line_key === conv.line_key) % LINE_COLORS.length]}`} 
-                          title={`Línea: ${lines.find(l => l.line_key === conv.line_key)?.display_name}`}
-                        />
-                      )}
+                      {conv.line_key && lines.length > 0 && (() => {
+                        const idx = lines.findIndex(l => l.line_key === conv.line_key);
+                        const linea = lines[idx];
+                        if (!linea) return null;
+                        return (
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap shrink-0 ${
+                              LINE_CHIPS[idx % LINE_CHIPS.length]
+                            }`}
+                            title={
+                              linea.phone_number
+                                ? `Escribió a ${linea.display_name} · ${linea.phone_number}`
+                                : `Escribió a ${linea.display_name}`
+                            }
+                          >
+                            {linea.display_name}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
                       {telefono && (

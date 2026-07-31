@@ -225,7 +225,7 @@ export default function LineasClient() {
         )}
 
         {lines.map(line => (
-          <LineCard key={line.line_key} line={line} />
+          <LineCard key={line.line_key} line={line} onRenombrada={fetchDiagnostic} />
         ))}
       </div>
 
@@ -269,7 +269,46 @@ function SummaryCard({
   );
 }
 
-function LineCard({ line }: { line: LineDiagnostic }) {
+function LineCard({ line, onRenombrada }: { line: LineDiagnostic; onRenombrada?: () => void }) {
+  /**
+   * Renombrar la línea.
+   *
+   * `line_key` (linea_1, linea_2…) NO se toca: es la clave con la que se
+   * enrutan los mensajes, se nombran las sesiones en disco y se agrupan las
+   * conversaciones. Lo que se cambia es el nombre visible, que antes solo se
+   * podía fijar al crear la línea: todas quedaban como "Línea 1", "Línea 2"…
+   * y con 8 líneas eso no le dice a nadie de quién es cada una.
+   */
+  const [editando, setEditando] = useState(false);
+  const [nombre, setNombre] = useState(line.display_name || line.line_key);
+  const [guardando, setGuardando] = useState(false);
+  const [errorNombre, setErrorNombre] = useState<string | null>(null);
+
+  async function guardarNombre() {
+    const limpio = nombre.trim();
+    if (!limpio) { setErrorNombre('El nombre no puede quedar vacío'); return; }
+    setGuardando(true);
+    setErrorNombre(null);
+    try {
+      const res = await fetch(`/api/whatsapp-lines/${line.line_key}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: limpio }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorNombre(json?.error || 'No se pudo guardar el nombre');
+        return;
+      }
+      setEditando(false);
+      onRenombrada?.();
+    } catch (e) {
+      setErrorNombre('No se pudo guardar el nombre');
+    } finally {
+      setGuardando(false);
+    }
+  }
+
   const isConnected = line.dbStatus === 'connected' && line.loaded && !line.isZombie;
   const isZombie = line.isZombie;
 
@@ -295,14 +334,54 @@ function LineCard({ line }: { line: LineDiagnostic }) {
             <Phone size={20} className={isConnected ? 'text-emerald-400' : isZombie ? 'text-amber-400' : 'text-rose-400'} />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              {line.display_name || line.line_key}
-              {isZombie && (
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wide">
-                  ⚠ Zombie
-                </span>
-              )}
-            </h3>
+            {editando ? (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    autoFocus
+                    value={nombre}
+                    maxLength={60}
+                    onChange={e => setNombre(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') guardarNombre();
+                      if (e.key === 'Escape') { setEditando(false); setNombre(line.display_name || line.line_key); setErrorNombre(null); }
+                    }}
+                    className="input text-sm py-1 px-2 w-56"
+                    placeholder="WhatsApp de Juanita · Local 211"
+                  />
+                  <button
+                    onClick={guardarNombre}
+                    disabled={guardando}
+                    className="btn-primary py-1 px-2.5 text-[11px] rounded-lg disabled:opacity-50"
+                  >
+                    {guardando ? '…' : 'Guardar'}
+                  </button>
+                  <button
+                    onClick={() => { setEditando(false); setNombre(line.display_name || line.line_key); setErrorNombre(null); }}
+                    className="btn-ghost py-1 px-2 text-[11px] rounded-lg"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+                {errorNombre && <span className="text-[10px] text-rose-400">{errorNombre}</span>}
+              </div>
+            ) : (
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                {line.display_name || line.line_key}
+                <button
+                  onClick={() => setEditando(true)}
+                  className="text-[10px] font-medium text-slate-500 hover:text-primary-300 transition-colors"
+                  title="Ponerle un nombre a esta línea"
+                >
+                  Renombrar
+                </button>
+                {isZombie && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wide">
+                    ⚠ Zombie
+                  </span>
+                )}
+              </h3>
+            )}
             <p className="text-xs text-slate-400 mt-0.5">
               {line.line_key} · {line.phone_number || 'Sin número'}
             </p>

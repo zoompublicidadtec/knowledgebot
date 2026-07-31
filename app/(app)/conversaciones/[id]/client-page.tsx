@@ -31,6 +31,29 @@ export default function ChatClientPage({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const supabase = createClient();
+  /**
+   * Por qué línea entra esta conversación.
+   *
+   * La cabecera decía quién escribe, pero no A QUIÉN. Con 8 líneas
+   * corporativas, un asesor podía responder creyendo que hablaba desde otra
+   * cuenta: el cliente recibe la respuesta desde un número que no reconoce, o
+   * peor, desde la línea equivocada del negocio.
+   */
+  const [lineaActual, setLineaActual] = useState<{ display_name: string; phone_number: string | null } | null>(null);
+
+  useEffect(() => {
+    const lineKey = (currentConversation as any)?.line_key;
+    if (!lineKey) { setLineaActual(null); return; }
+    (async () => {
+      const { data } = await (supabase as any)
+        .from('whatsapp_lines')
+        .select('display_name, phone_number')
+        .eq('line_key', lineKey)
+        .maybeSingle();
+      setLineaActual(data || { display_name: lineKey, phone_number: null });
+    })();
+  }, [currentConversation]);
+
   // Nombre y teléfono con la MISMA regla que el resto del panel: nunca un
   // `@lid` disfrazado de teléfono. Ver lib/whatsapp/contact-identity.ts.
   const { nombre: name, telefono } = mostrarContacto(contact as any);
@@ -168,9 +191,23 @@ export default function ChatClientPage({
             </div>
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-white truncate">{name}</h2>
-              <p className="text-[10px] truncate" style={{ color: 'rgba(148, 163, 184, 0.5)' }}>
-                {telefono}
-              </p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-[10px] truncate" style={{ color: 'rgba(148, 163, 184, 0.5)' }}>
+                  {telefono}
+                </p>
+                {lineaActual && (
+                  <>
+                    <span className="text-[10px] text-slate-600">→</span>
+                    <span
+                      className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-primary-500/10 text-primary-300 border-primary-500/30 whitespace-nowrap"
+                      title="Línea de su empresa por la que entra este chat y desde la que sale su respuesta"
+                    >
+                      {lineaActual.display_name}
+                      {lineaActual.phone_number ? ` · ${lineaActual.phone_number}` : ''}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
