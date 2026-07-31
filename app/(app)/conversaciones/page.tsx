@@ -14,7 +14,7 @@ export default async function ConversationsIndexPage() {
   // Fetch recent conversations
   const { data: list } = await (supabase as any)
     .from('conversations')
-    .select('*, contacts(full_name, wa_phone)')
+    .select('*, contacts(full_name, wa_phone, metadata)')
     .eq('organization_id', orgId)
     .order('last_message_at', { ascending: false });
 

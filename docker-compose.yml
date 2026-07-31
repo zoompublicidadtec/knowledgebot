@@ -16,7 +16,12 @@ services:
       - NODE_ENV=production
       - PORT=3003
       - HOSTNAME=0.0.0.0
-      - WHATSAPP_BRIDGE_URL=http://localhost:3004
+      # Puente unico de TODAS las lineas: Baileys, en el 3005. Este valor pisa
+      # al de .env.production, asi que es el que manda. Antes apuntaba al 3004
+      # (whatsapp-web.js), cuyo almacen interno quedo roto contra la version
+      # actual de WhatsApp Web: fallaban la descarga de adjuntos y hasta el
+      # listado de chats, y no tiene arreglo desde aqui.
+      - WHATSAPP_BRIDGE_URL=http://localhost:3005
       - VOLUME_PATH=/data
     volumes:
       - ./attachments:/data/attachments
@@ -39,15 +44,27 @@ services:
       - .env.production
     environment:
       - APP_URL=http://localhost:3003
-      # ARQUITECTURA FINAL (31-Jul-2026): cada linea usa LOS DOS puentes.
-      # Este puente ENVIA en las dos lineas, porque es el unico que entrega:
-      # Baileys es rechazado por WhatsApp en el acuse con error 463.
-      - BRIDGE_LINES=linea_1,linea_2
-      # ...pero solo REENVIA lo que recibe de las lineas que aun no recibe
-      # Baileys. Si reenviara una que ya recibe el otro puente, el agente
-      # correria dos veces y el cliente veria cada respuesta duplicada.
-      # Fase 1: linea_2 ya recibe por Baileys; linea_1 todavia no.
-      - FORWARD_INBOUND_LINES=linea_1,linea_2
+      # ARQUITECTURA (31-Jul-2026): UN SOLO PUENTE PARA TODAS LAS LINEAS.
+      #
+      # Aqui vivian BRIDGE_LINES=linea_1,linea_2 y
+      # FORWARD_INBOUND_LINES=linea_1,linea_2, que repartian las lineas entre
+      # este puente y el de Baileys. Se quitan a proposito: al enumerar las
+      # lineas una por una, cualquier linea NUEVA que se conectara (linea_3, o
+      # la de un cliente de otro pais) quedaba fuera de la lista y el puente la
+      # ignoraba en silencio. No escala a 8 lineas ni a clientes nuevos.
+      #
+      # Sin definir, las dos compuertas se abren para TODAS las lineas, que es
+      # el valor por defecto del codigo (ownsLine y reenviaEntrantes devuelven
+      # true con la lista vacia). Se conservan en el codigo por si alguna vez
+      # hace falta repartir carga, pero el sistema NO depende de ellas.
+      #
+      # Version de WhatsApp Web fijada. Con la ultima version que sirve
+      # WhatsApp, whatsapp-web.js 1.34.7 no encuentra sus funciones internas y
+      # fallan la descarga de adjuntos y hasta el listado de chats con un
+      # `[Error] r`. Si WhatsApp vuelve a romperla, se cambia este valor por
+      # otro de https://github.com/wppconnect-team/wa-version (carpeta html),
+      # sin tocar codigo.
+      - WA_WEB_VERSION=2.3000.1040516757-alpha
     volumes:
       - ./wwebjs_sessions:/data/wwebjs_sessions
       - ./wa-server/.wwebjs_cache:/app/.wwebjs_cache
@@ -90,7 +107,9 @@ services:
       - PORT=3005
       - APP_URL=http://localhost:3003
       - VOLUME_PATH=/data
-      - BRIDGE_LINES=linea_2
+      # Sin BRIDGE_LINES: este puente atiende TODAS las lineas, las de hoy y
+      # las que se conecten manana. Antes decia `linea_2`, lo que dejaba fuera
+      # en silencio a cualquier linea nueva.
       # true = atiende de verdad: reenvia los mensajes a la app y le informa
       # del QR y del estado al panel. Con false se queda en modo sombra.
       - FORWARDING_ENABLED=true

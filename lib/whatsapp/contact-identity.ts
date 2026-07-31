@@ -76,6 +76,41 @@ export interface ContactRow {
   full_name?: string | null;
   wa_phone?: string | null;
   created_at?: string | null;
+  /**
+   * Datos que no enrutan nada. Aquí vive `telefono`: el teléfono real del
+   * cliente cuando `wa_phone` es un `@lid` y por tanto no es un número.
+   */
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * Cómo se muestra un contacto en el panel: su nombre y su teléfono.
+ *
+ * REGLA ÚNICA PARA TODAS LAS PANTALLAS. Antes cada vista hacía su propia
+ * mezcla de `full_name || wa_phone`, y como `wa_phone` puede ser un `@lid`, el
+ * dueño veía `181290854776961@lid` donde esperaba un teléfono.
+ *
+ * - `telefono`: el número real si se conoce; si no, se prefiere no enseñar un
+ *   identificador interno disfrazado de teléfono.
+ * - `nombre`: el nombre del contacto y, si aún no lo sabemos, el teléfono, para
+ *   que la cabecera nunca quede vacía ni muestre un `@lid`.
+ */
+export function mostrarContacto(contacto: ContactRow | null | undefined): {
+  nombre: string;
+  telefono: string;
+} {
+  const real = String((contacto?.metadata as any)?.telefono || '').replace(/\D/g, '');
+  const bruto = contacto?.wa_phone || '';
+
+  // `wa_phone` solo sirve para mostrar si de verdad parece un teléfono: un
+  // `@lid` tiene 14-15 dígitos y no lo es.
+  const digitosBrutos = bruto.replace(/\D/g, '');
+  const brutoEsTelefono = !bruto.includes('@lid') && /^\d{7,15}$/.test(digitosBrutos);
+
+  const telefono = real || (brutoEsTelefono ? digitosBrutos : '');
+  const nombre = contacto?.full_name?.trim() || telefono || 'Desconocido';
+
+  return { nombre, telefono };
 }
 
 /**

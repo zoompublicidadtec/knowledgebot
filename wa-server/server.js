@@ -66,6 +66,10 @@ const BRIDGE_LINES = (process.env.BRIDGE_LINES || '')
     .map(s => s.trim())
     .filter(Boolean);
 
+// Version de WhatsApp Web a fijar (ver webVersionCache en startSession).
+// Vacia = usar la ultima que sirva WhatsApp, el comportamiento anterior.
+const WA_WEB_VERSION = (process.env.WA_WEB_VERSION || '').trim();
+
 function ownsLine(sessionName) {
     if (BRIDGE_LINES.length === 0) return true;
     return BRIDGE_LINES.includes(sessionName);
@@ -343,9 +347,30 @@ function startSession(sessionName) {
             clientId: sessionName,
             dataPath: SESSION_DATA_PATH,
         }),
-        webVersionCache: {
-            type: 'none' // Prevent cache corruption when running multiple lines concurrently
-        },
+        // ── Version de WhatsApp Web ──────────────────────────────────────────
+        // Antes: { type: 'none' }, que carga SIEMPRE la ultima version que
+        // sirva WhatsApp. Cuando WhatsApp cambia su web por dentro,
+        // whatsapp-web.js deja de encontrar sus funciones internas y todo lo
+        // que toque el almacen falla con un error minificado ilegible:
+        //   [Error] r
+        // Medido el 31-jul-2026: fallaban downloadMedia() Y getChats(), o sea
+        // no era la descarga en si, era el almacen entero. Sintoma visible:
+        // 0 audios y 0 fotos descargados, en todas las lineas por igual.
+        //
+        // Fijar una version conocida es el remedio estandar. WA_WEB_VERSION
+        // permite moverla sin tocar codigo si WhatsApp vuelve a romperla.
+        //
+        // OJO: hacen falta LAS DOS opciones. Con `webVersionCache` a secas la
+        // libreria se queda con la version que sirva WhatsApp y el pin no surte
+        // efecto (medido: pedida 2.3000.1040516757-alpha, cargada
+        // 2.3000.1044236315). `webVersion` es la que de verdad la fija.
+        ...(WA_WEB_VERSION ? { webVersion: WA_WEB_VERSION } : {}),
+        webVersionCache: WA_WEB_VERSION
+            ? {
+                type: 'remote',
+                remotePath: `https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/${WA_WEB_VERSION}.html`,
+            }
+            : { type: 'none' },
         puppeteer: {
             headless: true,
             protocolTimeout: 180000, // 3 minutos para prevenir CDP timeouts (Runtime.callFunctionOn)
@@ -359,12 +384,19 @@ function startSession(sessionName) {
                 '--disable-gpu',
                 '--disable-extensions',
                 '--disable-software-rasterizer',
-                // ── Anti-cache: prevent Chromium from filling the volume with media/cache ──
-                '--disable-cache',
-                '--disk-cache-size=1',
-                '--media-cache-size=1',
-                '--disable-application-cache',
-                '--disable-offline-load-stale-cache'
+                // ── Cache acotada, NO desactivada ────────────────────────────
+                // Antes aqui vivian --disable-cache, --disk-cache-size=1,
+                // --media-cache-size=1, --disable-application-cache y
+                // --disable-offline-load-stale-cache. Se pusieron para que el
+                // volumen no se llenara, pero `downloadMedia()` de
+                // whatsapp-web.js baja el adjunto DENTRO de la pagina y necesita
+                // esa cache: con 1 byte disponible el descifrado falla y el log
+                // solo dice `[Error] r`. Sintoma medido: 0 adjuntos descargados
+                // de 328 mensajes entrantes, en TODAS las lineas por igual.
+                // El techo de 64 MB deja trabajar a la descarga sin permitir que
+                // el disco crezca sin control.
+                '--disk-cache-size=67108864',
+                '--media-cache-size=67108864'
             ],
         },
     };
@@ -547,11 +579,46 @@ function startSession(sessionName) {
                 console.log(`[${sessionName}] Mensaje con media de tipo no procesado: type=${msg.type}, hasMedia=${msg.hasMedia}`);
             }
 
+            // ── Identidad del contacto ──────────────────────────────────────
+            // `targetChat` puede ser un @lid: un identificador interno de
+            // WhatsApp de 14-15 digitos que NO es un telefono y del que no se
+            // puede deducir el numero. El panel lo mostraba crudo. El objeto
+            // Contact si trae el telefono real, asi que lo pedimos aqui, que es
+            // el unico sitio por donde pasan TODAS las lineas por igual.
             let customerName = '';
+            let senderPhone = '';
             try {
                 const contact = await msg.getContact();
                 customerName = contact.pushname || contact.name || '';
-            } catch {}
+                // `number` es el telefono en formato internacional sin signos.
+                // Si viniera vacio, `id.user` es la parte antes de la arroba y
+                // solo sirve cuando el id NO es un @lid.
+                const raw = contact.number || (contact.id?.server === 'c.us' ? contact.id.user : '');
+                if (raw && /^\d{7,15}$/.test(String(raw))) senderPhone = String(raw);
+            } catch (e) {
+                console.warn(`[${sessionName}] No se pudo resolver el contacto de ${targetChat}: ${e.message}`);
+            }
+
+            // ── Mensaje citado ("responder a") ──────────────────────────────
+            // El cliente cita un mensaje anterior y espera que sepamos de cual
+            // habla. La libreria lo expone, pero este puente nunca lo pedia, asi
+            // que el agente recibia la respuesta suelta y sin contexto.
+            // El panel ya sabe pintarlo: lee `data.message.quoted.body`.
+            let quoted = null;
+            if (msg.hasQuotedMsg) {
+                try {
+                    const q = await msg.getQuotedMessage();
+                    quoted = {
+                        id: q.id?._serialized || null,
+                        body: q.body || '',
+                        type: q.type || 'chat',
+                        fromMe: !!q.fromMe,
+                        hasMedia: !!q.hasMedia,
+                    };
+                } catch (e) {
+                    console.warn(`[${sessionName}] No se pudo leer el mensaje citado: ${e.message}`);
+                }
+            }
 
             const webhookHeaders = { 'Content-Type': 'application/json' };
             if (BRIDGE_API_KEY) webhookHeaders['x-bridge-key'] = BRIDGE_API_KEY;
@@ -574,6 +641,8 @@ function startSession(sessionName) {
                             mediaError: msg.hasMedia && !mediaData,
                             mediaType: msg.type,
                             customerName,
+                            senderPhone,
+                            quoted,
                         },
                     },
                 }),
@@ -611,6 +680,89 @@ app.get('/health', (req, res) => {
 // Devuelve, por cada línea: estado, desde cuándo conectada, último error,
 // contador de errores del keep-alive, y si la sesión persistente existe en disco.
 // No realiza ninguna acción sobre las sesiones — solo observa y reporta.
+// ── Autoprueba de descarga de adjuntos ──────────────────────────────────────
+// Recorre los chats recientes, busca mensajes con adjunto y trata de bajarlos,
+// devolviendo el error REAL de cada intento. Existe para poder verificar la
+// descarga desde el servidor sin pedirle al dueno que reenvie audios y fotos
+// una y otra vez. Es de solo lectura: no escribe nada ni avisa a la app.
+app.get('/api/sessions/:session/media-selftest', async (req, res) => {
+    const auth = validateApiKey(req, res);
+    if (auth !== true) return;
+
+    const sessionName = req.params.session;
+    const sessionObj = sessions.get(sessionName);
+    if (!sessionObj || sessionObj.status !== 'connected') {
+        return res.status(409).json({ error: 'sesion no conectada', status: sessionObj?.status || 'ausente' });
+    }
+
+    const maxChats = Number(req.query.chats || 5);
+    const maxPerChat = Number(req.query.messages || 25);
+    const intentos = [];
+    const contexto = { waWebVersionPedida: WA_WEB_VERSION || '(ultima)' };
+
+    // Que version de WhatsApp Web quedo realmente cargada. Si difiere de la
+    // pedida, el pin no se aplico y cualquier otra conclusion seria falsa.
+    try {
+        contexto.waWebVersionReal = await sessionObj.client.getWWebVersion();
+    } catch (e) {
+        contexto.waWebVersionReal = `error: ${e.message}`;
+    }
+
+    // Sondas por separado: hay que saber QUE parte del almacen falla, porque
+    // `r` es un error minificado que no dice nada por si mismo.
+    for (const [nombre, fn] of [
+        ['getState', () => sessionObj.client.getState()],
+        ['info.wid', async () => sessionObj.client.info?.wid?._serialized],
+        ['getChats', () => sessionObj.client.getChats()],
+    ]) {
+        try {
+            const r = await fn();
+            contexto[nombre] = Array.isArray(r) ? `ok (${r.length})` : `ok (${String(r).slice(0, 40)})`;
+        } catch (e) {
+            contexto[nombre] = `FALLA [${e?.constructor?.name}] ${e?.message} :: ${String(e?.stack || '').split('\n').slice(0, 4).join(' | ')}`;
+        }
+    }
+
+    try {
+        const chats = await sessionObj.client.getChats();
+        for (const chat of chats.filter(c => !c.isGroup).slice(0, maxChats)) {
+            const mensajes = await chat.fetchMessages({ limit: maxPerChat });
+            for (const m of mensajes) {
+                if (!m.hasMedia) continue;
+                const t0 = Date.now();
+                try {
+                    const media = await m.downloadMedia();
+                    intentos.push({
+                        chat: chat.id?._serialized, type: m.type, fromMe: m.fromMe,
+                        ok: !!media?.data,
+                        mimetype: media?.mimetype || null,
+                        kb: media?.data ? Math.round(media.data.length * 3 / 4 / 1024) : 0,
+                        ms: Date.now() - t0,
+                    });
+                } catch (e) {
+                    intentos.push({
+                        chat: chat.id?._serialized, type: m.type, fromMe: m.fromMe,
+                        ok: false,
+                        error: `[${e?.constructor?.name || typeof e}] ${e?.message || String(e)}`,
+                        ms: Date.now() - t0,
+                    });
+                }
+                if (intentos.length >= 12) break;
+            }
+            if (intentos.length >= 12) break;
+        }
+    } catch (e) {
+        return res.status(500).json({
+            error: `[${e?.constructor?.name}] ${e?.message}`,
+            stack: String(e?.stack || '').split('\n').slice(0, 5),
+            contexto,
+        });
+    }
+
+    const ok = intentos.filter(i => i.ok).length;
+    res.json({ linea: sessionName, contexto, probados: intentos.length, descargados: ok, fallidos: intentos.length - ok, intentos });
+});
+
 app.get('/diagnostic', (req, res) => {
     const out = {};
     // 1) Sesiones cargadas en memoria

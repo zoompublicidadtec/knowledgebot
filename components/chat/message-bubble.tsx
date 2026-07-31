@@ -116,8 +116,23 @@ export function MessageBubble({ message }: { message: Message }) {
   let imageCaption = '';
   let aiDescription = '';
 
-  if (esImagen && displayText.includes('[Foto del cliente:')) {
-    const descMatch = displayText.match(/\[Foto del cliente:([\s\S]*?)\]/);
+  /**
+   * Texto de una imagen: lo que acompaña a la foto, y aparte el análisis de IA.
+   *
+   * Dos fallos que se veían en el panel y aquí se corrigen juntos:
+   *
+   *  1. El servidor anota las fotos del cliente como `[Imagen adjunta de
+   *     cliente: ...]`, pero aquí solo se buscaba `[Foto del cliente: ...]`.
+   *     Dos nombres para lo mismo, así que el análisis nunca se pintaba.
+   *  2. Si no aparecía ninguna de esas etiquetas, el pie se quedaba vacío. Las
+   *     fotos de producto que envía el bot llevan su nombre, su referencia y su
+   *     precio en el texto, y el panel los tiraba: el dueño veía la imagen
+   *     desnuda mientras el cliente sí recibía la información en WhatsApp.
+   *
+   * Ahora: sin etiqueta, el texto ES el pie de foto.
+   */
+  if (esImagen) {
+    const descMatch = displayText.match(/\[(?:Foto del cliente|Imagen adjunta de cliente):([\s\S]*?)\]/);
     if (descMatch) {
       aiDescription = descMatch[1].trim();
       imageCaption = displayText.replace(descMatch[0], '').trim();

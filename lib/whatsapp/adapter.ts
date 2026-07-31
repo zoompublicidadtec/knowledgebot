@@ -178,6 +178,9 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
           raw: body,
           media: media || null,
           customerName: fromMe ? 'Tú' : (message.customerName as string || ''),
+          // Solo tiene sentido para mensajes entrantes: en los salientes el
+          // "remitente" somos nosotros.
+          senderPhone: fromMe ? '' : ((message.senderPhone as string) || ''),
           fromMe,
           mediaError,
           mediaType,

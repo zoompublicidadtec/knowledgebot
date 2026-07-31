@@ -147,9 +147,12 @@ const STORE_ROOT = process.env.STORE_ROOT || path.join(VOLUME_PATH, 'baileys_sto
 
 const logger = P({ level: process.env.LOG_LEVEL || 'info' });
 
+// Antes se abortaba con la lista vacía. Se quitó a propósito: vacía ahora
+// significa TODAS las líneas, las de hoy y las que se conecten mañana. Con la
+// lista enumerada, cualquier línea nueva quedaba fuera y el puente la ignoraba
+// en silencio, que es justo lo que no puede pasar con 8 líneas por delante.
 if (BRIDGE_LINES.length === 0) {
-    logger.error('BRIDGE_LINES está vacío: este puente no atendería ninguna línea. Abortando.');
-    process.exit(1);
+    logger.info('BRIDGE_LINES vacío: este puente atiende TODAS las líneas.');
 }
 
 // ============================================================
@@ -419,6 +422,13 @@ function validateApiKey(req, res) {
  * resuelve sin ambigüedad; con varias, 'default' no se puede adivinar.
  */
 function resolveLine(sessionName) {
+    // Lista vacía = este puente atiende todas las líneas.
+    if (BRIDGE_LINES.length === 0) {
+        if (sessionName && sessionName !== 'default') return sessionName;
+        // 'default' solo se puede adivinar si hay exactamente una sesión viva.
+        const vivas = [...sessions.keys()];
+        return vivas.length === 1 ? vivas[0] : null;
+    }
     if (BRIDGE_LINES.includes(sessionName)) return sessionName;
     if (BRIDGE_LINES.length === 1) return BRIDGE_LINES[0];
     return null;
@@ -549,6 +559,34 @@ function bodyParaElAgente(msg) {
     return body ? `${body}\n[En respuesta a: "${q.body}"]` : `[En respuesta a: "${q.body}"]`;
 }
 
+/**
+ * Telefono real del remitente, en digitos, o cadena vacia.
+ *
+ * Tres fuentes, de la mas fiable a la menos: lo que trae este mensaje, lo que
+ * se aprendio antes de ese mismo chat @lid, o el propio `remoteJid` cuando ya
+ * es un telefono normal.
+ */
+function telefonoRealDe(msg, line) {
+    const k = msg.key || {};
+    const candidatos = [k.senderPn, k.participantPn];
+
+    const jid = k.remoteJid || '';
+    if (jid.endsWith('@lid')) {
+        try {
+            candidatos.push(loadLidMap(line)[jid]);
+        } catch { /* el mapa aun no existe: no es un error */ }
+    } else {
+        candidatos.push(jid);
+    }
+
+    for (const c of candidatos) {
+        if (!c) continue;
+        const digitos = String(c).split('@')[0].split(':')[0].replace(/\D/g, '');
+        if (/^\d{7,15}$/.test(digitos)) return digitos;
+    }
+    return '';
+}
+
 function normalizeIncomingMessage(msg, lineKey, mediaData, msgType, mediaError) {
     return {
         event: 'message.received',
@@ -573,6 +611,24 @@ function normalizeIncomingMessage(msg, lineKey, mediaData, msgType, mediaError) 
                     : null,
                 mediaError: !!mediaError,
                 customerName: msg.pushName || '',
+                /**
+                 * TELEFONO REAL del cliente, en digitos.
+                 *
+                 * `from` puede ser un `@lid`: un identificador interno de
+                 * WhatsApp de 14-15 digitos que NO es un telefono y del que no
+                 * se puede deducir el numero. El panel lo mostraba crudo
+                 * (`181290854776961@lid`) como si fuera el contacto.
+                 *
+                 * WhatsApp adjunta el telefono de verdad en la clave del
+                 * mensaje, y el puente ya lo venia aprendiendo... pero solo
+                 * para si mismo, para poder responder. Aqui se lo pasa tambien
+                 * a la app, que es quien nombra al contacto en el CRM.
+                 *
+                 * Vacio cuando WhatsApp no lo entrega y tampoco se aprendio
+                 * antes: en ese caso la app se queda con lo que ya tenia, sin
+                 * inventar nada.
+                 */
+                senderPhone: telefonoRealDe(msg, lineKey),
             },
         },
     };
@@ -722,7 +778,8 @@ function classifyMedia(msg) {
 
 async function startSession(line, motivo = 'inicial') {
     // Compuerta: este puente no arranca líneas que no le pertenecen.
-    if (!BRIDGE_LINES.includes(line)) {
+    // Con BRIDGE_LINES vacía la compuerta queda abierta: atiende todas.
+    if (BRIDGE_LINES.length > 0 && !BRIDGE_LINES.includes(line)) {
         logger.warn({ line, owned: BRIDGE_LINES }, 'Se ignora el arranque: la línea no pertenece a este puente');
         return;
     }
@@ -904,6 +961,34 @@ async function startSession(line, motivo = 'inicial') {
     }
 }
 
+/**
+ * Memoria corta de mensajes ya entregados a la app, por (linea, id).
+ *
+ * No se guarda en disco a proposito: solo tiene que cubrir la ventana en la
+ * que WhatsApp reemite el mismo mensaje, que es de segundos. La app conserva
+ * su propia idempotencia para lo demas.
+ */
+const entregados = new Map(); // `${line}:${id}` -> timestamp
+const VENTANA_DUPLICADOS_MS = 10 * 60 * 1000;
+
+function yaEntregado(line, id) {
+    if (!id) return false;
+    const clave = `${line}:${id}`;
+    const ahora = Date.now();
+
+    // Limpieza perezosa: evita que el mapa crezca sin fin con 8 lineas activas.
+    if (entregados.size > 2000) {
+        for (const [k, t] of entregados) {
+            if (ahora - t > VENTANA_DUPLICADOS_MS) entregados.delete(k);
+        }
+    }
+
+    const visto = entregados.get(clave);
+    if (visto && ahora - visto < VENTANA_DUPLICADOS_MS) return true;
+    entregados.set(clave, ahora);
+    return false;
+}
+
 async function handleIncoming(line, msg, sock) {
     const jid = msg.key.remoteJid;
     if (!jid) return;
@@ -916,6 +1001,25 @@ async function handleIncoming(line, msg, sock) {
     // Se aprende el telefono real del chat ANTES de nada: es lo unico que
     // permite responderle a un contacto @lid sin que WhatsApp lo rechace.
     recordLidMapping(line, msg);
+
+    // ── Un mensaje, una entrega ─────────────────────────────────────────────
+    // WhatsApp reemite el MISMO mensaje mas de una vez: primero sin resolver
+    // el telefono (`senderPn: null`) y de nuevo cuando ya lo conoce. Medido el
+    // 31-jul-2026: la misma nota de voz llego dos veces con 750 ms de
+    // diferencia, se transcribio dos veces y el cliente recibio la cotizacion
+    // duplicada.
+    //
+    // La segunda copia sigue siendo util para APRENDER el telefono (arriba, ya
+    // se hizo), pero no debe volver a entrar al agente. Se descarta aqui, en el
+    // puente, que es donde nace el duplicado: si se filtrara mas adelante, cada
+    // copia habria gastado ya descarga, transcripcion y modelo.
+    if (yaEntregado(line, msg.key.id)) {
+        logger.info(
+            { line, id: msg.key.id, senderPn: msg.key.senderPn || null },
+            'Reemision del mismo mensaje: se aprende el telefono y se descarta'
+        );
+        return;
+    }
 
     // Trazas de la clave, para poder diagnosticar el direccionamiento sin
     // tener que pedirle al dueno que repita la prueba.
@@ -1040,7 +1144,11 @@ app.use(express.json({ limit: '60mb' }));
  */
 function describeSessions() {
     const out = {};
-    for (const line of BRIDGE_LINES) {
+    // Con BRIDGE_LINES vacía hay que describir las sesiones REALES, no una
+    // lista fija: si no, el panel vería el puente sin líneas y las daría por
+    // caídas estando sanas.
+    const lineas = BRIDGE_LINES.length > 0 ? BRIDGE_LINES : [...sessions.keys()];
+    for (const line of lineas) {
         const st = sessions.get(line) || blankState();
         out[line] = {
             loaded: !!st.sock,
@@ -1332,6 +1440,75 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
 // ARRANQUE
 // ============================================================
 
+/**
+ * Líneas registradas en el panel, según Supabase. Se consulta por HTTP para no
+ * añadir dependencias al puente.
+ */
+async function lineasEnLaBase() {
+    const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if (!url || !key) {
+        logger.warn('Sin credenciales de Supabase: no se pueden descubrir las líneas registradas.');
+        return [];
+    }
+    try {
+        const r = await fetch(`${url}/rest/v1/whatsapp_lines?select=line_key`, {
+            headers: { apikey: key, Authorization: `Bearer ${key}` },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()).map((l) => l.line_key).filter(Boolean);
+    } catch (e) {
+        logger.error({ err: e.message }, 'No se pudieron leer las líneas registradas');
+        return [];
+    }
+}
+
+/**
+ * Arranque de líneas, con UNA sola regla para todas.
+ *
+ * El puente atiende toda línea registrada en el panel, tenga o no sesión:
+ *   - con credenciales en disco -> se reconecta sola;
+ *   - sin credenciales          -> queda declarada y pidiendo QR.
+ *
+ * Declararlas todas importa: antes, una línea sin sesión sencillamente no
+ * existía para el puente, y el panel la pintaba distinta de sus hermanas
+ * estando en la misma situación. Con 8 líneas eso es inmanejable.
+ */
+async function arrancarLineas() {
+    let enDisco = [];
+    try {
+        enDisco = fs
+            .readdirSync(SESSIONS_ROOT, { withFileTypes: true })
+            .filter((d) => d.isDirectory() && d.name.startsWith('session-'))
+            .map((d) => d.name.slice('session-'.length))
+            .filter(Boolean);
+    } catch (e) {
+        logger.error({ err: e.message }, 'No se pudieron listar las sesiones en disco');
+    }
+
+    const registradas = BRIDGE_LINES.length > 0 ? BRIDGE_LINES.slice() : await lineasEnLaBase();
+    const todas = [...new Set([...registradas, ...enDisco])];
+
+    logger.info(
+        { registradas, enDisco, todas },
+        `Atendiendo ${todas.length} línea(s): ${enDisco.length} con sesión, ${todas.length - enDisco.length} pendiente(s) de QR`
+    );
+
+    for (const line of todas) {
+        sessions.set(line, blankState());
+        if (enDisco.includes(line)) {
+            startSession(line).catch((e) => logger.error({ err: e.message, line }, 'Fallo al arrancar la línea'));
+        } else {
+            // Sin credenciales no se abre socket: se deja declarada para que el
+            // panel la muestre con su causa real ("falta vincular") en vez de
+            // omitirla como si no existiera.
+            const st = sessions.get(line);
+            st.status = 'logged_out';
+            st.lastError = 'Sin sesión vinculada: hay que escanear el QR';
+        }
+    }
+}
+
 app.listen(PORT, () => {
     logger.info(
         { port: PORT, lines: BRIDGE_LINES, appUrl: APP_URL, forwarding: FORWARDING_ENABLED },
@@ -1339,8 +1516,6 @@ app.listen(PORT, () => {
     );
     fs.mkdirSync(SESSIONS_ROOT, { recursive: true });
     fs.mkdirSync(STORE_ROOT, { recursive: true });
-    for (const line of BRIDGE_LINES) {
-        sessions.set(line, blankState());
-        startSession(line).catch((e) => logger.error({ err: e.message, line }, 'Fallo al arrancar la línea'));
-    }
+
+    arrancarLineas().catch((e) => logger.error({ err: e.message }, 'Fallo en el arranque de líneas'));
 });

@@ -184,7 +184,7 @@ export async function processInboundMessage(
     const variants = contactIdVariants(message.from);
     const { data: candidateContacts } = await (supabase as any)
       .from('contacts')
-      .select('id, full_name, wa_phone, created_at')
+      .select('id, full_name, wa_phone, created_at, metadata')
       .eq('organization_id', orgId)
       .in('wa_phone', variants);
 
@@ -211,14 +211,35 @@ export async function processInboundMessage(
      */
     let contactPhoneKey: string = message.from;
 
+    /**
+     * TELÉFONO REAL para mostrar, separado de `wa_phone`.
+     *
+     * `wa_phone` es la CLAVE con la que se enruta y con la que las herramientas
+     * del agente buscan al cliente: cambiarla rompería esas búsquedas y volvería
+     * a partir las fichas. Pero cuando el chat va por `@lid`, esa clave es un
+     * número interno de WhatsApp y el panel lo enseñaba como si fuera el
+     * teléfono del cliente (`181290854776961@lid`), que no le sirve a nadie.
+     *
+     * Así que el teléfono de verdad se guarda aparte, en `metadata.telefono`,
+     * y el panel muestra ese. Una cosa para enrutar, otra para mostrar.
+     */
+    const telefonoReal = (message.senderPhone || '').replace(/\D/g, '');
+
     if (existingContact) {
       contactId = existingContact.id;
       contactName = existingContact.full_name || message.customerName || null;
       contactPhoneKey = existingContact.wa_phone || message.from;
 
+      const cambios: Record<string, unknown> = {};
       // Update name if it was empty but we have it now
       if (!existingContact.full_name && message.customerName) {
-        await (supabase as any).from('contacts').update({ full_name: message.customerName }).eq('id', contactId);
+        cambios.full_name = message.customerName;
+      }
+      if (telefonoReal && (existingContact.metadata as any)?.telefono !== telefonoReal) {
+        cambios.metadata = { ...((existingContact.metadata as any) || {}), telefono: telefonoReal };
+      }
+      if (Object.keys(cambios).length > 0) {
+        await (supabase as any).from('contacts').update(cambios).eq('id', contactId);
       }
     } else {
       const { data: newContact, error: contactErr } = await (supabase as any)
@@ -227,6 +248,7 @@ export async function processInboundMessage(
           organization_id: orgId,
           wa_phone: message.from,
           full_name: message.customerName || null,
+          metadata: telefonoReal ? { telefono: telefonoReal } : {},
         })
         .select('id')
         .single();
@@ -418,6 +440,21 @@ export async function processInboundMessage(
       });
     }
 
+    /**
+     * LO QUE EL CLIENTE DIJO DE VERDAD, sin anotaciones del sistema.
+     *
+     * `message.text` se va enriqueciendo más abajo con notas nuestras, como
+     * `[Imagen adjunta de cliente: ...]`. Eso es correcto para el modelo (es
+     * contexto), pero NO puede usarse para decidir qué quiso el cliente: la
+     * nota contiene la palabra "imagen", así que al mandar una foto el sistema
+     * leía su propia etiqueta como si le hubieran pedido fotos y respondía con
+     * tres imágenes de producto no solicitadas (medido el 31-jul-2026).
+     *
+     * Aquí se conserva aparte: el texto que escribió, o lo que dijo en el
+     * audio. La descripción de una imagen NUNCA entra, porque no la dijo él.
+     */
+    let palabrasDelCliente = message.text || '';
+
     if (message.media && message.media.data) {
       const mimetype = message.media.mimetype || '';
 
@@ -426,6 +463,9 @@ export async function processInboundMessage(
           const transcribedText = await transcribeAudio(message.media.data, mimetype);
           if (transcribedText) {
             message.text = transcribedText;
+            // Lo dicho en una nota de voz SÍ son palabras del cliente: si pide
+            // fotos hablando, cuenta igual que si las pidiera escribiendo.
+            palabrasDelCliente = transcribedText;
           } else {
             message.text = '[Mensaje de voz sin transcripción disponible]';
             if (lineKey) {
@@ -643,7 +683,7 @@ export async function processInboundMessage(
           // Fotos de las 3 propuestas: se envían solo si el cliente las pidió.
           await dispatchRequestedPhotos({
             supabase, orgId, conversationId, lineKey, waConfig,
-            to: message.from, clientText: message.text, botText: agentResponse,
+            to: message.from, clientText: palabrasDelCliente, botText: agentResponse,
           });
 
           const latency = Date.now() - startTime;

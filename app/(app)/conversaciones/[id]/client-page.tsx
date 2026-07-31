@@ -7,6 +7,7 @@ import { ConversationList } from '@/components/chat/conversation-list';
 import { MessageBubble } from '@/components/chat/message-bubble';
 import { MessageInput } from '@/components/chat/message-input';
 import { toggleBotAction } from '@/lib/conversations/actions';
+import { mostrarContacto } from '@/lib/whatsapp/contact-identity';
 import { Robot, SpinnerGap, WarningCircle, UserCircle, ArrowCounterClockwise, ArrowLeft } from '@phosphor-icons/react';
 
 interface ChatClientPageProps {
@@ -30,7 +31,9 @@ export default function ChatClientPage({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const supabase = createClient();
-  const name = contact?.full_name || contact?.wa_phone || 'Desconocido';
+  // Nombre y teléfono con la MISMA regla que el resto del panel: nunca un
+  // `@lid` disfrazado de teléfono. Ver lib/whatsapp/contact-identity.ts.
+  const { nombre: name, telefono } = mostrarContacto(contact as any);
 
   // Sync props when navigating between chats
   useEffect(() => {
@@ -166,7 +169,7 @@ export default function ChatClientPage({
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-white truncate">{name}</h2>
               <p className="text-[10px] truncate" style={{ color: 'rgba(148, 163, 184, 0.5)' }}>
-                {contact?.wa_phone}
+                {telefono}
               </p>
             </div>
           </div>

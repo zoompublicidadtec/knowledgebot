@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { mostrarContacto } from '@/lib/whatsapp/contact-identity';
 import { usePathname } from 'next/navigation';
 import { ChatCircleDots, Funnel } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
@@ -25,6 +26,8 @@ interface ConversationItem {
   contacts: {
     full_name: string | null;
     wa_phone: string;
+    // El telefono real cuando `wa_phone` es un `@lid`. Ver mostrarContacto().
+    metadata?: Record<string, unknown> | null;
   } | null;
 }
 
@@ -61,7 +64,7 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
           // New conversation from a new client — fetch full data with contact info
           const { data } = await supabase
             .from('conversations')
-            .select('id, bot_active, last_message_at, line_key, contacts(full_name, wa_phone)')
+            .select('id, bot_active, last_message_at, line_key, contacts(full_name, wa_phone, metadata)')
             .eq('id', payload.new.id)
             .single();
           if (data) {
@@ -153,7 +156,8 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
           conversations.filter(c => selectedLine === 'Todas' || c.line_key === selectedLine).map((conv) => {
             const isActive = pathname.includes(conv.id);
             const contact = conv.contacts;
-            const name = contact?.full_name || contact?.wa_phone || 'Desconocido';
+            // Misma regla de presentacion que el resto del panel.
+            const { nombre: name, telefono } = mostrarContacto(contact as any);
 
             return (
               <Link
@@ -182,9 +186,9 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                      {contact?.wa_phone && (
+                      {telefono && (
                         <>
-                          <span suppressHydrationWarning>{contact.wa_phone}</span>
+                          <span suppressHydrationWarning>{telefono}</span>
                           <span>•</span>
                         </>
                       )}
