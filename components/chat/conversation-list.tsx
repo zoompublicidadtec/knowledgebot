@@ -31,6 +31,55 @@ interface ConversationItem {
   } | null;
 }
 
+/**
+ * Etapas del pipeline, con su color y su nombre en castellano.
+ *
+ * ANTES esto era un punto de 8 px en la esquina derecha de la fila, y el dueño
+ * lo reportó el 01-ago-2026: un cliente listo para comprar y uno molesto se
+ * distinguían por un puntito que pasa desapercibido. En una bandeja con
+ * decenas de chats, atender a un cliente enfadado creyendo que es uno nuevo es
+ * un problema serio, y el panel no ayudaba a evitarlo.
+ *
+ * Ahora el color viste el círculo del contacto entero y va acompañado de su
+ * nombre escrito: el color solo no basta — se pierde en una lista larga y no
+ * sirve para quien no distingue bien los colores.
+ *
+ * Las clases van completas y no interpoladas porque Tailwind necesita verlas
+ * literales para incluirlas en el CSS final.
+ */
+const ETAPAS: Record<string, { nombre: string; avatar: string; etiqueta: string; barra: string }> = {
+  unhandled: {
+    nombre: 'Sin atender',
+    avatar: 'bg-orange-500/25 text-orange-200 ring-2 ring-orange-400',
+    etiqueta: 'bg-orange-500/15 text-orange-300 border-orange-500/40',
+    barra: 'bg-orange-400',
+  },
+  sales: {
+    nombre: 'Negociando',
+    avatar: 'bg-blue-500/25 text-blue-200 ring-2 ring-blue-400',
+    etiqueta: 'bg-blue-500/15 text-blue-300 border-blue-500/40',
+    barra: 'bg-blue-400',
+  },
+  sold: {
+    nombre: 'Ya compró',
+    avatar: 'bg-emerald-500/30 text-emerald-100 ring-2 ring-emerald-400',
+    etiqueta: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
+    barra: 'bg-emerald-400',
+  },
+  angry: {
+    nombre: 'Molesto',
+    avatar: 'bg-rose-600/35 text-rose-100 ring-2 ring-rose-400',
+    etiqueta: 'bg-rose-500/20 text-rose-200 border-rose-500/50',
+    barra: 'bg-rose-500',
+  },
+  ignore: {
+    nombre: 'Ignorar',
+    avatar: 'bg-purple-500/25 text-purple-200 ring-2 ring-purple-400',
+    etiqueta: 'bg-purple-500/15 text-purple-300 border-purple-500/40',
+    barra: 'bg-purple-400',
+  },
+};
+
 export function ConversationList({ list }: { list: ConversationItem[] }) {
   const pathname = usePathname();
   const [conversations, setConversations] = useState(list);
@@ -159,18 +208,33 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
             // Misma regla de presentacion que el resto del panel.
             const { nombre: name, telefono } = mostrarContacto(contact as any);
 
+            const etapaId = (contact as any)?.metadata?.stage;
+            const etapa = etapaId && etapaId !== 'inbox' ? ETAPAS[etapaId] : undefined;
+
             return (
               <Link
                 key={conv.id}
                 href={`/conversaciones/${conv.id}`}
                 className={`
-                  flex items-center justify-between p-3 rounded-xl transition-all text-decoration-none
+                  relative overflow-hidden flex items-center justify-between p-3 pl-4 rounded-xl transition-all text-decoration-none
                   ${isActive ? 'bg-primary-600/20 border border-primary-500/30' : 'hover:bg-white/5'}
                 `}
                 suppressHydrationWarning
               >
+                {/* Franja de color a lo largo de toda la fila: se ve incluso
+                    recorriendo la lista de un vistazo, sin leer nada. */}
+                {etapa && (
+                  <span className={`absolute left-0 top-0 bottom-0 w-1.5 ${etapa.barra}`} aria-hidden />
+                )}
+
                 <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center shrink-0 font-bold text-slate-400" suppressHydrationWarning>
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold ${
+                      etapa ? etapa.avatar : 'bg-slate-800 text-slate-400'
+                    }`}
+                    title={etapa ? `Etapa: ${etapa.nombre}` : undefined}
+                    suppressHydrationWarning
+                  >
                     {Array.from(name)[0]?.toUpperCase()}
                   </div>
                   <div className="flex flex-col overflow-hidden">
@@ -211,21 +275,14 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
                     </span>
                   )}
                   
-                  {/* Kanban Stage Dot */}
-                  {(() => {
-                    const stage = (contact as any)?.metadata?.stage;
-                    if (!stage || stage === 'inbox') return null;
-                    
-                    const colors: Record<string, string> = {
-                      unhandled: 'bg-orange-500',
-                      sales: 'bg-blue-500',
-                      sold: 'bg-emerald-500',
-                      angry: 'bg-rose-500',
-                      ignore: 'bg-purple-500'
-                    };
-                    const color = colors[stage] || 'bg-slate-500';
-                    return <div className={`w-2 h-2 rounded-full ${color}`} title={`Etapa: ${stage}`} />;
-                  })()}
+                  {/* Etapa del pipeline, escrita. El color solo no basta. */}
+                  {etapa && (
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${etapa.etiqueta}`}
+                    >
+                      {etapa.nombre}
+                    </span>
+                  )}
                 </div>
               </Link>
             );
