@@ -223,6 +223,43 @@ sepa el nombre.
 
 ## 4. Qué está ROTO o pendiente 🔴⚠️
 
+### 🔴 La base de conocimiento está VACÍA, y al bot se le manda consultarla
+
+Medido el 2026-08-01 contra producción: **`knowledge_chunks` tiene 0 filas.**
+
+No es solo que esté vacía: la herramienta está **viva y conectada**, y el prompt
+le ordena al modelo usarla.
+
+| Comprobación | Resultado |
+|---|---|
+| Filas en `knowledge_chunks` | **0** |
+| Herramienta registrada en el agente | Sí — `lib/agent/index.ts:755` |
+| El prompt manda usarla | Sí — `system-prompt.ts:141`: *"Para políticas, procesos o datos del negocio usa queryKnowledgeBase"* |
+| Quién la llena | Solo scripts (`ingest_all_sheets.ts`, `update_knowledge.ts`), nunca ejecutados en producción |
+
+**Consecuencia para el cliente:** cuando pregunta por políticas, procesos,
+garantías, tiempos de entrega o condiciones del negocio, el bot consulta, no
+recibe nada, y responde con lo que pueda. Es exactamente el escenario que
+produce alucinaciones: pregunta concreta + cero datos + una instrucción que
+afirma que ahí debería haberlos.
+
+**Qué NO hacer:** añadir reglas al prompt para tapar el hueco (ver §7.7). El
+problema es de datos, no de redacción.
+
+**Las dos salidas honestas**, y hay que elegir una:
+1. **Cargarla** con el glosario y las políticas reales, ejecutando los scripts
+   de ingesta. Es lo que se pretendía desde el principio.
+2. **Retirar la herramienta** del agente y su línea del prompt mientras no haya
+   datos. Un bot que no ofrece consultar políticas es mejor que uno que
+   consulta el vacío y rellena.
+
+Dejarlo como está es la peor de las tres, porque falla en silencio.
+
+> ⚠️ Cuidado al leer documentos viejos: describen `knowledge_chunks` como parte
+> funcional de la arquitectura. El **esquema** existe y el **código** la usa;
+> lo que no existe son los **datos**. Las tres cosas hay que decirlas por
+> separado.
+
 ### 🔴 El bot no entiende los audios: es SALDO, no código
 La transcripción devuelve **402** de OpenRouter:
 

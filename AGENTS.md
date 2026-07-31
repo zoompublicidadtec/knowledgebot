@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # KnowledgeBot — punto de entrada obligatorio
 
-> Verificado contra el VPS de producción el **2026-07-29**.
+> Verificado contra el VPS de producción el **2026-08-01**.
 > `CLAUDE.md` solo contiene `@AGENTS.md`: este archivo es la puerta de entrada.
 
 ## 0. Knowledge Graph del código (LEER PRIMERO)
@@ -50,7 +50,8 @@ graphify diagnose multigraph
 
 ### Qué contiene el grafo
 
-- `graph.json` (1.2 MB) — 1.203 nodos + 2.050 aristas, consultable.
+- `graph.json` — grafo consultable. Al 31-jul-2026: **2.165 aristas**,
+  `graphify diagnose multigraph` sin duplicados ni variantes contradictorias.
 - `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
 - `graph.html` (1 MB) — visualización interactiva (abrir en navegador).
 
@@ -75,7 +76,7 @@ orden de autoridad: si dos documentos dicen cosas distintas, manda el de arriba.
 | 8 | `data/README_BASE_DE_DATOS.md` | Describe el catálogo **de origen** de importados (junio 2026) | Solo origen de datos |
 | 9 | `catalogo_catalogospromocionales/README.md` y `BASE_DE_DATOS/README_BASE_DE_DATOS.md` | Ídem; el segundo es copia del primero | Solo origen de datos |
 
-## 2. Los cinco datos que la documentación vieja tiene mal
+## 2. Los seis datos que la documentación vieja tiene mal
 
 Si un documento afirma lo contrario de esto, el documento está equivocado:
 
@@ -88,6 +89,12 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
      **No usa pgvector.**
    - **Glosario y base de conocimiento** → **1536D** en Supabase
      `knowledge_chunks` (Gemini truncado a 1536 por el esquema `vector(1536)`).
+     ⚠️ **Esa tabla está VACÍA en producción: 0 filas, medido el 2026-08-01.**
+     La herramienta `queryKnowledgeBase` sigue conectada al agente y el prompt
+     manda usarla, así que el bot consulta el vacío cuando le preguntan por
+     políticas o procesos. Es un defecto abierto, no una pieza funcional: ver
+     `docs/ESTADO_OPERATIVO.md` §4. Las dimensiones de abajo describen el
+     **esquema**, no que haya datos.
 3. **Hay UN SOLO puente y atiende TODAS las líneas por igual**
    (desde el 2026-07-31). Cualquier documento que hable de dos puentes, de
    repartir líneas entre ellos, o de `BRIDGE_LINES` / `WHATSAPP_BRIDGE_ROUTES`
