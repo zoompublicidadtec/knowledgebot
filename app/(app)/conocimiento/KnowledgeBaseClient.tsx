@@ -238,6 +238,35 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
   }, [activeTab]);
 
   // Handle Edit Product
+  /**
+   * Abre el editor EN BLANCO para dar de alta un servicio nuevo.
+   *
+   * `saveProduct` siempre supo crear (su `id` es opcional), pero no habia
+   * ningun boton que abriera el editor vacio: desde el panel solo se podian
+   * editar los que ya existian. El dueno lo reporto el 01-ago-2026: "no tengo
+   * ni idea de como editar estos servicios y mucho menos crear nuevos".
+   */
+  const handleCrearServicio = () => {
+    setFormError('');
+    setFormSuccess('');
+    setProductId('');
+    setName('');
+    setReference('');
+    setCategoryId('');
+    setSubcategoryId('');
+    setDescription('');
+    setUnit('unidad');
+    setPriceIncludesIva(false);
+    setMinOrderQty(1);
+    setNotes('');
+    setActive(true);
+    setImageUrl('');
+    setSynonyms('');
+    setPriceTiers([]);
+    setIsEditing(false);
+    setShowDrawer(true);
+  };
+
   const handleEditProduct = async (prod: Product) => {
     setFormError('');
     setFormSuccess('');
@@ -852,20 +881,35 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
       {activeTab === 'marking' && (
         <div className="space-y-6 animate-fade-in">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
+            <div className="max-w-2xl">
               <h3 className="text-base font-semibold text-white">Servicios y Marcaciones</h3>
               <p className="text-xs mt-0.5" style={{ color: 'rgba(148, 163, 184, 0.6)' }}>
                 Lo que se cobra aparte del producto o combinado con él: marcaciones, impresión por
                 área y componentes de cuaderno. Son las mismas tarifas que usa el bot para cotizar.
               </p>
+              <p className="text-[11px] mt-2 text-slate-500">
+                <strong className="text-slate-400">Para cambiar un precio:</strong> pulse
+                «Editar tarifas» en el servicio y modifique la tabla de rangos.{' '}
+                <strong className="text-slate-400">Para agregar uno nuevo:</strong> pulse
+                «+ Nuevo servicio». Si un servicio queda sin tarifas, el bot no lo puede cotizar y
+                aparece marcado en ámbar.
+              </p>
             </div>
-            <button
-              onClick={loadServices}
-              disabled={loadingServices}
-              className="btn-ghost py-1.5 px-3 text-xs rounded-lg disabled:opacity-50"
-            >
-              {loadingServices ? 'Cargando...' : 'Recargar'}
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleCrearServicio}
+                className="btn-primary py-1.5 px-3 text-xs rounded-lg"
+              >
+                + Nuevo servicio
+              </button>
+              <button
+                onClick={loadServices}
+                disabled={loadingServices}
+                className="btn-ghost py-1.5 px-3 text-xs rounded-lg disabled:opacity-50"
+              >
+                {loadingServices ? 'Cargando...' : 'Recargar'}
+              </button>
+            </div>
           </div>
 
           {loadingServices && services.length === 0 && (
@@ -874,7 +918,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
 
           {!loadingServices && services.length === 0 && (
             <div className="glass p-6 rounded-2xl text-center text-sm text-slate-400">
-              No hay servicios cargados todavía.
+              No hay servicios cargados todavía. Pulse «+ Nuevo servicio» para crear el primero.
             </div>
           )}
 

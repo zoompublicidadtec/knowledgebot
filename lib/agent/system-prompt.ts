@@ -14,11 +14,35 @@ export interface AgentPersona {
   offtopic_redirect: string;
   payment_methods: string;
   payment_terms: string;
-  /** A dónde paga el cliente: cuenta, titular, identificación fiscal. */
-  payment_details: string;
+  /** A dónde paga el cliente. Lista sin límite: banco, billetera, plataforma… */
+  payment_accounts: Array<{
+    tipo?: string;
+    entidad?: string;
+    tipo_cuenta?: string;
+    numero?: string;
+    titular?: string;
+  }>;
   /** Qué datos se le piden al cliente para cerrar la venta. */
   closing_data: string;
   free_mockup: boolean;
+}
+
+/**
+ * Abrevia el titular de una cuenta: "Oscar Herrera Lopez" -> "Oscxx Herxxxx Lopxx".
+ *
+ * Un nombre completo junto a un número de cuenta es dato sensible, y el chat de
+ * WhatsApp queda en el teléfono del cliente. Con las tres primeras letras basta
+ * para que el banco lo valide y para que el cliente confirme que es la empresa
+ * correcta, sin exponer la identidad entera de nadie.
+ */
+export function enmascararTitular(nombre: string): string {
+  return String(nombre || '')
+    .trim()
+    .split(/\s+/)
+    .map(palabra =>
+      palabra.length <= 3 ? palabra : palabra.slice(0, 3) + 'x'.repeat(palabra.length - 3)
+    )
+    .join(' ');
 }
 
 export const DEFAULT_PERSONA: AgentPersona = {
@@ -44,7 +68,7 @@ export const DEFAULT_PERSONA: AgentPersona = {
    */
   payment_methods: '',
   payment_terms: '',
-  payment_details: '',
+  payment_accounts: [],
   closing_data: '',
   free_mockup: true,
 };
@@ -143,8 +167,20 @@ export function buildSystemPrompt(
     persona.payment_methods || persona.payment_terms
       ? `, y explica el pago: ${[persona.payment_methods, persona.payment_terms].filter(Boolean).join(', ')}`
       : '';
-  const cierreCuenta = persona.payment_details
-    ? `. Si pregunta a dónde paga, dale exactamente estos datos: ${persona.payment_details}`
+  const cuentas = (persona.payment_accounts || [])
+    .map(c => {
+      const partes = [
+        c.entidad,
+        c.tipo_cuenta,
+        c.numero,
+        c.titular ? `a nombre de ${enmascararTitular(c.titular)}` : '',
+      ].filter(Boolean);
+      return partes.join(' · ');
+    })
+    .filter(Boolean);
+
+  const cierreCuenta = cuentas.length > 0
+    ? `. Si pregunta a dónde paga, dale EXACTAMENTE estas cuentas, sin cambiar un dígito: ${cuentas.join(' | ')}. El titular va abreviado a propósito por seguridad: NO lo completes ni lo adivines.`
     : `. Si pregunta a dónde paga y no tienes los datos de la cuenta, dile con naturalidad que se los confirma el equipo enseguida. NUNCA inventes un número de cuenta, un banco ni un titular.`;
 
   return `Eres ${persona.agent_name}, ${persona.role} de ${persona.company}. Atiendes por WhatsApp y tu único objetivo es VENDER.

@@ -40,6 +40,12 @@ export default function CustomizationClientForm({ initialConfig }: Customization
     Array.isArray(businessInfo?.topics) ? businessInfo.topics : []
   );
 
+  // Cuentas de pago: lista sin límite. El titular se escribe completo y el
+  // panel muestra cómo lo va a decir el bot (abreviado).
+  const [cuentas, setCuentas] = useState<any[]>(
+    Array.isArray(persona?.payment_accounts) ? persona.payment_accounts : []
+  );
+
   function addService() {
     setServices((prev) => [
       ...prev,
@@ -163,7 +169,9 @@ export default function CustomizationClientForm({ initialConfig }: Customization
         </div>
 
         <div>
-          <label className="block text-xs font-semibold mb-1 text-slate-400">Saludo inicial</label>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">
+            Primera frase que dice el bot
+          </label>
           <input
             name="agentGreeting"
             type="text"
@@ -171,10 +179,15 @@ export default function CustomizationClientForm({ initialConfig }: Customization
             className="input text-sm"
             placeholder="Hola, hablas con Oscar Herrera. Cuéntame, ¿cómo te puedo ayudar?"
           />
+          <p className="text-[10px] text-slate-500 mt-1">
+            Solo se dice una vez, al empezar la conversación. Nunca se repite después.
+          </p>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold mb-1 text-slate-400">Qué vende (alcance del negocio)</label>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">
+            Qué vende su negocio
+          </label>
           <textarea
             name="agentScope"
             defaultValue={persona.scope || ''}
@@ -182,13 +195,16 @@ export default function CustomizationClientForm({ initialConfig }: Customization
             placeholder="mugs, termos, bolígrafos, cuadernos, gorras, camisetas..."
           />
           <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-            <Info size={12} /> Si el cliente pide algo fuera de esta lista, el bot reconduce en una frase
-            en vez de ponerse a preguntar sobre temas que no vendes.
+            <Info size={12} /> Escríbalo como se lo diría a un cliente. Si le piden algo que no está
+            aquí, el bot lo dice y vuelve a lo suyo en una frase, en vez de ponerse a preguntar por
+            cosas que usted no vende.
           </p>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold mb-1 text-slate-400">Frase de reconducción</label>
+          <label className="block text-xs font-semibold mb-1 text-slate-400">
+            Qué contesta cuando le piden algo que usted no vende
+          </label>
           <input
             name="agentOfftopic"
             type="text"
@@ -196,14 +212,27 @@ export default function CustomizationClientForm({ initialConfig }: Customization
             className="input text-sm"
             placeholder="Eso puntual no lo manejamos, pero justo en {scope} te puedo ayudar de una."
           />
-          <p className="text-[10px] text-slate-500 mt-1">
-            Usa <code className="text-primary-400">{'{scope}'}</code> para insertar lo que vendes.
-          </p>
+          <div className="text-[10px] text-slate-500 mt-1 space-y-1">
+            <p>
+              Donde escriba <code className="text-primary-400">{'{scope}'}</code> se pega{' '}
+              <strong className="text-slate-300">lo que usted vende</strong>, o sea el campo de
+              arriba. <strong className="text-slate-300">No</strong> se pega lo que pidió el cliente.
+            </p>
+            <p className="text-slate-500">
+              Si un cliente pide unicornios, el bot NO dice «te puedo ayudar en unicornios». Dice
+              «no manejamos eso, pero en <em>{'{lo que usted vende}'}</em> te puedo ayudar».
+            </p>
+            <p className="text-slate-600">
+              Si prefiere, borre <code>{'{scope}'}</code> y escriba la frase completa a mano.
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold mb-1 text-slate-400">Medios de pago</label>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">
+              Cómo puede pagar (solo los nombres)
+            </label>
             <input
               name="paymentMethods"
               type="text"
@@ -213,7 +242,9 @@ export default function CustomizationClientForm({ initialConfig }: Customization
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold mb-1 text-slate-400">Condiciones de pago</label>
+            <label className="block text-xs font-semibold mb-1 text-slate-400">
+              Cuándo se paga
+            </label>
             <input
               name="paymentTerms"
               type="text"
@@ -224,21 +255,122 @@ export default function CustomizationClientForm({ initialConfig }: Customization
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold mb-1 text-slate-400">
-            A dónde paga el cliente (cuenta, titular, identificación)
-          </label>
-          <textarea
-            name="paymentDetails"
-            rows={2}
-            defaultValue={persona.payment_details || ''}
-            className="input text-sm"
-            placeholder="Bancolombia Ahorros 123-456789-00 a nombre de Mi Empresa S.A.S., NIT 900.123.456-7"
-          />
-          <p className="text-[10px] text-slate-500 mt-1">
-            Sin esto, el bot no puede responder «¿a dónde pago?» y solo dirá que lo consulta
-            con el equipo. Nunca inventa una cuenta.
-          </p>
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300">
+                Cuentas donde puede pagar el cliente
+              </label>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Agregue todas las que use: banco, Nequi, Daviplata, PayPal, Binance, Wise,
+                lo que sea. Si no agrega ninguna, el bot dirá que el equipo se las confirma
+                y <strong>nunca inventará</strong> un número.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setCuentas([...cuentas, { tipo: '', entidad: '', tipo_cuenta: '', numero: '', titular: '' }])
+              }
+              className="btn-secondary text-xs shrink-0"
+            >
+              + Agregar cuenta
+            </button>
+          </div>
+
+          <input type="hidden" name="paymentAccountsJson" value={JSON.stringify(cuentas)} />
+
+          {cuentas.length === 0 && (
+            <p className="text-xs text-slate-500 italic">
+              Sin cuentas todavía.
+            </p>
+          )}
+
+          {cuentas.map((c: any, i: number) => {
+            const actualizar = (campo: string, valor: string) => {
+              const copia = [...cuentas];
+              copia[i] = { ...copia[i], [campo]: valor };
+              setCuentas(copia);
+            };
+            // Lo que el cliente va a leer: el titular abreviado.
+            const titularVisible = String(c.titular || '')
+              .trim()
+              .split(/\s+/)
+              .map((w: string) => (w.length <= 3 ? w : w.slice(0, 3) + 'x'.repeat(w.length - 3)))
+              .join(' ');
+
+            return (
+              <div key={i} className="p-3 rounded-lg bg-white/5 border border-white/10 space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Entidad
+                    </label>
+                    <input
+                      type="text"
+                      value={c.entidad || ''}
+                      onChange={e => actualizar('entidad', e.target.value)}
+                      className="input text-sm"
+                      placeholder="Bancolombia, Nequi, PayPal, Binance…"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Tipo
+                    </label>
+                    <input
+                      type="text"
+                      value={c.tipo_cuenta || ''}
+                      onChange={e => actualizar('tipo_cuenta', e.target.value)}
+                      className="input text-sm"
+                      placeholder="Ahorros, Corriente, Billetera, Cripto…"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Número, usuario o correo
+                    </label>
+                    <input
+                      type="text"
+                      value={c.numero || ''}
+                      onChange={e => actualizar('numero', e.target.value)}
+                      className="input text-sm"
+                      placeholder="123-456789-00 · pagos@empresa.com"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row md:items-end gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Titular (nombre completo)
+                    </label>
+                    <input
+                      type="text"
+                      value={c.titular || ''}
+                      onChange={e => actualizar('titular', e.target.value)}
+                      className="input text-sm"
+                      placeholder="Oscar Herrera Lopez"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCuentas(cuentas.filter((_: any, j: number) => j !== i))}
+                    className="text-xs text-red-400 hover:text-red-300 px-2 py-2 shrink-0"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+
+                {titularVisible && (
+                  <p className="text-[11px] text-emerald-300/80">
+                    El cliente verá: <strong>{titularVisible}</strong> — se abrevia solo, por
+                    seguridad. Usted escribe el nombre completo.
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div>

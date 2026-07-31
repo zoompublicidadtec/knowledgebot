@@ -30,6 +30,29 @@ export async function saveAgentConfigAction(formData: FormData) {
    * un abogado añade "Honorarios" y "Horarios de audiencia", una clínica añade
    * "Preparación para exámenes". El bot los consulta por su título.
    */
+  /**
+   * Cuentas de pago. El titular se guarda completo pero NUNCA sale completo:
+   * `enmascararTitular()` lo recorta antes de que el bot lo diga, porque un
+   * nombre completo junto a un numero de cuenta es dato sensible en un chat.
+   */
+  const cuentasRaw = formData.get('paymentAccountsJson') as string;
+  let cuentasDePago: Array<Record<string, string>> = [];
+  try {
+    const parsed = cuentasRaw ? JSON.parse(cuentasRaw) : [];
+    cuentasDePago = (Array.isArray(parsed) ? parsed : [])
+      .map((c: any) => ({
+        tipo: String(c?.tipo || '').trim(),
+        entidad: String(c?.entidad || '').trim(),
+        tipo_cuenta: String(c?.tipo_cuenta || '').trim(),
+        numero: String(c?.numero || '').trim(),
+        titular: String(c?.titular || '').trim(),
+      }))
+      // Sin entidad y sin numero no hay a donde pagar: no se guarda a medias.
+      .filter(c => c.entidad && c.numero);
+  } catch {
+    return { error: 'Formato de cuentas de pago inválido. Intenta de nuevo.' };
+  }
+
   const topicsRaw = formData.get('topicsJson') as string;
   let topics: Array<{ titulo: string; contenido: string }> = [];
   try {
@@ -99,11 +122,15 @@ export async function saveAgentConfigAction(formData: FormData) {
     payment_methods: ((formData.get('paymentMethods') as string) || '').trim(),
     payment_terms: ((formData.get('paymentTerms') as string) || '').trim(),
     /**
-     * A DONDE paga el cliente: cuenta, titular, identificacion fiscal. El panel
-     * solo tenia los nombres de los bancos, asi que cuando el cliente preguntaba
-     * "listo, a donde pago" el bot no tenia el dato y lo rellenaba.
+     * A DONDE paga el cliente. Lista sin limite, no un texto suelto: cada cuenta
+     * con su entidad, su tipo, su numero y su titular.
+     *
+     * `tipo` es texto libre a proposito. Antes solo se contemplaban bancos
+     * colombianos; hoy un negocio cobra por PayPal, Binance, Wise, Mercado Pago
+     * o lo que exista manana, y el sistema no puede quedarse corto por una
+     * lista cerrada escrita en el codigo.
      */
-    payment_details: ((formData.get('paymentDetails') as string) || '').trim(),
+    payment_accounts: cuentasDePago,
     /**
      * Que datos se le piden al cliente para cerrar. Estaban fijos en el codigo
      * ("nombre o razon social, NIT o cedula, correo, direccion de envio"), lo
