@@ -47,7 +47,7 @@ services:
       # Baileys. Si reenviara una que ya recibe el otro puente, el agente
       # correria dos veces y el cliente veria cada respuesta duplicada.
       # Fase 1: linea_2 ya recibe por Baileys; linea_1 todavia no.
-      - FORWARD_INBOUND_LINES=linea_1
+      - FORWARD_INBOUND_LINES=linea_1,linea_2
     volumes:
       - ./wwebjs_sessions:/data/wwebjs_sessions
       - ./wa-server/.wwebjs_cache:/app/.wwebjs_cache
