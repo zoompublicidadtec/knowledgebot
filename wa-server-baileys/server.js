@@ -1540,7 +1540,12 @@ async function arrancarLineas() {
             .readdirSync(SESSIONS_ROOT, { withFileTypes: true })
             .filter((d) => d.isDirectory() && d.name.startsWith('session-'))
             .map((d) => d.name.slice('session-'.length))
-            .filter(Boolean);
+            .filter(Boolean)
+            // Que exista la CARPETA no significa que la línea esté vinculada:
+            // al desvincular queda vacía. Si se arrancaba por la carpeta, la
+            // línea volvía a levantarse y a pedir QR en cada reinicio, sin que
+            // nadie estuviera mirando. Lo que decide es `creds.json`.
+            .filter((line) => tieneCredenciales(line));
     } catch (e) {
         logger.error({ err: e.message }, 'No se pudieron listar las sesiones en disco');
     }
