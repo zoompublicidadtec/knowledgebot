@@ -17,7 +17,7 @@ ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
 `EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
 
 El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`3c6fcc0`**. **Si el código cambió desde
+Está generado contra el commit **`26101a9`**. **Si el código cambió desde
 entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
 
 ### Cómo consultarlo (por SSH al VPS)
@@ -29,7 +29,7 @@ cd /root/knowledgebot
 
 # 1) ¿El grafo sigue vigente? Lo que lo invalida es que cambie el CODIGO, no
 #    que avance el HEAD: un commit de documentacion no lo desactualiza.
-git diff --stat 3c6fcc0..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
+git diff --stat 26101a9..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
 #    Sin salida = el grafo esta al dia. Con salida = regenerar (paso 4).
 
 # 2) Entender un símbolo / concepto / archivo:
@@ -50,8 +50,9 @@ graphify diagnose multigraph
 
 ### Qué contiene el grafo
 
-- `graph.json` — grafo consultable. Al 31-jul-2026: **2.165 aristas**,
-  `graphify diagnose multigraph` sin duplicados ni variantes contradictorias.
+- `graph.json` — grafo consultable. Al 01-ago-2026: **1.306 nodos y 2.177
+  aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
+  contradictorias.
 - `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
 - `graph.html` (1 MB) — visualización interactiva (abrir en navegador).
 
@@ -76,7 +77,7 @@ orden de autoridad: si dos documentos dicen cosas distintas, manda el de arriba.
 | 8 | `data/README_BASE_DE_DATOS.md` | Describe el catálogo **de origen** de importados (junio 2026) | Solo origen de datos |
 | 9 | `catalogo_catalogospromocionales/README.md` y `BASE_DE_DATOS/README_BASE_DE_DATOS.md` | Ídem; el segundo es copia del primero | Solo origen de datos |
 
-## 2. Los seis datos que la documentación vieja tiene mal
+## 2. Los siete datos que la documentación vieja tiene mal
 
 Si un documento afirma lo contrario de esto, el documento está equivocado:
 
@@ -89,12 +90,12 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
      **No usa pgvector.**
    - **Glosario y base de conocimiento** → **1536D** en Supabase
      `knowledge_chunks` (Gemini truncado a 1536 por el esquema `vector(1536)`).
-     ⚠️ **Esa tabla está VACÍA en producción: 0 filas, medido el 2026-08-01.**
-     La herramienta `queryKnowledgeBase` sigue conectada al agente y el prompt
-     manda usarla, así que el bot consulta el vacío cuando le preguntan por
-     políticas o procesos. Es un defecto abierto, no una pieza funcional: ver
-     `docs/ESTADO_OPERATIVO.md` §4. Las dimensiones de abajo describen el
-     **esquema**, no que haya datos.
+     ⚠️ **Esa tabla está VACÍA (0 filas) y YA NO LA CONSULTA NADIE.** Desde el
+     01-ago-2026, `queryKnowledgeBase` lee los datos del negocio del **panel**
+     (`agent_configs.business_info`), que es donde el dueño los escribe y donde
+     se actualizan solos. Se conserva el esquema por si algún día hace falta un
+     volumen documental que no quepa en el panel. Las dimensiones describen el
+     **esquema**, no que haya datos. Ver `docs/ESTADO_OPERATIVO.md` §4.
 3. **Hay UN SOLO puente y atiende TODAS las líneas por igual**
    (desde el 2026-07-31). Cualquier documento que hable de dos puentes, de
    repartir líneas entre ellos, o de `BRIDGE_LINES` / `WHATSAPP_BRIDGE_ROUTES`
@@ -140,6 +141,19 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
 
    Antes de culpar al código por un 463: probar el mismo envío desde otra
    línea. Si esa entrega, el problema es la cuenta, no el sistema.
+7. **Ningún dato del negocio se escribe en el código.** Medios de pago,
+   condiciones, cuenta bancaria, garantía, tiempos de entrega, sitio web y los
+   datos que se piden al cerrar **viven en el panel** (Personalización). Los
+   valores por defecto de `DEFAULT_PERSONA` están **vacíos a propósito**: antes
+   traían `'Bancolombia, Nequi, Daviplata o PSE'` y `'50% para iniciar
+   producción'`, y con el campo vacío el bot los soltaba como ciertos. Para
+   ZOOM sonaban razonables; para otro negocio eran mentiras dichas con total
+   seguridad.
+
+   **Regla:** si un dato falta, el prompt omite la frase entera y el bot dice
+   que lo consulta con el equipo. **Nunca se rellena con un ejemplo.** Si le
+   piden añadir un valor por defecto "para que no quede vacío", es exactamente
+   el fallo que se corrigió.
 
 ## 3. Reglas estrictas del proyecto
 

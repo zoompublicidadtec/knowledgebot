@@ -223,61 +223,88 @@ sepa el nombre.
 
 ## 4. Qué está ROTO o pendiente 🔴⚠️
 
-### 🔴 La base de conocimiento está VACÍA, y al bot se le manda consultarla
+### ✅ Los datos del negocio salen del panel, y si falta uno el bot lo admite
 
-Medido el 2026-08-01 contra producción: **`knowledge_chunks` tiene 0 filas.**
+**Corrige lo que decía este mismo documento la mañana del 01-ago.** Entonces se
+documentó como defecto abierto que `knowledge_chunks` estaba vacía mientras el
+prompt ordenaba consultarla. Se resolvió esa misma tarde, y no llenando la
+tabla: la herramienta ahora lee de donde el dueño ya escribía.
 
-No es solo que esté vacía: la herramienta está **viva y conectada**, y el prompt
-le ordena al modelo usarla.
+**El problema real era doble:**
 
-| Comprobación | Resultado |
-|---|---|
-| Filas en `knowledge_chunks` | **0** |
-| Herramienta registrada en el agente | Sí — `lib/agent/index.ts:755` |
-| El prompt manda usarla | Sí — `system-prompt.ts:141`: *"Para políticas, procesos o datos del negocio usa queryKnowledgeBase"* |
-| Quién la llena | Solo scripts (`ingest_all_sheets.ts`, `update_knowledge.ts`), nunca ejecutados en producción |
+1. `queryKnowledgeBase` consultaba `knowledge_chunks` — **0 filas**, y sus
+   scripts de ingesta nunca se han ejecutado en producción. El bot recibía nada
+   cada vez, que es el escenario que le hace inventar.
+2. Mientras tanto, el panel **ya guardaba** dirección, teléfono, correo,
+   política de cancelación y horarios en `agent_configs.business_info`… y el
+   bot no podía leerlos.
 
-**Consecuencia para el cliente:** cuando pregunta por políticas, procesos,
-garantías, tiempos de entrega o condiciones del negocio, el bot consulta, no
-recibe nada, y responde con lo que pueda. Es exactamente el escenario que
-produce alucinaciones: pregunta concreta + cero datos + una instrucción que
-afirma que ahí debería haberlos.
+**Ahora** `queryKnowledgeBase` lee `business_info` (`fichasDelNegocio()` y
+`buscarEnFichas()` en `lib/agent/tools/query-knowledge-base.ts`). Es
+determinista, no gasta embeddings y se actualiza en cuanto se guarda el panel.
 
-**Qué NO hacer:** añadir reglas al prompt para tapar el hueco (ver §7.7). El
-problema es de datos, no de redacción.
+#### Lo que estaba escrito en el código y ahora vive en el panel
 
-**Las dos salidas honestas**, y hay que elegir una:
-1. **Cargarla** con el glosario y las políticas reales, ejecutando los scripts
-   de ingesta. Es lo que se pretendía desde el principio.
-2. **Retirar la herramienta** del agente y su línea del prompt mientras no haya
-   datos. Un bot que no ofrece consultar políticas es mejor que uno que
-   consulta el vacío y rellena.
+| Dato | Antes | Ahora |
+|---|---|---|
+| Medios de pago | `'Bancolombia, Nequi, Daviplata o PSE'` en `DEFAULT_PERSONA` | vacío; solo del panel |
+| Condiciones de pago | `'50% para iniciar producción y 50% contra entrega'` | vacío; solo del panel |
+| **A dónde paga** (cuenta, titular, NIT) | **no existía en ninguna parte** | campo del panel |
+| **Datos que se piden al cerrar** | fijos en la Fase 4 del prompt | campo del panel |
+| Página web, garantía, tiempos de entrega | no existían | campos del panel |
+| Cualquier otro tema del oficio | — | lista libre `topics` (título + contenido) |
 
-Dejarlo como está es la peor de las tres, porque falla en silencio.
+Los valores por defecto eran de **un** negocio escritos en el código. Para ZOOM
+sonaban razonables; para un despacho de abogados o un cliente de otro país
+habrían sido mentiras dichas con total seguridad.
 
-> ⚠️ Cuidado al leer documentos viejos: describen `knowledge_chunks` como parte
-> funcional de la arquitectura. El **esquema** existe y el **código** la usa;
-> lo que no existe son los **datos**. Las tres cosas hay que decirlas por
-> separado.
+#### La regla nueva: sin dato, no se rellena
 
-### 🔴 El bot no entiende los audios: es SALDO, no código
-La transcripción devuelve **402** de OpenRouter:
+Si un campo está vacío, **el prompt omite la frase entera**. Y para la cuenta
+bancaria hay instrucción explícita de no inventar número, banco ni titular, y
+decir que el equipo lo confirma. Callar es correcto; rellenar no.
+
+#### El guardrail de precios no estorba, y ya se midió
+
+El candado solo mira cifras con `$` (`/\$[\d.,]+/`). Garantías, plazos,
+horarios y sitios web pasan sin tocarse. El único caso que bloqueaba era una
+política **con un monto** ("envío gratis sobre $200.000"): ahora se aceptan las
+cifras que devuelva `queryKnowledgeBase` **en ese mismo turno**, es decir las
+que el dueño escribió. Un precio de producto sigue exigiendo la calculadora.
+
+> ⚠️ **`knowledge_chunks` sigue con 0 filas y ya no la consulta nadie en el
+> camino normal.** Se conserva como respaldo por si algún día se carga un
+> volumen documental que no quepa en el panel. No la documente como pieza viva.
+
+### ⚠️ Falta probar con datos reales
+
+Los campos nuevos están desplegados pero **el panel está casi vacío**: al
+01-ago solo hay nombre del negocio y política de cancelación. Hasta que el dueño
+los llene, el bot responderá "lo confirmo con el equipo" a casi todo lo que no
+sea catálogo. Eso es correcto, pero se nota.
+
+### ✅ El bot sí entiende los audios (resuelto)
+Este documento decía que la transcripción devolvía **402** de OpenRouter por
+falta de saldo. **Ya no.** Medido el 01-ago-2026 en producción:
 
 ```
-"This request requires at least $0.50 in balance for audio"
-limit_source: openrouter_key_limit
+Sending audio transcription request to OpenRouter (format: ogg)
+Successfully transcribed audio  length: 47
 ```
 
-El audio **se descarga y se guarda en R2 sin problema** (se oye en el panel),
-pero la transcripción se rechaza antes de empezar. **Lo resuelve el dueño** en
-`openrouter.ai/settings/keys`: subir el saldo o quitarle el límite a esa clave.
-Hasta entonces el bot responde "no pude escuchar tu nota de voz".
+Nota de voz real del dueño: *"Hola, quiero cotizar unas agenditas"* → el bot
+cotizó cuadernos correctamente. El audio se descarga (Baileys), se guarda en R2
+y se transcribe.
 
-### ⚠️ Latencia de respuesta: 7 a 26 segundos
-Medido el 2026-07-30 en `linea_2`: **7,4 s** un mensaje simple y **25,9 s** uno
-que dispara búsqueda de catálogo y cotización, con dos mensajes más entrando a
-la vez. El tiempo se va en el modelo y la búsqueda, no en la infraestructura:
-la subida a R2 tarda **200 ms** y la entrega del webhook **6 ms**.
+### ⚠️ Latencia de respuesta: 28 a 56 segundos
+Medido el 31-jul-2026, **peor que los 7-26 s que decía este documento**:
+`latency_ms` de 28.171, 44.442, 47.567 y 56.065 en mensajes reales. El tiempo se
+va en el modelo y la búsqueda; la infraestructura no es el problema (R2 tarda
+200 ms, el webhook 6 ms). Falta el desglose por etapa.
+
+> Decisión del dueño (01-ago-2026): **no es prioritario.** El bot es humanizado
+> y un humano tampoco contesta al instante; con "en línea" y "escribiendo…"
+> activos, la espera se lee como atención, no como falla.
 
 ### 🔴 Faltan las tarifas de marcación
 La hoja `MARCAS` del Excel define tampografía, screen y láser por técnica y
