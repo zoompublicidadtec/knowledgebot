@@ -17,7 +17,7 @@ ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
 `EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
 
 El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`f76eef3`**. **Si el código cambió desde
+Está generado contra el commit **`3c6fcc0`**. **Si el código cambió desde
 entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
 
 ### Cómo consultarlo (por SSH al VPS)
@@ -28,7 +28,7 @@ export PATH=$HOME/.local/bin:$PATH
 cd /root/knowledgebot
 
 # 1) ¿El grafo sigue vigente? Comparar commit actual con el del grafo:
-git rev-parse HEAD                       # si difiere de f76eef3, regenerar (paso 4)
+git rev-parse HEAD                       # si difiere de 3c6fcc0, regenerar (paso 4)
 
 # 2) Entender un símbolo / concepto / archivo:
 graphify explain "processInboundMessage"
