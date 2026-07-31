@@ -27,8 +27,10 @@ entonces, el grafo está desactualizado y miente** → regeneralo antes de confi
 export PATH=$HOME/.local/bin:$PATH
 cd /root/knowledgebot
 
-# 1) ¿El grafo sigue vigente? Comparar commit actual con el del grafo:
-git rev-parse HEAD                       # si difiere de 3c6fcc0, regenerar (paso 4)
+# 1) ¿El grafo sigue vigente? Lo que lo invalida es que cambie el CODIGO, no
+#    que avance el HEAD: un commit de documentacion no lo desactualiza.
+git diff --stat 3c6fcc0..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
+#    Sin salida = el grafo esta al dia. Con salida = regenerar (paso 4).
 
 # 2) Entender un símbolo / concepto / archivo:
 graphify explain "processInboundMessage"
@@ -86,23 +88,51 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
      **No usa pgvector.**
    - **Glosario y base de conocimiento** → **1536D** en Supabase
      `knowledge_chunks` (Gemini truncado a 1536 por el esquema `vector(1536)`).
-3. **Hay DOS puentes de WhatsApp a la vez, y cada línea va al suyo**
-   (desde el 2026-07-30). Esto cambió: cualquier documento que diga que solo
-   existe el 3004, o que Baileys no está desplegado, está desactualizado.
-   - **`linea_1` → `whatsapp-web.js`, puerto 3004** (`wa-server/`). **No puede
-     descargar media**: 0 archivos de 328 mensajes entrantes medidos.
-   - **`linea_2` → Baileys, puerto 3005** (`wa-server-baileys/`). Sí descarga:
-     imagen de 22 KB en 59 ms, audio de 11 KB en 154 ms, medido en producción.
-   - Quién atiende cada línea lo deciden **dos compuertas en código**:
-     `BRIDGE_LINES` en cada puente (ninguno arranca una línea ajena) y
-     `WHATSAPP_BRIDGE_ROUTES` en `.env.production`, que le dice a la app a qué
-     puente hablarle por línea (`getBridgeUrl(lineKey)`).
-   - Para migrar otra línea: añadirla a `BRIDGE_LINES` del puente Baileys,
-     quitarla del viejo, añadir su ruta y escanear un QR. No hay código nuevo.
+3. **Hay UN SOLO puente y atiende TODAS las líneas por igual**
+   (desde el 2026-07-31). Cualquier documento que hable de dos puentes, de
+   repartir líneas entre ellos, o de `BRIDGE_LINES` / `WHATSAPP_BRIDGE_ROUTES`
+   como algo vigente, está desactualizado.
+   - **Baileys, puerto 3005** (`wa-server-baileys/`) es el único puente.
+     Envía, recibe y **descarga audio e imagen**: imagen de 22 KB en 59 ms,
+     audio de 11 KB en 154 ms, medido en producción.
+   - **`whatsapp-web.js`, puerto 3004** (`wa-server/`) está **detenido**. Su
+     almacén interno quedó desfasado de la versión actual de WhatsApp Web:
+     fallan `downloadMedia()` **y `getChats()`** con un `[Error] r` ilegible.
+     Fijar la versión de WhatsApp Web **no lo arregla** (se pidió la
+     `2.3000.1040516757-alpha` y se cargó igual la `2.3000.1044236315`), y la
+     librería ya está en su última versión publicada. No es recuperable.
+   - **Ninguna línea se enumera en ninguna parte.** `BRIDGE_LINES` y
+     `FORWARD_INBOUND_LINES` se quitaron de `docker-compose.yml`: al nombrar
+     las líneas una por una, cualquier línea nueva quedaba fuera **en
+     silencio**. Vacías = todas. El puente descubre las líneas de la tabla
+     `whatsapp_lines` más las sesiones en disco (`arrancarLineas()`).
+   - Para sumar una línea: registrarla y escanear su QR. Nada más. La ranura
+     (`linea_1`, `linea_2`, …) es independiente del número: cualquier teléfono,
+     de cualquier país, puede ir en cualquier ranura.
 4. **Nunca Meta Cloud API.** La memoria técnica menciona "Meta Cloud API
    (Producción)": está prohibido y no existe en el sistema.
 5. **El despliegue es Docker sobre un VPS Hostinger** (2.25.169.103). El README
    habla de Railway: quedó de una etapa anterior.
+6. **El error 463 NO es culpa del `@lid` ni de Baileys.** Esto se documentó mal
+   el 30-jul y costó una arquitectura entera de dos puentes construida sobre
+   una causa falsa. Lo medido el 31-jul, enviando desde el propio servidor:
+
+   | Envío | Resultado |
+   |---|---|
+   | `linea_1` → `linea_2` | ✅ entregado |
+   | `linea_1` → teléfono personal | ✅ entregado |
+   | `linea_2` → sí misma | ✅ entregado |
+   | `linea_2` → `linea_1` (al teléfono) | ❌ 463 |
+   | `linea_2` → `linea_1` (al `@lid`) | ❌ 463 |
+   | `linea_2` → teléfono personal | ❌ 463 |
+
+   **Baileys sí envía.** Lo que falla es una cuenta concreta: el
+   **573107975278** no puede escribirle a nadie, con `@lid` o sin él. Es un
+   bloqueo temporal de WhatsApp por volumen de mensajes automáticos — el propio
+   nombre del error, *timelocked*, lo dice. Se levanta con reposo.
+
+   Antes de culpar al código por un 463: probar el mismo envío desde otra
+   línea. Si esa entrega, el problema es la cuenta, no el sistema.
 
 ## 3. Reglas estrictas del proyecto
 
@@ -149,7 +179,7 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
 ```bash
 curl -s http://localhost:8001/health          # motor RAG
 curl -s http://localhost:8001/stats           # catálogo y cobertura vectorial
-curl -s http://localhost:3004/diagnostic      # puente de WhatsApp
+curl -s http://localhost:3005/diagnostic      # puente de WhatsApp (Baileys)
 docker ps ; systemctl status knowledgebot-rag
 docker logs --tail 80 knowledgebot-app | grep -iE 'guardrail|candado|rail'
 ```

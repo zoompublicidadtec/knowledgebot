@@ -1,7 +1,7 @@
 # ESTADO OPERATIVO — KnowledgeBot SaaS (ZOOM Publicidad)
 
 > **Fuente de verdad sobre el estado actual del sistema.**
-> Verificado el 2026-07-29 mediante auditoría directa sobre el VPS de producción.
+> Verificado el 2026-07-31 mediante auditoría directa sobre el VPS de producción.
 > El VPS es la fuente de verdad de facto (el repo local y GitHub están desactualizados).
 
 ---
@@ -29,9 +29,9 @@
 │                                                                     │
 │  ┌──────────────────────┐    ┌──────────────────────────────────┐  │
 │  │  App Next.js         │    │  Puente WhatsApp (Node.js)        │  │
-│  │  knowledgebot-app    │◄──►│  knowledgebot-wa-bridge (3004)    │  │
-│  │  Puerto 3003         │    │  whatsapp-web.js + Chrome         │  │
-│  │  Next.js 16 + React  │    │  ATIENDE linea_1 y linea_2        │  │
+│  │  knowledgebot-app    │◄──►│  knowledgebot-wa-bridge-baileys   │  │
+│  │  Puerto 3003         │    │  Puerto 3005 · Baileys, sin Chrome │  │
+│  │  Next.js 16 + React  │    │  ATIENDE TODAS LAS LINEAS         │  │
 │  └────────┬─────────────┘    └──────────────────────────────────┘  │
 │           │                                                         │
 │           ▼                                                         │
@@ -51,60 +51,89 @@
    └──────────────────────────┘
 ```
 
-> ⚠️ **Cambio de arquitectura (2026-07-30): ahora hay DOS puentes.** El diagrama
-> de arriba describe el estado del 29-jul. Desde el 30-jul, `linea_2` se atiende
-> con Baileys en el puerto 3005 y `linea_1` sigue en `whatsapp-web.js` (3004).
-> El motivo está medido: el puente viejo **no puede descargar la media entrante**
-> (0 archivos en 328 mensajes; el log dice `ERROR descargando media (type=ptt):
-> [Error] r || r`). Baileys sí: imagen de 22 KB en 59 ms, audio de 11 KB en
-> 154 ms, en producción.
+> ⚠️ **Cambio de arquitectura (2026-07-31): UN SOLO PUENTE.** El diagrama de
+> arriba describe el estado del 29-jul y ya no vale. Hoy **Baileys (3005) atiende
+> TODAS las líneas**, y `whatsapp-web.js` (3004) está **detenido**.
+>
+> Motivo medido: el almacén interno de `whatsapp-web.js` quedó desfasado de la
+> versión actual de WhatsApp Web. No fallaba solo la descarga de adjuntos —
+> **fallaba `getChats()` también**, con el mismo `[Error] r` ilegible. Fijar la
+> versión de WhatsApp Web no lo arregla (se pidió la `2.3000.1040516757-alpha`
+> y se cargó igual la `2.3000.1044236315`) y la librería ya está en su última
+> versión. No es recuperable desde aquí.
+>
+> Baileys sí descarga: imagen de 22 KB en 59 ms, audio de 11 KB en 154 ms.
 
 ### Los pilares reales
 
 | Pilar | Tecnología | Rol |
 |---|---|---|
-| **Puente `linea_1`** | Node.js + `whatsapp-web.js` (Puppeteer), 3004 | Envía y recibe. **No descarga media.** |
-| **Puente `linea_2`** | Node.js + Baileys (sin Chrome), 3005 | Envía, recibe **y descarga audio e imagen**. |
+| **Puente único** | Node.js + Baileys (sin Chrome), 3005 | Envía, recibe **y descarga audio e imagen**, en **todas** las líneas. |
+| ~~Puente viejo~~ | `whatsapp-web.js` (Puppeteer), 3004 | **Detenido.** Almacén roto: ni adjuntos ni `getChats()`. |
 | **App Next.js** | Next.js 16 + React 19 + Vercel AI SDK | Panel SaaS, webhooks, agente comercial. |
 | **Motor RAG** | FastAPI (systemd) en 8001 | Búsqueda de productos: keyword + vectorial. |
 | **Cloudflare R2** | bucket `knowledgebot-fotos` | Guarda los audios y fotos del cliente. |
 
-### Cómo se reparten las líneas (dos compuertas en código)
+### Cómo se atienden las líneas: sin listas y sin excepciones
 
-1. **`BRIDGE_LINES`** en cada puente: la lista de líneas que ese puente atiende.
-   La comprobación vive dentro de `startSession()`, el único punto por el que se
-   crea una sesión, así que **ninguna ruta HTTP puede colar una línea ajena**.
-   Sin esta compuerta los dos puentes atenderían la misma línea y el cliente
-   recibiría cada respuesta dos veces.
-2. **`WHATSAPP_BRIDGE_ROUTES`** en `.env.production` (`linea_2=http://localhost:3005`):
-   le dice a la app a qué puente hablarle por línea, vía `getBridgeUrl(lineKey)`.
-   Sin la variable, todo va al puente por defecto: el comportamiento de antes.
+**Ninguna línea se enumera en ninguna parte.** `BRIDGE_LINES`,
+`FORWARD_INBOUND_LINES` y `WHATSAPP_BRIDGE_ROUTES` se retiraron de la
+configuración el 31-jul. El motivo es concreto: al nombrar las líneas una por
+una (`linea_1,linea_2`), **cualquier línea nueva quedaba fuera en silencio** —
+el puente la ignoraba sin decir nada. Eso no escala a 8 líneas ni a un cliente
+de otro país.
 
-Para migrar otra línea: añadirla a `BRIDGE_LINES` del 3005, quitarla del 3004,
-añadir su ruta y escanear un QR. **No hay código nuevo que escribir.**
+Las compuertas siguen en el código por si algún día hace falta repartir carga,
+pero **vacías significan «todas»**, y así están. El puente descubre qué líneas
+existen con `arrancarLineas()`: las de la tabla `whatsapp_lines` más las que
+tengan sesión en disco. Una línea registrada sin sesión queda declarada y
+pidiendo QR, en vez de desaparecer del panel.
 
-### 🚫 La trampa del `@lid` — error 463
+**La ranura es independiente del número.** `linea_1` es solo un nombre de
+ranura: el teléfono lo define quien escanea el QR. No hay ningún número escrito
+en el código — verificado el 31-jul con una búsqueda en todo el repositorio.
 
-WhatsApp puede identificar un chat por **`@lid`**, un identificador interno de
-14-15 dígitos que **no es un teléfono**. Enviar a esa dirección **parece
-funcionar**: Baileys resuelve el envío, devuelve un id válido, las métricas
-dicen `send_errors: 0` y la app guarda la respuesta como enviada. Pero WhatsApp
-la rechaza después, en el acuse:
+Para sumar una línea: registrarla y escanear su QR. **Nada más.**
 
-```
-from: 181290854776961@lid  class: message  error: 463  "received error in ack"
-```
+### El error 463 — y la explicación falsa que costó una arquitectura entera
 
-**El cliente no recibe nada y el panel dice que sí respondió.** Costó una tarde
-encontrarlo porque no hay ningún error en el camino de envío.
+**Lo que se documentó el 30-jul era incorrecto.** Decía que el 463 lo causaba
+enviar a un `@lid`, y sobre esa causa falsa se construyeron dos puentes, un
+reparto de líneas y un traductor de direcciones. Nada de eso hacía falta.
 
-Solución en `wa-server-baileys/server.js`: Baileys 6.7.24 trae el teléfono real
-en `key.senderPn` del mensaje entrante. El puente **aprende la correspondencia
-`@lid` → teléfono** en cuanto esa persona escribe, la guarda en el volumen, y
-traduce la dirección al enviar. Si no la conoce, devuelve **503 con la causa**
-en vez de fingir un envío. Visible en `/diagnostic` como `telefonosAprendidos`.
+Medido el 31-jul enviando desde el propio servidor:
 
----
+| Envío | Resultado |
+|---|---|
+| `linea_1` → `linea_2` | ✅ entregado |
+| `linea_1` → teléfono personal | ✅ entregado |
+| `linea_2` → sí misma | ✅ entregado |
+| `linea_2` → `linea_1` (al teléfono) | ❌ 463 |
+| `linea_2` → `linea_1` (al `@lid`) | ❌ 463 |
+| `linea_2` → teléfono personal | ❌ 463 |
+
+**Baileys sí envía.** Falla una cuenta concreta: el **573107975278** no puede
+escribirle a nadie, con `@lid` o sin él. Es un bloqueo temporal de WhatsApp por
+volumen de mensajes automáticos; el nombre del error, *timelocked*, lo dice.
+
+> **Regla:** ante un 463, probar el mismo envío desde otra línea antes de tocar
+> código. Si la otra entrega, el problema es la cuenta.
+
+### El `@lid` sí es un problema, pero de identidad, no de envío
+
+Un `@lid` es un identificador interno de WhatsApp de 14-15 dígitos que **no es
+un teléfono** y del que no se puede deducir el número. El panel lo mostraba
+crudo como si fuera el contacto.
+
+WhatsApp adjunta el teléfono real en `key.senderPn`. El puente lo aprende y
+—desde el 31-jul— **se lo pasa también a la app** (`senderPhone` en el webhook),
+que lo guarda en `contacts.metadata.telefono`. `wa_phone` no se toca: sigue
+siendo la clave de enrutado con la que buscan las herramientas del agente.
+
+Una sola función, **`mostrarContacto()`** en `lib/whatsapp/contact-identity.ts`,
+decide cómo se ve un contacto en todo el panel: el teléfono real si se conoce,
+nunca un `@lid` disfrazado de número, y el teléfono como nombre mientras no se
+sepa el nombre.
 
 ## 2. Versiones y modelos
 
@@ -273,7 +302,7 @@ Hoy hay 2 líneas de prueba configuradas.
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://moaekovebocnagxkkiwm.supabase.co` |
 | `OPENROUTER_API_KEY` | configurado |
 | `CHAT_MODEL` | `google/gemini-2.5-flash` |
-| `WHATSAPP_BRIDGE_URL` | `http://localhost:3004` |
+| `WHATSAPP_BRIDGE_URL` | `http://localhost:3005` (Baileys, puente único) |
 | `RAG_SERVICE_URL` | `http://127.0.0.1:8001` (por defecto) |
 | `R2_*` | configurados (no en uso activo) |
 
@@ -288,14 +317,14 @@ Hoy hay 2 líneas de prueba configuradas.
 docker ps
 systemctl status knowledgebot-rag
 docker logs --tail 50 knowledgebot-app
-docker logs --tail 50 knowledgebot-wa-bridge
+docker logs --tail 50 knowledgebot-wa-bridge-baileys
 
 # Motor RAG
 curl -s http://localhost:8001/health
 curl -s http://localhost:8001/stats
 
 # Puente
-curl -s http://localhost:3004/diagnostic
+curl -s http://localhost:3005/diagnostic
 ```
 
 ---
@@ -336,7 +365,8 @@ ls /root/knowledgebot/backups/products_*.json
 | Servicio | Ruta VPS | Puerto | Proceso |
 |---|---|---|---|
 | App Next.js | `/root/knowledgebot/` | 3003 | `knowledgebot-app` (docker) |
-| Puente WhatsApp | `/root/knowledgebot/wa-server/` | 3004 | `knowledgebot-wa-bridge` (docker) |
+| Puente WhatsApp | `/root/knowledgebot/wa-server-baileys/` | 3005 | `knowledgebot-wa-bridge-baileys` (docker) |
+| ~~Puente viejo~~ | `/root/knowledgebot/wa-server/` | 3004 | `knowledgebot-wa-bridge` — **detenido** |
 | Motor RAG | `/root/knowledgebot/Motor de Conocimiento/` | 8001 | `knowledgebot-rag` (systemd) |
 | Imágenes | `/root/knowledgebot/catalogo_catalogospromocionales/imagenes_productos/` | — | 31.888 archivos |
 | Respaldos | `/root/knowledgebot/backups/` | — | — |
