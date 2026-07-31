@@ -55,6 +55,28 @@ const STAGES = [
     // nadie había confirmado.
     desc: 'El cliente aceptó y va a pagar. Falta que una persona confirme el pago y despache. Si vuelve a pedir algo nuevo, sale solo de aquí.' 
   },
+  {
+    /**
+     * COLUMNA DE PRÓXIMA ENTREGA — deliberadamente inactiva.
+     *
+     * Confirmar que una venta se pagó y se despachó es un acto humano: un bot
+     * no puede verificarlo (un comprobante se falsifica, y el peor caso es dar
+     * por despachado algo que nadie despachó). Por eso 'sold' se llama ahora
+     * "Listo para pagar" y el flujo se detiene ahí.
+     *
+     * Esta columna queda a la vista, pero bloqueada y rotulada como módulo por
+     * llegar. Una columna vacía y sin explicación se lee como algo roto, o peor:
+     * alguien empieza a arrastrar tarjetas y el CRM acaba con ventas cerradas
+     * que nadie verificó. Rotulada, cumple su función sin ensuciar los datos.
+     */
+    id: 'closed',
+    label: 'Vendido',
+    proximamente: true,
+    color: 'bg-slate-500',
+    border: 'border-slate-500/20 border-dashed',
+    bg: 'bg-slate-900/30',
+    desc: 'Ventas con pago confirmado y despacho. Requiere confirmación humana y seguimiento de posventa: módulo por activar.'
+  },
   { 
     id: 'angry', 
     label: 'Molesto', 
@@ -320,14 +342,15 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {STAGES.map(s => {
+              const porVenir = (s as any).proximamente;
               const isBotActive = ['inbox', 'sales', 'sold'].includes(s.id);
               return (
                 <div key={s.id} className="p-3 rounded-xl bg-slate-950/40 border border-white/5">
                   <div className="flex items-center gap-2 mb-1">
                     <div className={`w-2 h-2 rounded-full ${s.color}`} />
                     <span className="text-xs font-bold text-white">{s.label}</span>
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ml-auto ${isBotActive ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
-                      {isBotActive ? '🤖 IA' : '👤 Humano'}
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ml-auto ${porVenir ? 'bg-primary-500/10 text-primary-300 border border-primary-500/30' : isBotActive ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
+                      {porVenir ? 'Próximamente' : isBotActive ? '🤖 IA' : '👤 Humano'}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-400 leading-relaxed">{s.desc}</p>
@@ -356,8 +379,8 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
             key={col.id}
             className={`kanban-col flex-shrink-0 rounded-2xl border ${col.border} ${col.bg} p-3 flex flex-col`}
             style={{ width: 'min(288px, 82vw)' }}
-            onDragOver={handleDragOver}
-            onDrop={(e) => handleDrop(e, col.id)}
+            onDragOver={(col as any).proximamente ? undefined : handleDragOver}
+            onDrop={(col as any).proximamente ? undefined : (e) => handleDrop(e, col.id)}
           >
             {/* Column header */}
             <div className="flex items-center justify-between mb-3">
@@ -366,7 +389,11 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
                   <div className={`w-2.5 h-2.5 rounded-full ${col.color}`} />
                   <h3 className="font-bold text-white text-sm">{col.label}</h3>
                 </div>
-                {['inbox', 'sales', 'sold'].includes(col.id) ? (
+                {(col as any).proximamente ? (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary-500/10 text-primary-300 border border-primary-500/30 flex items-center gap-1 w-max">
+                    Próximamente
+                  </span>
+                ) : ['inbox', 'sales', 'sold'].includes(col.id) ? (
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1 w-max">
                     <Robot size={10} weight="fill" /> IA Activa
                   </span>
@@ -383,6 +410,24 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
 
             {/* Cards */}
             <div className="flex flex-col gap-2.5 min-h-[80px]">
+              {/* Columna por activar: explica qué haría, para que no se lea
+                  como una función rota ni invite a arrastrar tarjetas. */}
+              {(col as any).proximamente && (
+                <div className="p-3 rounded-xl border border-dashed border-slate-600/40 bg-slate-950/30 space-y-2">
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Aquí irían las ventas con <strong className="text-slate-300">pago confirmado
+                    y despacho</strong>, para hacerles seguimiento de posventa.
+                  </p>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Confirmar un pago es una decisión humana: el bot no puede verificarlo, y darlo
+                    por hecho sería peor que no tenerlo. Por eso el flujo termina en «Listo para
+                    pagar».
+                  </p>
+                  <p className="text-[10px] text-primary-300/80 font-medium">
+                    Módulo de posventa · por activar
+                  </p>
+                </div>
+              )}
               {col.items.map(conv => (
                 <div
                   key={conv.id}
