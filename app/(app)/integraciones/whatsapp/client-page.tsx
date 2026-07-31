@@ -251,7 +251,14 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
       });
       const data = await res.json();
       if (data.bridgeError) {
-        alert(`⚠️ Línea creada pero el bridge no respondió:\n\n${data.bridgeError}\n\nAsegúrate de que "node server.js" esté corriendo en la carpeta wa-server-knowledge.`);
+        // El puente corre como contenedor en el servidor: nadie lo arranca a
+        // mano. El mensaje anterior mandaba abrir una terminal en una carpeta
+        // que ya no existe.
+        alert(`⚠️ La línea se creó, pero el puente de WhatsApp no respondió:
+
+${data.bridgeError}
+
+Revise el estado en Líneas de WhatsApp.`);
       }
       await fetchLines();
     } finally {
@@ -274,16 +281,6 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
           <Plus size={18} weight="bold" />
           Nueva Línea
         </button>
-      </div>
-
-      {/* Bridge Instructions Banner */}
-      <div className="p-4 rounded-xl border border-primary-500/20 bg-primary-500/5 text-xs text-slate-300 leading-relaxed">
-        <p className="font-semibold text-primary-300 mb-1">⚡ Requisito: Bridge WhatsApp activo</p>
-        <p>Para generar QR, el bridge debe estar corriendo. Abre una terminal en 
-          <code className="mx-1 px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">wa-server-knowledge/</code> 
-          y ejecuta:
-          <code className="ml-1 px-2 py-0.5 bg-slate-800 rounded text-emerald-300">node server.js</code>
-        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -330,7 +327,7 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
                   <div className="flex flex-col items-center gap-2 text-center px-2">
                     <Warning size={24} className="text-amber-400" weight="fill" />
                     <p className="text-[10px] text-amber-300 leading-relaxed">
-                      El bridge tardó demasiado. ¿Está corriendo <code className="bg-slate-800 px-1 rounded">node server.js</code>?
+                      El puente de WhatsApp tardó demasiado en responder. Vuelva a intentarlo; si sigue igual, revise Líneas de WhatsApp.
                     </p>
                   </div>
                 ) : waitingForQr ? (

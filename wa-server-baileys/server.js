@@ -732,6 +732,21 @@ function teardownSocket(st, line) {
 }
 
 /** Un solo reintento en vuelo por linea. */
+/**
+ * ¿Esta línea tiene credenciales, o está a la espera de que alguien escanee?
+ *
+ * Es la diferencia entre reconectar y NO reconectar. Una línea vinculada que se
+ * cae debe volver sola. Una línea SIN vincular no: no hay nada a lo que volver,
+ * y reintentar solo genera códigos QR que nadie está mirando.
+ */
+function tieneCredenciales(line) {
+    try {
+        return fs.existsSync(path.join(authDir(line), 'creds.json'));
+    } catch {
+        return false;
+    }
+}
+
 function scheduleReconnect(st, line, delay, motivo) {
     if (st.reconnectTimer) {
         logger.info({ line, motivo }, 'Ya hay un reintento programado, no se duplica');
@@ -922,6 +937,38 @@ async function startSession(line, motivo = 'inicial') {
                     logger.error({ line }, 'Conexión reemplazada por otra sesión');
                     await callbackToApp('/api/whatsapp-lines/status', { line_key: line, status: 'disconnected' });
                     scheduleReconnect(st, line, 30000, 'connection-replaced');
+                    return;
+                }
+
+                /**
+                 * LÍNEA SIN VINCULAR: se detiene, no se reintenta.
+                 *
+                 * Cuando no hay credenciales, este cierre es casi siempre el QR
+                 * que expiró ("QR refs attempts ended"). Reconectar genera otro
+                 * QR, que expira, que reconecta… Medido el 01-ago-2026 con una
+                 * línea desvinculada: **14 códigos QR en 30 minutos**, sockets
+                 * recreados sin fin, con nadie mirando esa pantalla.
+                 *
+                 * No es solo gasto: es reconectarse en bucle a los servidores de
+                 * WhatsApp desde la misma IP, justo la conducta que provoca los
+                 * bloqueos de cuenta que ya hemos sufrido.
+                 *
+                 * La línea queda dormida y el socket se abre SOLO cuando alguien
+                 * pide el QR desde el panel (`/api/sessions/:linea/qr` o
+                 * `/start`). Una línea ya vinculada sí se reconecta sola, que es
+                 * lo que corresponde.
+                 */
+                if (!tieneCredenciales(line)) {
+                    st.status = 'logged_out';
+                    st.lastQR = null;
+                    st.lastQRDataUrl = null;
+                    st.lastError = 'Sin vincular: el QR se genera cuando lo pidas desde el panel.';
+                    st.lastErrorAt = new Date().toISOString();
+                    logger.info(
+                        { line, statusCode },
+                        'Línea sin vincular: se deja dormida en vez de generar QR en bucle'
+                    );
+                    await callbackToApp('/api/whatsapp-lines/status', { line_key: line, status: 'disconnected' });
                     return;
                 }
 
@@ -1237,6 +1284,14 @@ app.get('/api/sessions/:session/qr', (req, res) => {
     if (!st) return res.status(404).json({ error: 'Sesión no iniciada' });
     if (st.status === 'connected') return res.json({ status: 'connected', qr: null });
     if (!st.lastQRDataUrl) {
+        // Pedir el QR es la señal de que alguien SÍ está mirando: se despierta
+        // la línea dormida. Sin esto quedaría en silencio para siempre.
+        if (!st.sock) {
+            logger.info({ line }, 'QR solicitado desde el panel: se despierta la línea');
+            startSession(line, 'qr-solicitado').catch(e =>
+                logger.error({ err: e.message, line }, 'Fallo al despertar la línea')
+            );
+        }
         return res.json({ status: st.status, qr: null, message: 'El QR aún no está listo. Espera unos segundos.' });
     }
     res.json({ status: st.status, qr: st.lastQRDataUrl });
@@ -1288,7 +1343,11 @@ app.post('/api/sessions/:session/logout', async (req, res) => {
         logger.warn({ line }, 'Logout manual desde el panel');
         await callbackToApp('/api/whatsapp-lines/status', { line_key: line, status: 'disconnected' });
         res.json({ success: true });
-        scheduleReconnect(st, line, 3000, 'tras-logout-manual');
+        // Nada de reconectar aquí: se acaba de desvincular a propósito. Si se
+        // reconectara, empezaría a emitir QR sin que nadie los mire. El socket
+        // vuelve cuando el panel pida el QR.
+        st.status = 'logged_out';
+        st.lastError = 'Desvinculada. Pide el QR desde el panel para volver a conectarla.';
     } catch (err) {
         logger.error({ err: err.message, line }, 'Error en logout');
         res.status(500).json({ success: false, error: err.message });
