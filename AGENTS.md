@@ -17,7 +17,7 @@ ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
 `EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
 
 El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`09b19f0`**. **Si el código cambió desde
+Está generado contra el commit **`191373b`**. **Si el código cambió desde
 entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
 
 ### Cómo consultarlo (por SSH al VPS)
@@ -29,7 +29,7 @@ cd /root/knowledgebot
 
 # 1) ¿El grafo sigue vigente? Lo que lo invalida es que cambie el CODIGO, no
 #    que avance el HEAD: un commit de documentacion no lo desactualiza.
-git diff --stat 09b19f0..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
+git diff --stat 191373b..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
 #    Sin salida = el grafo esta al dia. Con salida = regenerar (paso 4).
 
 # 2) Entender un símbolo / concepto / archivo:
@@ -50,7 +50,7 @@ graphify diagnose multigraph
 
 ### Qué contiene el grafo
 
-- `graph.json` — grafo consultable. Al 01-ago-2026: **1.312 nodos y 2.184
+- `graph.json` — grafo consultable. Al 01-ago-2026: **1.315 nodos y 2.190
   aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
   contradictorias.
 - `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
@@ -121,26 +121,34 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
    (Producción)": está prohibido y no existe en el sistema.
 5. **El despliegue es Docker sobre un VPS Hostinger** (2.25.169.103). El README
    habla de Railway: quedó de una etapa anterior.
-6. **El error 463 NO es culpa del `@lid` ni de Baileys.** Esto se documentó mal
-   el 30-jul y costó una arquitectura entera de dos puentes construida sobre
-   una causa falsa. Lo medido el 31-jul, enviando desde el propio servidor:
+6. **El error 463 NO es culpa del `@lid` ni de Baileys: es la CUENTA.** Esto se
+   documentó mal el 30-jul y costó una arquitectura entera de dos puentes
+   construida sobre una causa falsa. Lo medido el 31-jul enviando desde el
+   propio servidor, con una línea que fallaba y otra que no:
 
    | Envío | Resultado |
    |---|---|
-   | `linea_1` → `linea_2` | ✅ entregado |
-   | `linea_1` → teléfono personal | ✅ entregado |
-   | `linea_2` → sí misma | ✅ entregado |
-   | `linea_2` → `linea_1` (al teléfono) | ❌ 463 |
-   | `linea_2` → `linea_1` (al `@lid`) | ❌ 463 |
-   | `linea_2` → teléfono personal | ❌ 463 |
+   | Línea A → línea B | ✅ entregado |
+   | Línea A → teléfono personal | ✅ entregado |
+   | Línea B → sí misma | ✅ entregado |
+   | Línea B → línea A (al teléfono) | ❌ 463 |
+   | Línea B → línea A (al `@lid`) | ❌ 463 |
+   | Línea B → teléfono personal | ❌ 463 |
 
-   **Baileys sí envía.** Lo que falla es una cuenta concreta: el
-   **573107975278** no puede escribirle a nadie, con `@lid` o sin él. Es un
-   bloqueo temporal de WhatsApp por volumen de mensajes automáticos — el propio
-   nombre del error, *timelocked*, lo dice. Se levanta con reposo.
+   **Baileys sí envía.** El mismo código, en la misma máquina, entrega desde una
+   línea y es rechazado desde otra. Lo que falla es la **cuenta de WhatsApp**:
+   un bloqueo temporal por volumen de mensajes automáticos. El propio nombre del
+   error, *timelocked*, lo dice, y se levanta con reposo.
 
-   Antes de culpar al código por un 463: probar el mismo envío desde otra
-   línea. Si esa entrega, el problema es la cuenta, no el sistema.
+   > **Regla de diagnóstico.** Ante un 463, **probar el mismo envío desde otra
+   > línea antes de tocar código**. Si la otra entrega, el problema es la cuenta.
+   > No hay nada que arreglar en el sistema.
+   >
+   > **No anotar aquí qué número está bloqueado.** Es un estado pasajero: se
+   > levanta solo, y los números de prueba se conectan y desconectan a voluntad.
+   > Dejarlo escrito solo sirve para que alguien lo lea meses después y crea que
+   > hay una línea rota.
+
 7. **Ningún dato del negocio se escribe en el código.** Medios de pago,
    condiciones, cuenta bancaria, garantía, tiempos de entrega, sitio web y los
    datos que se piden al cerrar **viven en el panel** (Personalización). Los
@@ -165,9 +173,19 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
    se le entreguen deben ser directos para PowerShell.
 3. **El VPS es la fuente de verdad.** Ni el repo local ni GitHub están al día.
    Todo el desarrollo se hace por SSH sobre `/root/knowledgebot`.
-4. **Líneas**: `linea_1` (573011022628) y `linea_2` (573107975278) son **de
-   prueba** y el dueño autoriza conectarlas y desconectarlas libremente. La meta
-   son **8 líneas** centralizadas en el CRM: diseñar todo pensando en eso.
+4. **Líneas**: las conectadas hoy son **de prueba** y el dueño las conecta y
+   desconecta libremente. **No anotar aquí qué número está en qué ranura ni cuál
+   está caída**: cambia de un día para otro y esas notas envejecen mal. El estado
+   real se consulta en `/lineas` del panel o con
+   `curl -s http://localhost:3005/diagnostic`.
+
+   La ranura (`linea_1`, `linea_2`, …) es **independiente del número**: cualquier
+   teléfono, de cualquier país, puede ir en cualquier ranura. El nombre visible
+   se edita desde el panel («WhatsApp de Juanita», «Local 211»); la ranura no se
+   toca, porque es la clave con la que se enrutan los mensajes y se agrupan las
+   conversaciones.
+
+   La meta son **8 líneas** centralizadas en el CRM: diseñar todo pensando en eso.
 5. **No crear archivos `.md` nuevos.** Mantener sincronizados solo los 9 que ya
    existen, y hacerlo **en el VPS y en el repo local a la vez**. Esa divergencia
    fue la causa de la confusión: `CLAUDE.md` existía solo en el VPS y

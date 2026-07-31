@@ -101,23 +101,29 @@ Para sumar una línea: registrarla y escanear su QR. **Nada más.**
 enviar a un `@lid`, y sobre esa causa falsa se construyeron dos puentes, un
 reparto de líneas y un traductor de direcciones. Nada de eso hacía falta.
 
-Medido el 31-jul enviando desde el propio servidor:
+Medido el 31-jul enviando desde el propio servidor, con dos líneas conectadas al
+mismo puente y con el mismo código:
 
 | Envío | Resultado |
 |---|---|
-| `linea_1` → `linea_2` | ✅ entregado |
-| `linea_1` → teléfono personal | ✅ entregado |
-| `linea_2` → sí misma | ✅ entregado |
-| `linea_2` → `linea_1` (al teléfono) | ❌ 463 |
-| `linea_2` → `linea_1` (al `@lid`) | ❌ 463 |
-| `linea_2` → teléfono personal | ❌ 463 |
+| Línea A → línea B | ✅ entregado |
+| Línea A → teléfono personal | ✅ entregado |
+| Línea B → sí misma | ✅ entregado |
+| Línea B → línea A (al teléfono) | ❌ 463 |
+| Línea B → línea A (al `@lid`) | ❌ 463 |
+| Línea B → teléfono personal | ❌ 463 |
 
-**Baileys sí envía.** Falla una cuenta concreta: el **573107975278** no puede
-escribirle a nadie, con `@lid` o sin él. Es un bloqueo temporal de WhatsApp por
-volumen de mensajes automáticos; el nombre del error, *timelocked*, lo dice.
+**Baileys sí envía.** El mismo código entrega desde una línea y es rechazado
+desde otra: lo que falla es la **cuenta de WhatsApp**, no el sistema. Es un
+bloqueo temporal por volumen de mensajes automáticos —*timelocked*— y se levanta
+con reposo.
 
 > **Regla:** ante un 463, probar el mismo envío desde otra línea antes de tocar
 > código. Si la otra entrega, el problema es la cuenta.
+>
+> **No se anota aquí qué número estuvo bloqueado**, a propósito: es un estado
+> pasajero y las líneas de prueba se conectan y desconectan a voluntad. Dejarlo
+> escrito solo produce malentendidos meses después.
 
 ### El `@lid` sí es un problema, pero de identidad, no de envío
 
