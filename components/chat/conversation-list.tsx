@@ -61,7 +61,7 @@ const ETAPAS: Record<string, { nombre: string; avatar: string; etiqueta: string;
     barra: 'bg-blue-400',
   },
   sold: {
-    nombre: 'Ya compró',
+    nombre: 'Listo para pagar',
     avatar: 'bg-emerald-500/30 text-emerald-100 ring-2 ring-emerald-400',
     etiqueta: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
     barra: 'bg-emerald-400',

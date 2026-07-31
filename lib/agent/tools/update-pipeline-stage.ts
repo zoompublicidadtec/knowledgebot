@@ -15,7 +15,13 @@ interface ToolContext {
  * -------------------------------
  * Permite al agente mover un contacto a las etapas COMERCIALES del Pipeline CRM:
  *   - 'sales' (Ventas): negociación activa o seguimiento.
- *   - 'sold' (Vendido): venta confirmada por el cliente.
+ *   - 'sold' (Listo para pagar): el cliente acepto y va a pagar.
+ *
+ * ⚠️ 'sold' NO ES "PAGADO". Se llamaba "Vendido" y se movia cuando el cliente
+ * DECIA "lo tomo": eso es una intencion, no una venta. Un bot no puede
+ * verificar un pago -- un comprobante se falsifica, y el peor caso es dar por
+ * despachado algo que nadie despacho. Confirmar el pago es acto humano, y esta
+ * herramienta no lo hace ni lo simula.
  *
  * ⚠️ RESTRICCIÓN DE SEGURIDAD:
  * Esta herramienta SOLO acepta 'sales' o 'sold'. Está TERMINANTEMENTE PROHIBIDO
@@ -32,7 +38,9 @@ export function updatePipelineStageTool(ctx: ToolContext) {
     description:
       'Mueve al cliente a una etapa comercial del Pipeline CRM (Ventas o Vendido). ' +
       "Usa stage='sales' cuando hay negociación activa o seguimiento. " +
-      "Usa stage='sold' cuando el cliente CONFIRMA la compra (pago, transferencia, 'lo tomo', 'lo compro'). " +
+      "Usa stage='sold' cuando el cliente ACEPTA y va a pagar ('lo tomo', 'lo compro', 'a donde pago'). " +
+      "OJO: 'sold' NO significa que ya pago. Un pago solo lo confirma una persona; tu no puedes verificarlo " +
+      "ni aunque el cliente mande una foto de un comprobante. " +
       'NO uses esta herramienta para quejas ni molestias: en ese caso usa requestHumanHandoff.',
     inputSchema: jsonSchema({
       type: 'object',

@@ -22,8 +22,8 @@ const TIPOS = {
     punto: 'bg-rose-500',
   },
   listo: {
-    titulo: 'Listos para comprar',
-    detalle: 'Aceptaron: falta completar el pedido',
+    titulo: 'Listos para pagar',
+    detalle: 'Aceptaron: falta confirmar el pago y despachar',
     avatar: 'bg-emerald-500/30 text-emerald-100 ring-2 ring-emerald-400',
     cabecera: 'text-emerald-300',
     punto: 'bg-emerald-500',

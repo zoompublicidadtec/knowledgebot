@@ -44,11 +44,16 @@ const STAGES = [
   },
   { 
     id: 'sold', 
-    label: 'Vendido', 
+    label: 'Listo para pagar', 
     color: 'bg-emerald-500', 
     border: 'border-emerald-500/30', 
     bg: 'bg-emerald-950/20', 
-    desc: 'Ventas cerradas. La IA sigue activa para atender dudas de soporte técnico o post-venta.' 
+    // Antes se llamaba "Vendido", y era falso: el bot mueve aquí al cliente
+    // cuando DICE que lo toma, no cuando paga. Un bot no puede saber si entró
+    // la plata, y quien sí lo sabe (quien concilia o despacha) no entra al
+    // panel a arrastrar tarjetas. La etiqueta prometía una venta cerrada que
+    // nadie había confirmado.
+    desc: 'El cliente aceptó y va a pagar. Falta que una persona confirme el pago y despache. Si vuelve a pedir algo nuevo, sale solo de aquí.' 
   },
   { 
     id: 'angry', 

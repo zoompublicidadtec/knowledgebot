@@ -733,6 +733,46 @@ export async function processInboundMessage(
               { onConflict: 'wa_message_id', ignoreDuplicates: true }
             );
 
+          /**
+           * SALIR SOLO DE «LISTO PARA PAGAR».
+           *
+           * Esa etapa describe un MOMENTO, no a una persona: el cliente aceptó
+           * y va a pagar. Pero nada lo sacaba de ahí. Un cliente que volvía
+           * semanas después a pedir otra cosa seguía marcado como listo para
+           * pagar, y con la campana nueva habría aparecido como pendiente para
+           * siempre, empujando a un asesor a perseguir un pago que ya se hizo
+           * (o que nunca existió).
+           *
+           * Regla: si vuelve a pedir cotización — o sea, si este turno disparó
+           * una búsqueda en el catálogo — está negociando otra vez y regresa a
+           * «Ventas». Es determinista y no depende de que nadie se acuerde de
+           * mover una tarjeta, cosa que no ocurre en la práctica.
+           *
+           * Solo aplica a 'sold'. 'angry' e 'ignore' son decisiones humanas y
+           * el código no las toca jamás.
+           */
+          try {
+            const etapaActual = (existingContact?.metadata as any)?.stage;
+            // Señal de que se volvió a cotizar: el registro de fotos+precios de
+            // esta conversación solo se llena cuando el agente buscó en el
+            // catálogo, y se borra solo a los 10 minutos.
+            const volvioACotizar = getPhotosForConversation(conversationId).length > 0;
+            if (etapaActual === 'sold' && volvioACotizar) {
+              const meta = (existingContact?.metadata as any) || {};
+              await (supabase as any)
+                .from('contacts')
+                .update({ metadata: { ...meta, stage: 'sales' } })
+                .eq('id', contactId);
+              logger.info('Pipeline: vuelve a negociar, sale de «listo para pagar»', {
+                contactId,
+                conversationId,
+              });
+            }
+          } catch (err) {
+            // Que falle esto no puede tumbar la respuesta al cliente.
+            logger.error('No se pudo devolver el contacto a Ventas', { error: String(err), contactId });
+          }
+
           // Fotos de las 3 propuestas: se envían solo si el cliente las pidió.
           await dispatchRequestedPhotos({
             supabase, orgId, conversationId, lineKey, waConfig,
