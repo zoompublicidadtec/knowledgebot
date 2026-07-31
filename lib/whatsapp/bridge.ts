@@ -84,6 +84,59 @@ export function getBridgeUrl(lineKey?: string | null): string {
   return getDefaultBridgeUrl();
 }
 
+/**
+ * Mapa `line_key -> url` del puente que ENVÍA esa línea, leído de
+ * `WHATSAPP_BRIDGE_SEND_ROUTES`.
+ *
+ * POR QUÉ RECIBIR Y ENVIAR VAN POR PUENTES DISTINTOS
+ * --------------------------------------------------
+ * Ningún puente sabe hacer las dos cosas bien:
+ *   - Baileys (3005) es el único que descarga audios y fotos, pero al enviar
+ *     WhatsApp acepta el mensaje y lo rechaza después en el acuse con
+ *     `error: 463` (candado de privacidad: falta el nodo `<tctoken>`, que la
+ *     rama 6.x no sabe adjuntar). La 7.x sí lo adjunta pero NO CONECTA desde
+ *     este servidor — probado rc13 y rc14, con y sin versión remota, en Node
+ *     20 y 22, y aislada de nuestro código: siempre `statusCode 428`.
+ *   - `whatsapp-web.js` (3004) entrega perfectamente, porque usa el WhatsApp
+ *     Web auténtico dentro de Chrome y emite esos tokens de forma nativa, pero
+ *     no puede descargar la media: 0 archivos de 328 mensajes medidos.
+ *
+ * Así que cada línea se vincula a los dos y cada uno hace lo que sabe hacer.
+ * Sin esta variable, se envía por el mismo puente que recibe (lo de antes).
+ */
+export function getBridgeSendRoutes(): Record<string, string> {
+  const raw = (process.env.WHATSAPP_BRIDGE_SEND_ROUTES || '').trim();
+  if (!raw) return {};
+
+  const routes: Record<string, string> = {};
+  for (const entry of raw.split(',')) {
+    const part = entry.trim();
+    if (!part) continue;
+    const eq = part.indexOf('=');
+    if (eq <= 0) {
+      logger.warn('Entrada inválida en WHATSAPP_BRIDGE_SEND_ROUTES (se esperaba linea=url)', { entry: part });
+      continue;
+    }
+    const line = part.slice(0, eq).trim();
+    const url = part.slice(eq + 1).trim();
+    if (!line || !url) continue;
+    routes[line] = normalizeBase(url);
+  }
+  return routes;
+}
+
+/**
+ * URL del puente por el que se ENVÍA en esa línea. Si no hay ruta de envío
+ * propia, se envía por el mismo puente que recibe.
+ */
+export function getSendBridgeUrl(lineKey?: string | null): string {
+  if (lineKey) {
+    const routed = getBridgeSendRoutes()[lineKey];
+    if (routed) return routed;
+  }
+  return getBridgeUrl(lineKey);
+}
+
 /** Secreto compartido con los puentes (puede venir vacío en dev local). */
 export function getBridgeApiKey(): string {
   return (process.env.BRIDGE_API_KEY || '').trim();

@@ -2,7 +2,7 @@ import { GRAPH_API_BASE, type NormalizedMessage, type WhatsAppProvider } from '.
 import { decrypt } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
 import type { WhatsAppConfig } from '@/lib/database.types';
-import { getBridgeUrl, bridgeHeaders } from './bridge';
+import { getSendBridgeUrl, bridgeHeaders } from './bridge';
 
 /** Abstract adapter interface for WhatsApp messaging */
 export interface WhatsAppAdapter {
@@ -75,9 +75,16 @@ export function createMetaAdapter(config: WhatsAppConfig): WhatsAppAdapter {
 
 /** OpenWA adapter for testing */
 export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | null): WhatsAppAdapter {
-  // Enviar por el puente de ESA línea. Sin esto, un mensaje de una línea ya
-  // migrada saldría por el puente viejo y fallaría.
-  const baseUrl = getBridgeUrl(lineKey);
+  /**
+   * El puente que ENVÍA no es necesariamente el que recibe.
+   *
+   * Baileys descarga los audios y las fotos pero no logra entregar: WhatsApp
+   * rechaza sus mensajes en el acuse con `error: 463`. El puente
+   * `whatsapp-web.js` entrega sin problema porque usa el WhatsApp Web real de
+   * Chrome. Así que cada línea recibe por uno y envía por el otro.
+   * Ver `getSendBridgeUrl` en lib/whatsapp/bridge.ts.
+   */
+  const baseUrl = getSendBridgeUrl(lineKey);
   const sessionId = lineKey || config.openwa_session_id || 'default';
 
   return {

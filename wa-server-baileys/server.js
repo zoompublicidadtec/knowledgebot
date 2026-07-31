@@ -67,6 +67,36 @@
  */
 
 const express = require('express');
+/**
+ * Paquete `baileys` 7.x, no `@whiskeysockets/baileys` 6.x.
+ *
+ * POR QUE SE SUBIO DE VERSION (2026-07-31)
+ * ----------------------------------------
+ * Con 6.7.24 el puente RECIBIA bien pero NINGUN mensaje enviado llegaba al
+ * cliente. `sendMessage()` se resolvia sin error y devolvia un id valido, y
+ * WhatsApp lo rechazaba despues, en el acuse:
+ *   attrs: { from: '...', class: 'message', error: '463' }
+ *
+ * El 463 es `NackCallerReachoutTimelocked`, el candado de privacidad de
+ * WhatsApp. Se dispara porque el `<message>` sale SIN su nodo hijo `<tctoken>`
+ * (Trusted Contact Token). Comprobado en el codigo de las dos versiones:
+ *   6.7.24 -> `tctoken` aparece 0 veces en Socket/messages-send, y no existe
+ *             el fichero Utils/tc-token-utils. La rama 6.x nunca lo tendra.
+ *   7.0.0-rc13 -> 11 ocurrencias de `tctoken` en messages-send, existe
+ *             tc-token-utils.js y se consulta `privacyTokenOn1to1`.
+ *
+ * Explica lo que no encajaba: fallaban por igual el @lid y el telefono (la
+ * direccion no era la variable), y el puente viejo con Puppeteer si entrega
+ * porque el WhatsApp Web autentico emite esos tokens de forma nativa.
+ *
+ * Se elige rc13 y no rc14 a proposito: rc13 lleva meses en uso y es la version
+ * con la que otros confirmaron que el 463 desaparece; rc14 se publico sin
+ * notas de version.
+ *
+ * `require()` sigue funcionando pese a que el paquete es ESM: Node 20 lo
+ * admite. Se comprobo antes de migrar, asi que NO hizo falta reescribir el
+ * puente entero a modulos ESM.
+ */
 const makeWASocket = require('@whiskeysockets/baileys').default;
 const {
     useMultiFileAuthState,
@@ -141,6 +171,8 @@ const metrics = {
     text_sent: 0,
     media_sent: 0,
     send_errors: 0,
+    /** Mensajes que WhatsApp acepto y luego rechazo en el acuse. */
+    acks_rechazados: 0,
     last_download_ms: 0,
     last_post_ms: 0,
 };
@@ -194,6 +226,85 @@ function normalizeJid(chatId) {
  * correspondencia en disco al recibir, y se usa al enviar. Persiste en el
  * volumen para sobrevivir a un reinicio del contenedor.
  */
+// ============================================================
+// CONFIRMACION DE ENTREGA — acuses rechazados
+// ============================================================
+
+/**
+ * WhatsApp puede ACEPTAR el envio y rechazarlo despues, en el acuse:
+ *
+ *   {"attrs":{"from":"573015745403@s.whatsapp.net","class":"message",
+ *     "id":"3EB0F0DEC619DA17B1EAB1","error":"463"},"msg":"received error in ack"}
+ *
+ * `sock.sendMessage()` ya se resolvio sin error y devolvio un id valido, asi
+ * que ni el puente ni la app se enteran: la app guarda la respuesta como
+ * enviada y el panel muestra un mensaje que el cliente NUNCA recibio. Eso es
+ * exactamente lo que el panel no debe hacer.
+ *
+ * Baileys no emite esos rechazos como evento; solo los escribe en su registro.
+ * Asi que se envuelve el registro que se le pasa, se capturan los acuses con
+ * error y se espera brevemente por el del mensaje recien enviado antes de
+ * responderle a la app. Medido: el rechazo llega entre 2 y 3 segundos despues.
+ */
+const acksFallidos = new Map(); // id de mensaje -> { error, at }
+
+function registrarAckFallido(line, attrs) {
+    if (!attrs?.id) return;
+    acksFallidos.set(String(attrs.id), { error: String(attrs.error || '?'), at: Date.now() });
+    metrics.acks_rechazados++;
+    logger.error(
+        { line, id: attrs.id, error: attrs.error, destino: attrs.from },
+        'WhatsApp RECHAZO el mensaje en el acuse: el cliente no lo recibio'
+    );
+    // Se limpian los viejos para que el mapa no crezca sin fin.
+    const limite = Date.now() - 120000;
+    for (const [k, v] of acksFallidos) if (v.at < limite) acksFallidos.delete(k);
+}
+
+/** Espera un rechazo para ese id. Devuelve el fallo, o null si no llego. */
+async function esperarRechazo(id, ms = 4000) {
+    if (!id) return null;
+    const hasta = Date.now() + ms;
+    while (Date.now() < hasta) {
+        const f = acksFallidos.get(String(id));
+        if (f) return f;
+        await new Promise(r => setTimeout(r, 200));
+    }
+    return null;
+}
+
+/**
+ * Envuelve el registro de Baileys para poder ver los acuses rechazados sin
+ * tocar la libreria. Todo lo demas pasa tal cual.
+ */
+function registroQueVigilaAcks(base, alFallar) {
+    const niveles = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+    return new Proxy(base, {
+        get(target, prop) {
+            if (prop === 'child') {
+                return (...a) => registroQueVigilaAcks(target.child(...a), alFallar);
+            }
+            const v = target[prop];
+            if (typeof v === 'function' && niveles.includes(prop)) {
+                return (...args) => {
+                    try {
+                        const obj = args[0];
+                        const texto = String(args[1] || '');
+                        if (
+                            obj && typeof obj === 'object' && obj.attrs && obj.attrs.error &&
+                            texto.toLowerCase().includes('error in ack')
+                        ) {
+                            alFallar(obj.attrs);
+                        }
+                    } catch { /* vigilar no puede romper el registro */ }
+                    return v.apply(target, args);
+                };
+            }
+            return typeof v === 'function' ? v.bind(target) : v;
+        },
+    });
+}
+
 const lidMaps = new Map(); // line -> { '<lid>': '<telefono@s.whatsapp.net>' }
 
 function lidMapPath(line) {
@@ -653,11 +764,15 @@ async function startSession(line, motivo = 'inicial') {
         const sock = makeWASocket({
             auth: state,
             printQRInTerminal: false,
-            logger: logger.child({ line }),
-            browser: Browsers.macOS('Desktop'),
             version,
+            // Registro vigilado: es la unica forma de enterarse de que WhatsApp
+            // rechazo un mensaje en el acuse, porque Baileys no lo emite como
+            // evento y `sendMessage` ya se resolvio como si todo fuera bien.
+            logger: registroQueVigilaAcks(logger.child({ line }), attrs => registrarAckFallido(line, attrs)),
+            browser: Browsers.macOS('Desktop'),
+
             // La sincronización de historial completo rompía la sesión por
-            // timeout en cuentas con mucho historial (probado el 23-jul).
+            // timeout en cuentas con mucho historial (probado el 23-jul-2026).
             syncHistory: false,
             markOnlineOnConnect: false,
         });
@@ -1116,9 +1231,22 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
     try {
         await typing(st.sock, jid);
         const sent = await st.sock.sendMessage(jid, { text: content });
+        const idReal = sent?.key?.id;
+
+        // No basta con que sendMessage no falle: WhatsApp puede rechazarlo
+        // despues, en el acuse. Se espera ese rechazo antes de decirle a la app
+        // que se entrego, o el panel mostraria una respuesta fantasma.
+        const rechazo = await esperarRechazo(idReal);
+        if (rechazo) {
+            metrics.send_errors++;
+            const detalle = `WhatsApp aceptó el mensaje y lo rechazó en el acuse (error ${rechazo.error}). El cliente NO lo recibió.`;
+            logger.error({ line, jid, id: idReal, error: rechazo.error }, detalle);
+            return res.status(502).json({ error: detalle, ack_error: rechazo.error });
+        }
+
         metrics.text_sent++;
         // El id REAL de WhatsApp: es lo que apaga el eco del puente.
-        res.json({ data: { id: sent?.key?.id || `baileys_${Date.now()}` } });
+        res.json({ data: { id: idReal || `baileys_${Date.now()}` } });
     } catch (err) {
         metrics.send_errors++;
         logger.error({ err: err.message, line, jid }, 'Error enviando texto');
@@ -1180,9 +1308,19 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
 
         await typing(st.sock, jid, 1500);
         const sent = await st.sock.sendMessage(jid, content);
+        const idReal = sent?.key?.id;
+
+        const rechazo = await esperarRechazo(idReal);
+        if (rechazo) {
+            metrics.send_errors++;
+            const detalle = `WhatsApp aceptó la foto y la rechazó en el acuse (error ${rechazo.error}). El cliente NO la recibió.`;
+            logger.error({ line, jid, id: idReal, error: rechazo.error }, detalle);
+            return res.status(502).json({ error: detalle, ack_error: rechazo.error });
+        }
+
         metrics.media_sent++;
         logger.info({ line, jid, mime, kb: Math.round(buf.length / 1024) }, 'Media enviada');
-        res.json({ data: { id: sent?.key?.id || `baileys_media_${Date.now()}` } });
+        res.json({ data: { id: idReal || `baileys_media_${Date.now()}` } });
     } catch (err) {
         metrics.send_errors++;
         logger.error({ err: err.message, line, jid, fullUrl }, 'Error enviando media');

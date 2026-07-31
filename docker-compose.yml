@@ -39,12 +39,15 @@ services:
       - .env.production
     environment:
       - APP_URL=http://localhost:3003
-      # BRIDGE_LINES limita las lineas que atiende este puente. Sin definir =
-      # todas. Al migrar una linea a Baileys hay que listar aqui SOLO las que
-      # se queden, o los dos puentes atenderian la misma linea y el cliente
-      # recibiria cada respuesta dos veces.
-      # 30-Jul-2026: linea_2 pasa al puente Baileys del 3005.
-      - BRIDGE_LINES=linea_1
+      # ARQUITECTURA FINAL (31-Jul-2026): cada linea usa LOS DOS puentes.
+      # Este puente ENVIA en las dos lineas, porque es el unico que entrega:
+      # Baileys es rechazado por WhatsApp en el acuse con error 463.
+      - BRIDGE_LINES=linea_1,linea_2
+      # ...pero solo REENVIA lo que recibe de las lineas que aun no recibe
+      # Baileys. Si reenviara una que ya recibe el otro puente, el agente
+      # correria dos veces y el cliente veria cada respuesta duplicada.
+      # Fase 1: linea_2 ya recibe por Baileys; linea_1 todavia no.
+      - FORWARD_INBOUND_LINES=linea_1
     volumes:
       - ./wwebjs_sessions:/data/wwebjs_sessions
       - ./wa-server/.wwebjs_cache:/app/.wwebjs_cache

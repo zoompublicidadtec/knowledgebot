@@ -71,6 +71,54 @@ function ownsLine(sessionName) {
     return BRIDGE_LINES.includes(sessionName);
 }
 
+/**
+ * MODO SOLO-ENVIO (31-Jul-2026).
+ *
+ * Arquitectura final: cada linea usa LOS DOS puentes a la vez.
+ *   - Baileys (3005) RECIBE: es el unico que sabe descargar audios y fotos.
+ *   - Este puente (3004) ENVIA: es el unico que entrega de verdad.
+ *
+ * Por que hace falta este reparto: con Baileys, WhatsApp acepta el mensaje y
+ * lo rechaza despues en el acuse con `error: 463` (candado de privacidad
+ * NackCallerReachoutTimelocked) porque la rama 6.x no sabe adjuntar el nodo
+ * `<tctoken>`. La 7.x si lo adjunta, pero NO CONECTA desde este servidor:
+ * probado rc13 y rc14, con y sin version de protocolo remota, en Node 20 y 22,
+ * y aislada de nuestro codigo. Siempre `statusCode 428`.
+ * Este puente entrega bien porque usa el WhatsApp Web autentico dentro de
+ * Chrome, que emite esos tokens de forma nativa.
+ *
+ * Con FORWARD_INBOUND=false este puente deja de reenviar lo que recibe. Sin
+ * eso, los dos puentes reenviarian el mismo mensaje y el cliente recibiria
+ * cada respuesta dos veces. Tambien apaga de raiz el eco del puente.
+ */
+/**
+ * `FORWARD_INBOUND_LINES` dice de que lineas SI se reenvia lo recibido.
+ *   - Variable sin definir  -> se reenvian todas (comportamiento de siempre).
+ *   - Variable definida     -> solo las listadas; el resto queda en solo-envio.
+ *   - Definida y vacia      -> ninguna: este puente solo envia.
+ *
+ * Hace falta por linea, y no un interruptor global, porque la migracion se
+ * hace por fases: mientras `linea_2` ya recibe por Baileys, `linea_1` todavia
+ * tiene que recibir por aqui. Si este puente reenviara una linea que ya recibe
+ * el otro, el agente correria dos veces y el cliente veria cada respuesta
+ * duplicada.
+ */
+const FORWARD_INBOUND_DEFINIDA = process.env.FORWARD_INBOUND_LINES !== undefined;
+const FORWARD_INBOUND_LINES = (process.env.FORWARD_INBOUND_LINES || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+function reenviaEntrantes(sessionName) {
+    if (!FORWARD_INBOUND_DEFINIDA) return true;
+    return FORWARD_INBOUND_LINES.includes(sessionName);
+}
+
+console.log(`[CONFIG] BRIDGE_LINES: ${BRIDGE_LINES.length ? BRIDGE_LINES.join(',') : '(todas)'}`);
+console.log(`[CONFIG] Reenvia entrantes de: ${
+    !FORWARD_INBOUND_DEFINIDA ? '(todas)' : (FORWARD_INBOUND_LINES.join(',') || 'NINGUNA — solo envio')
+}`);
+
 // Ensure session data directory exists
 try {
     if (!fs.existsSync(SESSION_DATA_PATH)) {
@@ -446,7 +494,12 @@ function startSession(sessionName) {
     // ─── INBOUND & OUTBOUND MESSAGES (message_create catches both) ───
     client.on('message_create', async msg => {
         if (msg.isStatus) return;
-        
+
+        // Esta linea la recibe el puente Baileys (el unico que descarga audios
+        // y fotos). Si este tambien la reenviara, el agente correria dos veces
+        // y el cliente recibiria cada respuesta duplicada.
+        if (!reenviaEntrantes(sessionName)) return;
+
         // Route correctly if sent from phone: contact is msg.to, else msg.from
         const targetChat = msg.fromMe ? msg.to : msg.from;
         if (targetChat.endsWith('@g.us') || targetChat.endsWith('@broadcast')) return;
