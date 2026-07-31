@@ -110,17 +110,70 @@ async function dispatchRequestedPhotos(params: {
     const photos = getPhotosForConversation(conversationId).filter(p => p.image_url);
     if (photos.length === 0) return;
 
-    // Si el cliente o el bot nombran productos concretos, se envían solo esos.
+    /**
+     * UNA foto: la del producto del que se está hablando.
+     *
+     * Antes se mandaban hasta 3. El motivo era un filtro que descartaba las
+     * palabras de 4 letras o menos, o sea **los números**: de "Cuaderno
+     * Argollado Base 80 hojas" solo quedaban `cuaderno`, `argollado` y `hojas`,
+     * que los tres cuadernos comparten. Bastaba con que UNA coincidiera para
+     * seleccionarlo, así que los tres pasaban siempre. Medido el 01-ago-2026:
+     * el cliente pidió la foto del de 80 hojas y recibió tres.
+     *
+     * Ahora se puntúa y gana uno solo:
+     *   - la referencia exacta (ZM-CUA-010) decide por sí sola;
+     *   - los números puntúan MÁS que las palabras, porque son lo único que
+     *     distingue 80 de 100 y de 120 hojas;
+     *   - si hay empate, no se adivina: se pregunta.
+     */
     const haystack = `${clientText}\n${botText}`.toLowerCase();
-    let selected = photos.filter(p => {
-      const ref = p.reference?.toLowerCase() || '';
-      const name = p.name?.toLowerCase() || '';
-      if (ref && haystack.includes(ref)) return true;
-      const words = name.split(/\s+/).filter(w => w.length > 4);
-      return words.length > 0 && words.some(w => haystack.includes(w));
-    });
-    if (selected.length === 0) selected = photos;
-    selected = selected.slice(0, 3);
+
+    const puntuar = (p: { reference?: string | null; name?: string | null }) => {
+      const ref = (p.reference || '').toLowerCase();
+      // La referencia es inequívoca: si la nombran, no hay nada que decidir.
+      if (ref && haystack.includes(ref)) return 1000;
+
+      const nombre = (p.name || '').toLowerCase();
+      let puntos = 0;
+      for (const token of nombre.split(/[^a-z0-9áéíóúñ]+/i)) {
+        if (!token) continue;
+        if (/^\d+$/.test(token)) {
+          // El discriminador real: 80 / 100 / 120 hojas, 20x30 cm, 11oz…
+          if (new RegExp(`\\b${token}\\b`).test(haystack)) puntos += 10;
+        } else if (token.length > 4 && haystack.includes(token)) {
+          puntos += 1;
+        }
+      }
+      return puntos;
+    };
+
+    const puntuadas = photos
+      .map(p => ({ foto: p, puntos: puntuar(p) }))
+      .sort((a, b) => b.puntos - a.puntos);
+
+    const mejor = puntuadas[0];
+    const segunda = puntuadas[1];
+
+    // Nadie destaca (nadie puntúa, o dos empatan arriba): preguntar en vez de
+    // inundar el chat. El cliente responde y en el turno siguiente ya hay un
+    // único candidato.
+    const hayGanadorClaro = !!mejor && mejor.puntos > 0 && (!segunda || segunda.puntos < mejor.puntos);
+
+    if (!hayGanadorClaro) {
+      const opciones = puntuadas.slice(0, 3).map(x => x.foto.name).filter(Boolean);
+      if (opciones.length > 1) {
+        const adapterPregunta: WhatsAppAdapter = createAdapter(waConfig, lineKey);
+        const pregunta = `¿De cuál te gustaría ver la foto: ${opciones.slice(0, -1).join(', ')} o ${opciones[opciones.length - 1]}?`;
+        await adapterPregunta.sendTextMessage(to, pregunta);
+        logger.info('Foto no enviada: varios productos posibles, se pregunta', {
+          conversationId,
+          opciones,
+        });
+        return;
+      }
+    }
+
+    const selected = mejor ? [mejor.foto] : [];
 
     const adapter: WhatsAppAdapter = createAdapter(waConfig, lineKey);
 
