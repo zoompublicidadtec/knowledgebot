@@ -8,7 +8,8 @@ import { MessageBubble } from '@/components/chat/message-bubble';
 import { MessageInput } from '@/components/chat/message-input';
 import { toggleBotAction } from '@/lib/conversations/actions';
 import { mostrarContacto } from '@/lib/whatsapp/contact-identity';
-import { Robot, SpinnerGap, WarningCircle, UserCircle, ArrowCounterClockwise, ArrowLeft } from '@phosphor-icons/react';
+import { etiquetaDeDia, mismoDia } from '@/lib/chat/fechas';
+import { Robot, SpinnerGap, WarningCircle, User, ArrowCounterClockwise, ArrowLeft } from '@phosphor-icons/react';
 
 interface ChatClientPageProps {
   conversationId: string;
@@ -28,9 +29,13 @@ export default function ChatClientPage({
   const [botActive, setBotActive] = useState(currentConversation.bot_active);
   const [contact, setContact] = useState(currentConversation.contacts);
   const [isPending, startTransition] = useTransition();
+  /** El contenedor de mensajes: es el unico sitio que se desplaza. */
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** El primer scroll al abrir el chat es instantaneo, no animado. Ver abajo. */
+  const esLaPrimeraVez = useRef(true);
 
   const supabase = createClient();
+
   /**
    * Por qué línea entra esta conversación.
    *
@@ -64,11 +69,29 @@ export default function ChatClientPage({
     setMessages(initialMessages);
     setBotActive(currentConversation.bot_active);
     setContact(currentConversation.contacts);
+    // Cambiar de chat vuelve a ser una "primera vez": hay que caer abajo de
+    // golpe, no recorrer la conversacion entera a la vista.
+    esLaPrimeraVez.current = true;
   }, [conversationId, initialConversations, initialMessages, currentConversation]);
 
-  // Scroll to bottom on load/new message
+  /**
+   * Bajar al ultimo mensaje.
+   *
+   * Al ABRIR un chat se salta al final sin animacion, como WhatsApp: con
+   * `smooth` en un historial largo el telefono se pasaba varios segundos
+   * desfilando mensajes viejos antes de dejarte escribir.
+   * Con un mensaje NUEVO si se anima, porque ahi el movimiento es la senal de
+   * que llego algo.
+   *
+   * Se mueve el contenedor a mano en vez de usar `scrollIntoView` porque este
+   * ultimo arrastra tambien a los ancestros y, con el chat a pantalla completa,
+   * eso movia la pagina de debajo.
+   */
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const caja = scrollRef.current;
+    if (!caja) return;
+    caja.scrollTo({ top: caja.scrollHeight, behavior: esLaPrimeraVez.current ? 'auto' : 'smooth' });
+    esLaPrimeraVez.current = false;
   }, [messages]);
 
   // Live real-time subscription for messages and conversation updates
@@ -124,9 +147,9 @@ export default function ChatClientPage({
         },
         (payload) => {
           setContact((prev: any) => ({ ...prev, ...payload.new }));
-          setConversations((prev: any) => 
-            prev.map((c: any) => 
-              c.contacts?.id === payload.new.id 
+          setConversations((prev: any) =>
+            prev.map((c: any) =>
+              c.contacts?.id === payload.new.id
                 ? { ...c, contacts: { ...c.contacts, ...payload.new } }
                 : c
             )
@@ -166,32 +189,57 @@ export default function ChatClientPage({
   }
 
   return (
-    <div className="animate-fade-in h-[calc(100vh-140px)] min-h-[450px] grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Sidebar List (solo desktop) - en móvil se oculta, se navega con la flecha */}
+    /* `chat-pantalla` solo existe por debajo de 1024px: alli el chat se sale
+       del <main> del panel y ocupa el telefono entero, con la lista de mensajes
+       como unica zona desplazable. En escritorio no aplica y manda la rejilla
+       de dos columnas de siempre. Ver el bloque "CONVERSACIONES EN EL TELEFONO"
+       en globals.css. */
+    <div className="animate-fade-in chat-pantalla lg:h-[calc(100vh-140px)] lg:min-h-[450px] lg:grid lg:grid-cols-4 lg:gap-6">
+      {/* Sidebar List (solo desktop) - en móvil se navega con la flecha */}
       <div className="hidden lg:block lg:col-span-1 glass rounded-2xl overflow-hidden h-full">
         <ConversationList list={conversations} />
       </div>
 
-      {/* Main chat window - full width en móvil */}
-      <div className="col-span-1 lg:col-span-3 glass rounded-2xl flex flex-col h-full overflow-hidden">
-        {/* Chat Header */}
-        <div className="p-4 border-b border-white/5 bg-slate-950/20 flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Back button - solo móvil (flujo tipo WhatsApp: lista -> chat -> volver) */}
+      {/* Ventana del chat */}
+      <div className="flex flex-1 min-h-0 flex-col glass rounded-2xl overflow-hidden max-lg:rounded-none lg:col-span-3 lg:h-full">
+        {/* Cabecera */}
+        <div className="chat-cabecera flex items-center justify-between gap-1 px-1.5 py-1.5 lg:gap-2 lg:px-4 lg:py-4 lg:border-b lg:border-white/5 lg:bg-slate-950/20">
+          <div className="flex items-center gap-1.5 lg:gap-3 min-w-0 flex-1">
+            {/* Volver - solo móvil (flujo tipo WhatsApp: lista -> chat -> volver) */}
             <Link
               href="/conversaciones"
-              className="lg:hidden flex-shrink-0 p-2 -ml-1 rounded-full text-slate-300 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
+              className="lg:hidden flex-shrink-0 flex h-10 w-8 items-center justify-center text-slate-200 active:opacity-60 transition-opacity"
               title="Volver a la lista de chats"
-              aria-label="Volver"
+              aria-label="Volver a la lista de chats"
             >
-              <ArrowLeft size={22} weight="bold" />
+              <ArrowLeft size={24} />
             </Link>
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold bg-primary-600/20 text-primary-300 shrink-0">
+            <div className="w-10 h-10 lg:w-9 lg:h-9 rounded-full flex items-center justify-center text-base lg:text-xs font-semibold bg-slate-700 text-slate-300 lg:bg-primary-600/20 lg:text-primary-300 shrink-0">
               {String(name).charAt(0).toUpperCase()}
             </div>
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-white truncate">{name}</h2>
-              <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="min-w-0 leading-tight">
+              <h2 className="text-[17px] lg:text-sm font-medium lg:font-semibold text-white truncate">{name}</h2>
+
+              {/* Telefono y linea de la empresa en UN renglon.
+                  El dato es el mismo que ya estaba — de quien viene y por que
+                  linea nuestra entra — pero en escritorio va como etiqueta y en
+                  telefono como texto corrido: la etiqueta con el numero completo
+                  obligaba a la cabecera a partirse en dos filas, y esa fila de
+                  mas es lo que se veia recortado arriba. */}
+              <p
+                className="lg:hidden text-[12px] truncate"
+                style={{ color: 'rgba(148, 163, 184, 0.65)' }}
+                title={
+                  lineaActual
+                    ? `Este chat entra por ${lineaActual.display_name}${lineaActual.phone_number ? ` · ${lineaActual.phone_number}` : ''}, y tu respuesta sale desde ahí`
+                    : undefined
+                }
+              >
+                {telefono}
+                {lineaActual && <span className="text-slate-500"> → {lineaActual.display_name}</span>}
+              </p>
+
+              <div className="hidden lg:flex items-center gap-1.5 flex-wrap">
                 <p className="text-[10px] truncate" style={{ color: 'rgba(148, 163, 184, 0.5)' }}>
                   {telefono}
                 </p>
@@ -211,13 +259,44 @@ export default function ChatClientPage({
             </div>
           </div>
 
-          {/* Bot switch */}
-          <div className="flex items-center gap-2">
+          {/* Telefono: un solo boton que dice quien esta respondiendo y lo
+              cambia al tocarlo. El interruptor de escritorio mide 44x24 y viene
+              con la palabra "Agente IA" al lado: junto al nombre del cliente,
+              en 390px de ancho, no cabia. */}
+          <button
+            onClick={handleBotToggle}
+            disabled={isPending}
+            aria-pressed={botActive}
+            aria-label={
+              botActive
+                ? 'Responde el agente IA. Tocar para pasar a responder tú.'
+                : 'Respondes tú. Tocar para que vuelva a responder el agente IA.'
+            }
+            className={`lg:hidden shrink-0 flex items-center gap-1.5 rounded-full px-3 h-10 text-xs font-semibold transition-colors ${
+              botActive
+                ? 'bg-primary-600/25 text-primary-200 border border-primary-500/40'
+                : 'bg-amber-500/15 text-amber-300 border border-amber-500/40'
+            }`}
+          >
+            {isPending ? (
+              <SpinnerGap size={16} className="animate-spin" />
+            ) : botActive ? (
+              <Robot size={16} weight="fill" />
+            ) : (
+              <User size={16} weight="fill" />
+            )}
+            {botActive ? 'IA' : 'Tú'}
+          </button>
+
+          {/* Escritorio: el interruptor de siempre */}
+          <div className="hidden lg:flex items-center gap-2">
             <Robot size={18} className={botActive ? 'text-primary-400' : 'text-slate-500'} />
             <span className="text-xs text-slate-300">Agente IA</span>
             <button
               onClick={handleBotToggle}
               disabled={isPending}
+              aria-pressed={botActive}
+              aria-label="Activar o pausar el agente IA en este chat"
               className={`toggle ${botActive ? 'active' : ''}`}
             >
               {isPending && (
@@ -227,10 +306,12 @@ export default function ChatClientPage({
           </div>
         </div>
 
-        {/* 🚨 Handoff Alert Banner */}
+        {/* 🚨 Handoff Alert Banner.
+            En telefono se reduce a un renglon: el mismo aviso ocupaba antes un
+            tercio de la pantalla y empujaba los mensajes fuera de la vista. */}
         {!botActive && (
           <div
-            className="mx-4 mt-3 mb-1 flex items-start gap-3 p-3.5 rounded-xl"
+            className="flex items-center gap-2 lg:items-start lg:gap-3 mx-2 lg:mx-4 mt-2 lg:mt-3 mb-1 p-2 lg:p-3.5 rounded-xl"
             style={{
               background: 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(220,38,38,0.08))',
               border: '1px solid rgba(239,68,68,0.3)',
@@ -238,14 +319,17 @@ export default function ChatClientPage({
             }}
           >
             <div
-              className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
+              className="flex-shrink-0 w-7 h-7 lg:w-8 lg:h-8 rounded-lg flex items-center justify-center"
               style={{ background: 'rgba(239,68,68,0.2)' }}
             >
               <WarningCircle size={18} weight="fill" className="text-red-400" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-red-300">Asistencia humana requerida</p>
-              <p className="text-xs mt-0.5" style={{ color: 'rgba(252,165,165,0.7)' }}>
+              <p className="text-xs lg:text-sm font-semibold text-red-300">
+                <span className="lg:hidden">Estás respondiendo tú</span>
+                <span className="hidden lg:inline">Asistencia humana requerida</span>
+              </p>
+              <p className="hidden lg:block text-xs mt-0.5" style={{ color: 'rgba(252,165,165,0.7)' }}>
                 El bot está <strong>pausado</strong>. Este cliente requiere atención directa.
                 Responde desde aquí o desde tu WhatsApp personal.
               </p>
@@ -254,7 +338,7 @@ export default function ChatClientPage({
               onClick={handleBotToggle}
               disabled={isPending}
               title="Reactivar bot"
-              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 h-8 lg:py-1.5 rounded-lg text-xs font-medium transition-all"
               style={{
                 background: 'rgba(99,102,241,0.15)',
                 border: '1px solid rgba(99,102,241,0.3)',
@@ -266,29 +350,60 @@ export default function ChatClientPage({
               ) : (
                 <ArrowCounterClockwise size={12} weight="bold" />
               )}
-              Reactivar bot
+              <span className="lg:hidden">Devolver</span>
+              <span className="hidden lg:inline">Reactivar bot</span>
             </button>
           </div>
         )}
 
-        {/* Messages Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Mensajes — la unica zona que se desplaza.
+            `overscroll-contain` evita que, al llegar al final, el tiron siga y
+            arrastre la pagina de debajo. */}
+        <div
+          ref={scrollRef}
+          className="chat-fondo flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 lg:p-4 space-y-2 lg:space-y-4"
+        >
           {messages.length > 0 ? (
-            messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))
+            messages.map((msg, i) => {
+              // Pastilla de fecha cuando cambia el dia, para poder leer una
+              // conversacion larga sin perder de vista cuando paso cada cosa.
+              const anterior = messages[i - 1];
+              const abreDia = !anterior || !mismoDia(anterior.created_at, msg.created_at);
+              // Mensajes seguidos del mismo remitente forman una tanda: solo el
+              // primero lleva cola.
+              const agrupado =
+                !!anterior &&
+                !abreDia &&
+                anterior.direction === msg.direction &&
+                anterior.sender === msg.sender;
+              return (
+                <div key={msg.id} className={agrupado ? 'space-y-0.5' : 'space-y-2 lg:space-y-4'}>
+                  {abreDia && (
+                    <div className="flex justify-center py-1">
+                      <span
+                        className="rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-300"
+                        style={{ background: '#1f2c33' }}
+                        suppressHydrationWarning
+                      >
+                        {etiquetaDeDia(msg.created_at)}
+                      </span>
+                    </div>
+                  )}
+                  <MessageBubble message={msg} agrupado={agrupado} />
+                </div>
+              );
+            })
           ) : (
             <div className="text-center py-12">
               <p className="text-xs" style={{ color: 'rgba(148, 163, 184, 0.4)' }}>No hay mensajes anteriores</p>
             </div>
           )}
-          <div ref={scrollRef} />
         </div>
 
-        {/* Message Input */}
-        <MessageInput 
-          conversationId={conversationId} 
-          contactPhone={contact?.wa_phone || ''} 
+        {/* Barra de escribir */}
+        <MessageInput
+          conversationId={conversationId}
+          contactPhone={contact?.wa_phone || ''}
           onMessageSent={handleOptimisticMessageSent}
         />
       </div>

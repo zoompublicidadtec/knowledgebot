@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import type { Message } from '@/lib/database.types';
+import { leerMedia, quitarCita, separarPieYAnalisis } from '@/lib/whatsapp/message-preview';
+import { horaDelMensaje } from '@/lib/chat/fechas';
+import { TextoWhatsApp } from './whatsapp-text';
 
 /**
  * Burbuja de mensaje del panel de Conversaciones.
@@ -16,54 +19,34 @@ import type { Message } from '@/lib/database.types';
  *
  * El base64 no se guarda en la base a proposito: una nota de voz metida en una
  * columna JSONB infla la base y vuelve lento el panel.
+ *
+ * DE DONDE SALE LA CLASIFICACION DEL ADJUNTO
+ * ------------------------------------------
+ * De `lib/whatsapp/message-preview.ts`, que es el mismo sitio del que la toma
+ * la lista de chats. Asi la fila y la burbuja no pueden contradecirse: si aqui
+ * se pinta un reproductor de audio, alla dice "Nota de voz".
  */
-export function MessageBubble({ message }: { message: Message }) {
+export function MessageBubble({
+  message,
+  agrupado = false,
+}: {
+  message: Message;
+  /**
+   * `true` cuando el mensaje anterior es del mismo remitente y del mismo dia.
+   * Entonces la burbuja pierde la cola, como en WhatsApp: la cola marca donde
+   * EMPIEZA a hablar alguien, y repetirla en cada mensaje de una misma tanda
+   * llena la pantalla de picos.
+   */
+  agrupado?: boolean;
+}) {
   const isOutbound = message.direction === 'outbound';
   const isBot = message.sender === 'bot';
   const isHuman = message.sender === 'human';
 
-  /**
-   * Zona horaria FIJA a proposito.
-   *
-   * Sin `timeZone`, el servidor formatea la hora en UTC (el contenedor no
-   * tiene zona) y el navegador en la del equipo. El texto no coincide y React
-   * lanza el error #418 de hidratacion, que es el que aparecia en la consola.
-   * Fijando Bogota, servidor y navegador escriben exactamente lo mismo, que
-   * ademas es la hora que le sirve al dueno.
-   */
-  const time = new Date(message.created_at).toLocaleTimeString('es-CO', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Bogota',
-  });
+  const time = horaDelMensaje(message.created_at);
 
-  const rawObj = message.raw as any;
-  const inbound = rawObj?.data?.message;
-  const media = inbound?.media;
-  // Las fotos de producto que envia el bot se guardan en la raiz de `raw`, con
-  // una ruta que sirve la propia app; esas no pasan por R2.
-  const outboundMedia = rawObj?.media;
-
-  /** Clave del objeto en R2: hay que cambiarla por una URL firmada. */
-  const r2Key: string | null =
-    media?.r2_key ||
-    (typeof media?.url === 'string' && media.url.startsWith('media/') ? media.url : null);
-
-  /** Direccion que ya se puede usar tal cual (ruta de la app o URL absoluta). */
-  const directUrl: string | null =
-    (typeof outboundMedia?.url === 'string' && outboundMedia.url) ||
-    (typeof media?.url === 'string' && /^(https?:\/\/|\/)/.test(media.url) ? media.url : null) ||
-    null;
-
-  const mimeType: string = media?.mimetype || '';
-  const declaredType: string = inbound?.mediaType || inbound?.type || outboundMedia?.type || '';
-  const sizeKB = media?.size_bytes ? Math.max(1, Math.round(media.size_bytes / 1024)) : null;
-
-  const esImagen = mimeType.startsWith('image/') || declaredType === 'image';
-  const esAudio =
-    mimeType.startsWith('audio/') || declaredType === 'ptt' || declaredType === 'audio';
-  /** El puente no pudo bajar el archivo: se dice, no se disimula. */
-  const mediaError = inbound?.mediaError === true;
+  const media = leerMedia(message);
+  const { esImagen, esAudio, mimeType, declaredType, sizeKB, r2Key, directUrl, mediaError } = media;
 
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [estadoMedia, setEstadoMedia] = useState<
@@ -104,42 +87,15 @@ export function MessageBubble({ message }: { message: Message }) {
   const hayImagen = esImagen && !!src;
   const hayAudio = esAudio && !!src;
 
-  /**
-   * El puente mete la cita dentro del texto (`[En respuesta a: "…"]`) porque el
-   * agente necesita el referente para entender "de ese, cuanto por 200". Aqui
-   * se quita, porque la cita ya se pinta arriba en su propia caja y si no
-   * saldria dos veces.
-   */
-  const displayText = (message.content || '')
-    .replace(/\n?\[En respuesta a: "[\s\S]*?"\]/g, '')
-    .trim();
-  let imageCaption = '';
-  let aiDescription = '';
+  // El puente incrusta la cita dentro del texto porque el agente necesita el
+  // referente; aqui se quita, que la cita ya se pinta arriba en su propia caja.
+  const displayText = quitarCita(message.content);
 
-  /**
-   * Texto de una imagen: lo que acompaña a la foto, y aparte el análisis de IA.
-   *
-   * Dos fallos que se veían en el panel y aquí se corrigen juntos:
-   *
-   *  1. El servidor anota las fotos del cliente como `[Imagen adjunta de
-   *     cliente: ...]`, pero aquí solo se buscaba `[Foto del cliente: ...]`.
-   *     Dos nombres para lo mismo, así que el análisis nunca se pintaba.
-   *  2. Si no aparecía ninguna de esas etiquetas, el pie se quedaba vacío. Las
-   *     fotos de producto que envía el bot llevan su nombre, su referencia y su
-   *     precio en el texto, y el panel los tiraba: el dueño veía la imagen
-   *     desnuda mientras el cliente sí recibía la información en WhatsApp.
-   *
-   * Ahora: sin etiqueta, el texto ES el pie de foto.
-   */
-  if (esImagen) {
-    const descMatch = displayText.match(/\[(?:Foto del cliente|Imagen adjunta de cliente):([\s\S]*?)\]/);
-    if (descMatch) {
-      aiDescription = descMatch[1].trim();
-      imageCaption = displayText.replace(descMatch[0], '').trim();
-    } else {
-      imageCaption = displayText;
-    }
-  }
+  // Sin etiqueta, el texto ES el pie de foto: las fotos de producto que envia
+  // el bot llevan nombre, referencia y precio ahi.
+  const { pie: imageCaption, analisis: aiDescription } = esImagen
+    ? separarPieYAnalisis(displayText)
+    : { pie: '', analisis: '' };
 
   // El texto de un audio ES su transcripcion.
   const transcription = esAudio ? displayText : '';
@@ -151,27 +107,17 @@ export function MessageBubble({ message }: { message: Message }) {
           ${isOutbound ? 'bubble-outbound' : 'bubble-inbound'}
           ${isBot ? 'bubble-bot' : ''}
           ${isHuman ? 'bubble-human' : ''}
-          relative space-y-1 shadow-sm max-w-[85%] sm:max-w-md md:max-w-lg
+          ${agrupado ? 'burbuja-agrupada' : ''}
+          relative shadow-sm max-w-[85%] sm:max-w-md md:max-w-lg
         `}
       >
-        {/* Label for sender if outbound */}
-        {isOutbound && (
-          <span className="block text-[10px] uppercase font-bold tracking-wider opacity-60 text-right">
-            {isBot ? '🤖 Bot' : '👤 Humano'}
-          </span>
-        )}
-
         {/* Cita del mensaje citado (reply) - solo se muestra si hay cita */}
-        {(() => {
-          const quotedBody = rawObj?.data?.message?.quoted?.body;
-          if (!quotedBody) return null;
-          return (
-            <div className="mb-1 px-2 py-1 border-l-2 border-slate-500 bg-slate-800/40 rounded text-[11px] text-slate-300 italic line-clamp-2">
-              <span className="not-italic font-semibold text-slate-400">↩ Respondiendo a: </span>
-              {quotedBody}
-            </div>
-          );
-        })()}
+        {media.citado && (
+          <div className="mb-1 px-2 py-1 border-l-2 border-slate-500 bg-slate-800/40 rounded text-[11px] text-slate-300 italic line-clamp-2">
+            <span className="not-italic font-semibold text-slate-400">↩ Respondiendo a: </span>
+            {media.citado}
+          </div>
+        )}
 
         {/* Archivo en camino: el panel dice qué está haciendo */}
         {estadoMedia === 'cargando' && (
@@ -204,15 +150,20 @@ export function MessageBubble({ message }: { message: Message }) {
           </div>
         )}
 
-        {/* Imagen */}
+        {/* Imagen.
+            En el telefono ocupa el ancho de la burbuja y se puede abrir a
+            tamano completo tocandola, como en WhatsApp: antes quedaba encajada
+            en 208px de alto y una etiqueta impresa no se alcanzaba a leer. */}
         {hayImagen && (
-          <div className="mt-1 mb-2 rounded-lg overflow-hidden border border-white/10 max-h-60 bg-black/20 flex flex-col items-center justify-center gap-1">
-            <img
-              src={src!}
-              alt="Imagen adjunta"
-              className="max-w-full max-h-52 object-contain hover:scale-[1.02] transition-transform duration-200"
-              onError={() => setEstadoMedia('no-disponible')}
-            />
+          <div className="mt-1 mb-2 rounded-lg overflow-hidden border border-white/10 bg-black/20 flex flex-col items-center justify-center gap-1">
+            <a href={src!} target="_blank" rel="noopener noreferrer" className="block w-full">
+              <img
+                src={src!}
+                alt={aiDescription || imageCaption || 'Imagen adjunta'}
+                className="w-full max-h-72 lg:max-h-52 object-contain transition-transform duration-200 lg:hover:scale-[1.02]"
+                onError={() => setEstadoMedia('no-disponible')}
+              />
+            </a>
             {aiDescription && (
               <details className="w-full px-2 pb-1">
                 <summary className="text-[9px] text-slate-400 cursor-pointer hover:text-slate-300 select-none">
@@ -258,17 +209,28 @@ export function MessageBubble({ message }: { message: Message }) {
         {!esAudio && (
           <>
             {esImagen && imageCaption && (
-              <p className="text-sm whitespace-pre-wrap leading-relaxed text-white">
-                {imageCaption}
-              </p>
+              <TextoWhatsApp
+                texto={imageCaption}
+                className="texto-mensaje text-sm whitespace-pre-wrap leading-relaxed text-white"
+              />
             )}
             {!esImagen && displayText && (
-              <p className="text-sm whitespace-pre-wrap leading-relaxed text-white">{displayText}</p>
+              <TextoWhatsApp
+                texto={displayText}
+                className="texto-mensaje text-sm whitespace-pre-wrap leading-relaxed text-white"
+              />
             )}
           </>
         )}
 
-        <span className="block text-[9px] opacity-50 text-right">{time}</span>
+        {/* Quien lo mando y a que hora, en un solo renglon al pie.
+            Antes "🤖 BOT" iba en mayusculas y ocupaba una linea entera encima
+            del mensaje: en el telefono, cada burbuja gastaba un renglon de
+            pantalla en repetir algo que el color de la burbuja ya dice. */}
+        <div className="flex items-center justify-end gap-1.5 pt-0.5 text-[10px] opacity-50">
+          {isOutbound && <span className="font-medium">{isBot ? '🤖 Bot' : '👤 Tú'}</span>}
+          <span>{time}</span>
+        </div>
       </div>
     </div>
   );

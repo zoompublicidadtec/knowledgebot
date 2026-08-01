@@ -1,28 +1,25 @@
-import { createAdminClient as createClient } from '@/lib/supabase/server';
 import { ConversationList } from '@/components/chat/conversation-list';
+import { NotificationBell } from '@/components/notification-bell';
+import { cargarConversaciones } from '@/lib/conversations/list';
 import { ChatCircleDots } from '@phosphor-icons/react/dist/ssr';
 import { redirect } from 'next/navigation';
 
 export default async function ConversationsIndexPage() {
-  const supabase = await createClient();
   const { getCurrentUser } = await import('@/lib/auth/actions');
   const profile = await getCurrentUser();
 
   if (!profile) redirect('/login');
-  const orgId = profile.organization_id;
 
-  // Fetch recent conversations
-  const { data: list } = await (supabase as any)
-    .from('conversations')
-    .select('*, contacts(full_name, wa_phone, metadata)')
-    .eq('organization_id', orgId)
-    .order('last_message_at', { ascending: false });
+  const list = await cargarConversaciones(profile.organization_id);
 
   return (
-    <div className="animate-fade-in h-[calc(100vh-140px)] min-h-[450px] grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Sidebar (List) - en móvil ocupa toda la pantalla como WhatsApp */}
-      <div className="col-span-1 lg:col-span-1 glass rounded-2xl overflow-hidden h-full">
-        <ConversationList list={list || []} />
+    /* `lista-pantalla` solo existe por debajo de 1024px: alli la lista sale del
+       <main> del panel y ocupa el telefono entero, sin tarjeta, sin borde y sin
+       la banda superior que solo llevaba la campana — que se muda a la cabecera
+       de la lista. En escritorio no aplica y manda la rejilla de siempre. */
+    <div className="animate-fade-in lista-pantalla lg:grid lg:grid-cols-4 lg:gap-6 lg:h-[calc(100vh-140px)] lg:min-h-[450px]">
+      <div className="flex flex-1 min-h-0 flex-col glass lg:col-span-1 lg:h-full lg:rounded-2xl lg:overflow-hidden">
+        <ConversationList list={list} accionesMovil={<NotificationBell />} />
       </div>
 
       {/* Main chat window - Empty state (solo desktop) */}

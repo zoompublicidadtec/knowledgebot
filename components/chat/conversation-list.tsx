@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { mostrarContacto } from '@/lib/whatsapp/contact-identity';
+import { resumirMensaje } from '@/lib/whatsapp/message-preview';
+import { etiquetaDeFecha } from '@/lib/chat/fechas';
 import { usePathname } from 'next/navigation';
-import { ChatCircleDots, Funnel } from '@phosphor-icons/react';
-import { useEffect, useState } from 'react';
+import { ChatCircleDots, Funnel, MagnifyingGlass, X, Checks } from '@phosphor-icons/react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 interface WhatsAppLine {
@@ -38,19 +40,6 @@ const LINE_CHIPS = [
   'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
   'bg-orange-500/15 text-orange-300 border-orange-500/30',
 ];
-
-interface ConversationItem {
-  id: string;
-  bot_active: boolean;
-  last_message_at: string;
-  line_key?: string | null;
-  contacts: {
-    full_name: string | null;
-    wa_phone: string;
-    // El telefono real cuando `wa_phone` es un `@lid`. Ver mostrarContacto().
-    metadata?: Record<string, unknown> | null;
-  } | null;
-}
 
 /**
  * Etapas del pipeline, con su color y su nombre en castellano.
@@ -89,9 +78,9 @@ const ETAPAS: Record<string, { nombre: string; avatar: string; etiqueta: string;
   },
   angry: {
     nombre: 'Molesto',
-    avatar: 'bg-rose-600/35 text-rose-100 ring-2 ring-rose-400',
-    etiqueta: 'bg-rose-500/20 text-rose-200 border-rose-500/50',
-    barra: 'bg-rose-500',
+    avatar: 'bg-rose-500/25 text-rose-200 ring-2 ring-rose-400',
+    etiqueta: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
+    barra: 'bg-rose-400',
   },
   ignore: {
     nombre: 'Ignorar',
@@ -101,11 +90,48 @@ const ETAPAS: Record<string, { nombre: string; avatar: string; etiqueta: string;
   },
 };
 
-export function ConversationList({ list }: { list: ConversationItem[] }) {
+/** El último mensaje del chat, para el renglón de vista previa de la lista. */
+export interface UltimoMensaje {
+  content: string | null;
+  raw: unknown;
+  direction: 'inbound' | 'outbound';
+}
+
+interface ConversationItem {
+  id: string;
+  bot_active: boolean;
+  last_message_at: string;
+  line_key?: string | null;
+  /** Lo llena la página; si falta, la fila cae al teléfono, nunca a un texto inventado. */
+  ultimo_mensaje?: UltimoMensaje | null;
+  contacts: {
+    full_name: string | null;
+    wa_phone: string;
+    // El telefono real cuando `wa_phone` es un `@lid`. Ver mostrarContacto().
+    metadata?: Record<string, unknown> | null;
+  } | null;
+}
+
+export function ConversationList({
+  list,
+  accionesMovil,
+}: {
+  list: ConversationItem[];
+  /**
+   * Lo que va a la derecha del título "Chats", solo en teléfono.
+   * Sirve para meter la campana de avisos DENTRO de la cabecera de la lista:
+   * antes tenía una banda propia de unos 50 px en la que no había nada más, y
+   * en un teléfono eso es casi una fila de chat desperdiciada.
+   */
+  accionesMovil?: React.ReactNode;
+}) {
   const pathname = usePathname();
   const [conversations, setConversations] = useState(list);
   const [lines, setLines] = useState<WhatsAppLine[]>([]);
   const [selectedLine, setSelectedLine] = useState<string>('Todas');
+  // Buscador: solo en teléfono. En una lista larga, encontrar a un cliente
+  // desplazando con el pulgar es justo lo que hacía inmanejable esta pantalla.
+  const [busqueda, setBusqueda] = useState('');
   const supabase = createClient();
 
   useEffect(() => {
@@ -155,7 +181,17 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
           setConversations((prev) => {
             const idx = prev.findIndex((c) => c.id === convId);
             if (idx === -1) return prev;
-            const updated = { ...prev[idx], last_message_at: payload.new.created_at };
+            const updated = {
+              ...prev[idx],
+              last_message_at: payload.new.created_at,
+              // La vista previa se mueve con el mensaje que acaba de llegar; si
+              // no, la fila sube al tope mostrando todavía el mensaje anterior.
+              ultimo_mensaje: {
+                content: payload.new.content ?? null,
+                raw: payload.new.raw ?? null,
+                direction: payload.new.direction,
+              },
+            };
             const rest = prev.filter((c) => c.id !== convId);
             return [updated, ...rest]; // bubble to top
           });
@@ -194,36 +230,124 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
     };
   }, [supabase]);
 
+  const visibles = useMemo(() => {
+    const texto = busqueda.trim().toLowerCase();
+    return conversations
+      .filter((c) => selectedLine === 'Todas' || c.line_key === selectedLine)
+      .filter((c) => {
+        if (!texto) return true;
+        const { nombre, telefono } = mostrarContacto(c.contacts as any);
+        return `${nombre} ${telefono}`.toLowerCase().includes(texto);
+      });
+  }, [conversations, selectedLine, busqueda]);
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="p-4 border-b border-white/5 space-y-3">
-        <h2 className="text-sm font-semibold text-white">Chat Recientes</h2>
-        
-        {lines.length > 0 && (
-          <div className="flex items-center gap-2 bg-slate-900/50 p-1.5 rounded-lg border border-white/5">
-            <Funnel size={14} className="text-slate-400 ml-1" />
-            <select
-              value={selectedLine}
-              onChange={(e) => {
-                setSelectedLine(e.target.value);
-                localStorage.setItem('kb_selected_line', e.target.value);
-              }}
-              className="bg-transparent text-xs text-slate-300 outline-none w-full cursor-pointer"
+    <div className="flex flex-1 min-h-0 flex-col lg:h-full">
+      {/* Cabecera: no se desplaza, es hermana de la lista y no parte de ella. */}
+      <div className="lista-cabecera px-3 py-2.5 lg:p-4 lg:border-b lg:border-white/5 space-y-2.5 lg:space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-[20px] lg:text-sm font-medium lg:font-semibold text-white">
+            <span className="lg:hidden">Chats</span>
+            <span className="hidden lg:inline">Chat Recientes</span>
+          </h2>
+          {accionesMovil && <div className="lg:hidden shrink-0">{accionesMovil}</div>}
+        </div>
+
+        {/* Buscador — solo teléfono. `text-base` son 16 px exactos: por debajo de
+            eso Safari de iPhone hace zoom solo al enfocar y descuadra la lista. */}
+        <div className="lg:hidden relative">
+          <MagnifyingGlass
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+          />
+          <input
+            type="search"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar un cliente"
+            aria-label="Buscar un cliente por nombre o teléfono"
+            className="w-full text-base rounded-full bg-slate-900/70 border border-white/10 py-2.5 pl-9 pr-9 text-white outline-none focus:border-primary-500/60 placeholder:text-slate-500"
+          />
+          {busqueda && (
+            <button
+              type="button"
+              onClick={() => setBusqueda('')}
+              aria-label="Borrar la búsqueda"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-slate-400 active:bg-white/10"
             >
-              <option value="Todas" className="bg-slate-900">Todas las líneas</option>
-              {lines.map(line => (
-                <option key={line.line_key} value={line.line_key} className="bg-slate-900">
-                  {line.display_name}
-                </option>
+              <X size={14} weight="bold" />
+            </button>
+          )}
+        </div>
+
+        {lines.length > 0 && (
+          <>
+            {/* Teléfono: fichas que se tocan con el pulgar, con el MISMO color que
+                lleva cada línea en su etiqueta dentro de la fila. El desplegable
+                nativo obliga a abrir un menú y apuntar a un renglón de 20 px. */}
+            <div className="lg:hidden -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLine('Todas');
+                  localStorage.setItem('kb_selected_line', 'Todas');
+                }}
+                className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                  selectedLine === 'Todas'
+                    ? 'bg-primary-600/30 text-primary-200 border-primary-500/40'
+                    : 'bg-slate-900/60 text-slate-400 border-white/5'
+                }`}
+              >
+                Todas
+              </button>
+              {lines.map((linea, idx) => (
+                <button
+                  key={linea.line_key}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLine(linea.line_key);
+                    localStorage.setItem('kb_selected_line', linea.line_key);
+                  }}
+                  className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                    selectedLine === linea.line_key
+                      ? LINE_CHIPS[idx % LINE_CHIPS.length]
+                      : 'bg-slate-900/60 text-slate-400 border-white/5'
+                  }`}
+                >
+                  {linea.display_name}
+                </button>
               ))}
-            </select>
-          </div>
+            </div>
+
+            {/* Escritorio: el desplegable de siempre, sin cambios. */}
+            <div className="hidden lg:flex items-center gap-2 bg-slate-900/50 p-1.5 rounded-lg border border-white/5">
+              <Funnel size={14} className="text-slate-400 ml-1" />
+              <select
+                value={selectedLine}
+                onChange={(e) => {
+                  setSelectedLine(e.target.value);
+                  localStorage.setItem('kb_selected_line', e.target.value);
+                }}
+                className="bg-transparent text-xs text-slate-300 outline-none w-full cursor-pointer"
+              >
+                <option value="Todas" className="bg-slate-900">Todas las líneas</option>
+                {lines.map(line => (
+                  <option key={line.line_key} value={line.line_key} className="bg-slate-900">
+                    {line.display_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {conversations.filter(c => selectedLine === 'Todas' || c.line_key === selectedLine).length > 0 ? (
-          conversations.filter(c => selectedLine === 'Todas' || c.line_key === selectedLine).map((conv) => {
+      {/* La ÚNICA zona que se desplaza, en teléfono y en escritorio. Antes en
+          teléfono había dos scrolls anidados — el de la página y el de esta
+          caja — y el dedo arrastraba el equivocado. */}
+      <div className="lista-scroll flex-1 min-h-0 overflow-y-auto lg:p-2 lg:space-y-1">
+        {visibles.length > 0 ? (
+          visibles.map((conv) => {
             const isActive = pathname.includes(conv.id);
             const contact = conv.contacts;
             // Misma regla de presentacion que el resto del panel.
@@ -232,13 +356,21 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
             const etapaId = (contact as any)?.metadata?.stage;
             const etapa = etapaId && etapaId !== 'inbox' ? ETAPAS[etapaId] : undefined;
 
+            const idxLinea = lines.findIndex((l) => l.line_key === conv.line_key);
+            const linea = idxLinea >= 0 ? lines[idxLinea] : undefined;
+
+            const resumen = resumirMensaje(conv.ultimo_mensaje as any);
+            const esMio = conv.ultimo_mensaje?.direction === 'outbound';
+
             return (
               <Link
                 key={conv.id}
                 href={`/conversaciones/${conv.id}`}
                 className={`
-                  relative overflow-hidden flex items-center justify-between p-3 pl-4 rounded-xl transition-all text-decoration-none
-                  ${isActive ? 'bg-primary-600/20 border border-primary-500/30' : 'hover:bg-white/5'}
+                  chat-fila relative overflow-hidden
+                  lg:flex lg:items-center lg:justify-between lg:gap-0 lg:p-3 lg:pl-4 lg:min-h-0
+                  lg:rounded-xl lg:transition-all
+                  ${isActive ? 'bg-primary-600/20 lg:border lg:border-primary-500/30' : 'lg:hover:bg-white/5'}
                 `}
                 suppressHydrationWarning
               >
@@ -248,9 +380,11 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
                   <span className={`absolute left-0 top-0 bottom-0 w-1.5 ${etapa.barra}`} aria-hidden />
                 )}
 
-                <div className="flex items-center gap-3 overflow-hidden">
+                <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0">
+                  {/* Avatar: 52 px en teléfono (lo que mide en WhatsApp), 40 en
+                      escritorio. El aro de color dice la etapa sin leer. */}
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold ${
+                    className={`w-[52px] h-[52px] lg:w-10 lg:h-10 rounded-full flex items-center justify-center shrink-0 font-semibold text-lg lg:text-base ${
                       etapa ? etapa.avatar : 'bg-slate-800 text-slate-400'
                     }`}
                     title={etapa ? `Etapa: ${etapa.nombre}` : undefined}
@@ -258,32 +392,50 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
                   >
                     {Array.from(name)[0]?.toUpperCase()}
                   </div>
-                  <div className="flex flex-col overflow-hidden">
+
+                  <div className="flex flex-col overflow-hidden flex-1 min-w-0 gap-0.5">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-medium text-slate-200 truncate" suppressHydrationWarning>
+                      <span
+                        className="text-base lg:text-sm font-medium text-slate-100 lg:text-slate-200 truncate"
+                        suppressHydrationWarning
+                      >
                         {name}
                       </span>
-                      {conv.line_key && lines.length > 0 && (() => {
-                        const idx = lines.findIndex(l => l.line_key === conv.line_key);
-                        const linea = lines[idx];
-                        if (!linea) return null;
-                        return (
-                          <span
-                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap shrink-0 ${
-                              LINE_CHIPS[idx % LINE_CHIPS.length]
-                            }`}
-                            title={
-                              linea.phone_number
-                                ? `Escribió a ${linea.display_name} · ${linea.phone_number}`
-                                : `Escribió a ${linea.display_name}`
-                            }
-                          >
-                            {linea.display_name}
-                          </span>
-                        );
-                      })()}
+                      {linea && (
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap shrink-0 ${
+                            LINE_CHIPS[idxLinea % LINE_CHIPS.length]
+                          }`}
+                          title={
+                            linea.phone_number
+                              ? `Escribió a ${linea.display_name} · ${linea.phone_number}`
+                              : `Escribió a ${linea.display_name}`
+                          }
+                        >
+                          {linea.display_name}
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+
+                    {/* Teléfono: el último mensaje, que es lo que uno lee para
+                        decidir si entra. Si no hay, el número del contacto —
+                        nunca un texto de relleno. */}
+                    <div className="lg:hidden flex items-center gap-1 text-[13px] text-slate-400 min-w-0">
+                      {resumen ? (
+                        <>
+                          {esMio && <Checks size={14} className="shrink-0 text-slate-500" />}
+                          {resumen.icono && <span className="shrink-0">{resumen.icono}</span>}
+                          <span className="truncate">{resumen.texto}</span>
+                        </>
+                      ) : (
+                        <span className="truncate text-slate-500" suppressHydrationWarning>
+                          {telefono || 'Sin mensajes todavía'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Escritorio: teléfono y hora, como estaba. */}
+                    <div className="hidden lg:flex items-center gap-1.5 text-[10px] text-slate-500">
                       {telefono && (
                         <>
                           <span suppressHydrationWarning>{telefono}</span>
@@ -297,7 +449,12 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end gap-2 shrink-0">
+                <div className="flex flex-col items-end gap-1 lg:gap-2 shrink-0 pl-2">
+                  {/* Teléfono: la hora arriba a la derecha, como en la app. */}
+                  <span className="lg:hidden text-[11px] text-slate-500 capitalize" suppressHydrationWarning>
+                    {etiquetaDeFecha(conv.last_message_at)}
+                  </span>
+
                   {/* Status Badge */}
                   {conv.bot_active ? (
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-0.5">
@@ -308,7 +465,7 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
                       👤 Humano
                     </span>
                   )}
-                  
+
                   {/* Etapa del pipeline, escrita. El color solo no basta. */}
                   {etapa && (
                     <span
@@ -324,7 +481,9 @@ export function ConversationList({ list }: { list: ConversationItem[] }) {
         ) : (
           <div className="text-center py-8 text-slate-500 flex flex-col items-center">
             <ChatCircleDots size={32} className="opacity-20 mb-2" />
-            <span className="text-xs">No hay conversaciones activas</span>
+            <span className="text-xs">
+              {busqueda.trim() ? `Ningún chat coincide con "${busqueda.trim()}"` : 'No hay conversaciones activas'}
+            </span>
           </div>
         )}
       </div>

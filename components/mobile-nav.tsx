@@ -21,6 +21,13 @@ const mobileNavItems = [
 export function MobileNav() {
   const pathname = usePathname();
 
+  // Dentro de un chat abierto la nav desaparece, igual que en WhatsApp: alli
+  // tampoco se ven las pestanas mientras lees una conversacion. Aqui ademas
+  // estorbaba de verdad — al estar fija abajo tapaba la barra de escribir.
+  // La lista (`/conversaciones`) si la conserva; solo se va en `/conversaciones/<id>`.
+  const dentroDeUnChat = /^\/conversaciones\/[^/]+/.test(pathname);
+  if (dentroDeUnChat) return null;
+
   return (
     <nav
       className="lg:hidden fixed bottom-0 left-0 right-0 z-50"

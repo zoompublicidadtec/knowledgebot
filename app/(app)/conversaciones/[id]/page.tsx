@@ -1,5 +1,6 @@
 import { createAdminClient as createClient } from '@/lib/supabase/server';
 import ChatClientPage from './client-page';
+import { cargarConversaciones } from '@/lib/conversations/list';
 import { redirect } from 'next/navigation';
 
 interface ChatPageProps {
@@ -25,12 +26,9 @@ export default async function ChatPage({ params }: ChatPageProps) {
 
   if (!currentConversation) redirect('/conversaciones');
 
-  // Load list of conversations for sidebar
-  const { data: conversations } = await (supabase as any)
-    .from('conversations')
-    .select('*, contacts(*)')
-    .eq('organization_id', orgId)
-    .order('last_message_at', { ascending: false });
+  // Lista lateral (solo escritorio), con el resumen del ultimo mensaje de cada
+  // chat para que muestre exactamente lo mismo que la pantalla de la lista.
+  const conversations = await cargarConversaciones(orgId);
 
   // Load chat messages
   const { data: messages } = await (supabase as any)
@@ -42,7 +40,7 @@ export default async function ChatPage({ params }: ChatPageProps) {
   return (
     <ChatClientPage
       conversationId={id}
-      initialConversations={conversations || []}
+      initialConversations={conversations}
       initialMessages={messages || []}
       currentConversation={currentConversation}
     />

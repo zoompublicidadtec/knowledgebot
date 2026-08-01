@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -15,6 +15,28 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "KnowledgeBot SaaS",
   description: "Asistente IA para WhatsApp con memoria vectorial en Supabase",
+};
+
+/**
+ * El viewport del telefono. Los dos ajustes de abajo son los que permiten que
+ * el chat se comporte como una app y no como una pagina.
+ *
+ * Sin este export, Next pone `width=device-width, initial-scale=1` y nada mas.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // `cover` es lo que hace que `env(safe-area-inset-*)` deje de valer cero en
+  // iPhone. La nav movil ya pedia `env(safe-area-inset-bottom)` desde hacia
+  // tiempo, pero sin esta linea siempre le respondian 0px: por eso la barra de
+  // escribir del chat quedaba pisada por la barra de gestos.
+  viewportFit: "cover",
+  // Al abrir el teclado, Chrome de Android por defecto solo encoge el viewport
+  // *visual*: lo que esta anclado abajo — la barra de escribir — se queda
+  // detras del teclado. `resizes-content` encoge tambien el de maquetado, asi
+  // que `100dvh` y `position: fixed` reaccionan al teclado como en WhatsApp.
+  interactiveWidget: "resizes-content",
+  themeColor: "#0a0e1a",
 };
 
 export default function RootLayout({

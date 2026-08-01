@@ -338,3 +338,267 @@ body {
   color: var(--color-primary-300);
   font-weight: 500;
 }
+
+/* === CONVERSACIONES EN EL TELEFONO ==========================================
+   Todo este bloque vive por debajo de 1024px, que es el `lg:` de Tailwind.
+   Por encima de esa medida no aplica ninguna de estas reglas: el panel de
+   Conversaciones en escritorio queda exactamente como estaba.
+
+   QUE ESTABA MAL, MEDIDO SOBRE EL CODIGO ANTERIOR
+   -----------------------------------------------
+   1. El chat era una caja de altura `calc(100vh - 140px)` metida dentro del
+      <main> del panel, que ya tiene su propio scroll y su propio padding.
+      Dos areas desplazables anidadas: el dedo arrastraba la pagina entera en
+      lugar de los mensajes, y al soltar rebotaba.
+   2. En un telefono `100vh` NO es la altura visible — incluye lo que tapa la
+      barra de direcciones del navegador. Y `140px` era el alto del encabezado
+      de escritorio. Con las dos cosas juntas, la barra de escribir caia por
+      debajo del borde inferior de la pantalla.
+   3. La nav flotante estaba fija abajo con `z-50`, encima de esa barra.
+
+   La solucion no es recortar mas pixeles del `calc`, es que el chat deje de
+   ser una caja dentro de la pagina y pase a ser la pantalla. */
+
+@media (max-width: 1023px) {
+  /* --- La pantalla del chat ---------------------------------------------- */
+
+  /* Un chat abierto se sale del <main> y ocupa el telefono entero.
+     Dentro, el UNICO sitio que se desplaza es la lista de mensajes. */
+  .chat-pantalla {
+    position: fixed;
+    inset: 0;
+    z-index: 60; /* por encima de la nav movil (50) y del encabezado (50) */
+    display: flex;
+    flex-direction: column;
+    height: 100vh; /* respaldo para navegadores sin dvh */
+    height: 100dvh; /* la altura realmente visible, sin la barra del navegador */
+    background: #0b1016;
+
+    /* Los colores de las burbujas viven aqui porque la cola de cada burbuja es
+       un pseudo-elemento aparte y tiene que pintarse del MISMO color que el
+       cuerpo. Con el color en un solo sitio no se pueden desincronizar. */
+    --burbuja-entrante: #1f2c33;
+    --burbuja-bot: #075e52;
+    --burbuja-humano: #1c7a5e;
+  }
+
+  /* Papel tapiz.
+     Es la parte que mas hace que un chat "parezca" un chat: sin el, los
+     mensajes flotan sobre un fondo plano y la pantalla se lee como un listado.
+     El dibujo va incrustado como SVG — ni una peticion de red, ni una imagen
+     que mantener — y a muy baja opacidad, para que nunca compita con el texto. */
+  .chat-fondo {
+    background-color: #0b1016;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150' viewBox='0 0 150 150'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.032' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='22' cy='24' r='9'/%3E%3Crect x='62' y='16' width='17' height='17' rx='3'/%3E%3Cpath d='M112 16l7 12h-14z'/%3E%3Cpath d='M16 66h20M16 73h13'/%3E%3Cpath d='M66 62l10 10-10 10-10-10z'/%3E%3Crect x='106' y='62' width='20' height='14' rx='2'/%3E%3Cpath d='M18 108q10-13 21 0'/%3E%3Ccircle cx='76' cy='116' r='9'/%3E%3Cpath d='M110 106h16v16h-16z'/%3E%3C/g%3E%3C/svg%3E");
+    background-repeat: repeat;
+  }
+
+  /* --- La pantalla de la lista de chats ----------------------------------- */
+
+  /* Misma idea que `.chat-pantalla`. La lista era una tarjeta con borde,
+     margenes y scroll propio metida dentro del <main> del panel; ahora ocupa
+     el telefono entero.
+     Lo que se recupera de pantalla: la banda de arriba que solo llevaba la
+     campana (~60px), los 16px de padding del <main> por cada lado, y el borde
+     indigo de la tarjeta — el "borde raro". Son casi dos filas mas de chats
+     visibles sin cambiar el alto de las filas. */
+  .lista-pantalla {
+    position: fixed;
+    inset: 0;
+    /* Mismo z que el encabezado del panel, pero va despues en el DOM, asi que
+       queda encima. La nav de abajo va despues todavia y sigue visible. */
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    background: #0b1016;
+  }
+
+  .lista-pantalla .lista-cabecera {
+    flex-shrink: 0;
+    padding-top: env(safe-area-inset-top, 0px);
+    background: #1f2c33;
+    border: none;
+  }
+
+  .lista-pantalla .lista-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Hueco para la nav flotante, que se pinta por encima de esta capa. */
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* A pantalla completa, la tarjeta de cristal sobra: aqui el chat ES la
+     pantalla, no una tarjeta apoyada sobre el panel. Va antes que las reglas
+     de la cabecera y la barra, que tienen la misma especificidad y deben
+     ganarle. */
+  .lista-pantalla .glass,
+  .chat-pantalla .glass {
+    background: transparent;
+    border: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* Cabecera y barra de escribir no se encogen nunca: el que cede espacio
+     cuando entra el teclado es el area de mensajes. */
+  .chat-pantalla .chat-cabecera,
+  .chat-pantalla .chat-barra {
+    flex-shrink: 0;
+    /* Un punto por encima del papel tapiz, sin linea divisoria: en WhatsApp la
+       cabecera y la barra se separan del fondo por tono, no por un borde. */
+    background: #1f2c33;
+    border: none;
+  }
+
+  .chat-pantalla .chat-cabecera {
+    /* Respeta la muesca / camara del telefono. */
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .chat-pantalla .chat-barra {
+    /* Respeta la barra de gestos del iPhone. Con `viewport-fit: cover` puesto
+       en el layout raiz, este valor por fin deja de ser 0. */
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.4rem);
+    background: #0b1016;
+  }
+
+  /* El campo: una pastilla, no una caja con marco. */
+  .chat-pantalla .chat-campo {
+    background: #202c33;
+    border-color: transparent;
+    border-radius: 22px;
+    padding: 0.55rem 0.9rem;
+  }
+
+  /* El boton de enviar toma el verde del chat en lugar del indigo del panel:
+     con las burbujas ya en verde, el indigo quedaba como una pieza de otro
+     juego. En escritorio sigue siendo el indigo de la marca. */
+  .chat-pantalla .boton-enviar {
+    background: #00a884;
+    color: #0b1016;
+  }
+  .chat-pantalla .boton-enviar:disabled {
+    background: #2a3942;
+    color: rgba(148, 163, 184, 0.7);
+  }
+
+  /* 16px EXACTOS, y no es una preferencia de tamano: por debajo de 16px,
+     Safari de iPhone hace zoom solo al enfocar el campo y descuadra la
+     pantalla completa. El `.input` general del panel mide 14px, que es
+     justo lo que disparaba ese zoom al ir a responder un mensaje. */
+  .chat-campo {
+    font-size: 16px;
+    line-height: 1.35;
+    max-height: 7.5rem; /* ~5 renglones; a partir de ahi se desplaza el campo */
+  }
+
+  /* --- Burbujas ---------------------------------------------------------- */
+
+  /* Mas anchas y con menos relleno que en escritorio: en una pantalla de 390px
+     el 75% anterior partia cualquier frase de dos palabras.
+     Y sin borde: el borde de 1px que traian dibujaba un marco alrededor de cada
+     mensaje y era buena parte de la sensacion de "formulario" en vez de chat.
+     El radio tambien baja — 16px redondeaba tanto que las burbujas parecian
+     pastillas; una burbuja de chat es casi un rectangulo. */
+  .chat-pantalla .bubble-inbound,
+  .chat-pantalla .bubble-outbound {
+    position: relative;
+    max-width: 85%;
+    padding: 0.4rem 0.55rem 0.3rem;
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  }
+
+  /* La cola. Es un triangulo que sale de la esquina superior y apunta a quien
+     habla: a la izquierda el cliente, a la derecha nosotros. Es el detalle que
+     convierte un rectangulo en un bocadillo. */
+  .chat-pantalla .bubble-inbound::before,
+  .chat-pantalla .bubble-outbound::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 9px;
+    height: 13px;
+  }
+
+  .chat-pantalla .bubble-inbound {
+    background: var(--burbuja-entrante);
+    border-top-left-radius: 0;
+  }
+  .chat-pantalla .bubble-inbound::before {
+    left: -8px;
+    background: var(--burbuja-entrante);
+    clip-path: polygon(100% 0, 0 0, 100% 100%);
+  }
+
+  .chat-pantalla .bubble-outbound {
+    background: var(--burbuja-bot);
+    border-top-right-radius: 0;
+  }
+  .chat-pantalla .bubble-outbound::before {
+    right: -8px;
+    background: var(--burbuja-bot);
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+
+  /* Lo que escribio una persona va en un verde mas claro que lo del bot: en el
+     panel importa distinguirlo de un vistazo, y el rotulo del pie lo confirma.
+     Va DESPUES de `.bubble-outbound` a proposito — misma especificidad, gana
+     la ultima. */
+  .chat-pantalla .bubble-human {
+    background: var(--burbuja-humano);
+  }
+  .chat-pantalla .bubble-human::before {
+    background: var(--burbuja-humano);
+  }
+
+  /* Segundo, tercer, cuarto mensaje seguido de la misma persona: sin cola y con
+     la esquina ya redondeada, que es como se ve una tanda en WhatsApp. */
+  .chat-pantalla .burbuja-agrupada::before {
+    display: none;
+  }
+  .chat-pantalla .burbuja-agrupada {
+    border-radius: 8px;
+  }
+
+  /* El texto del mensaje. 15px es la medida de WhatsApp: a 14px la pantalla se
+     ve apretada y a 16px caben tres palabras por renglon. */
+  .chat-pantalla .texto-mensaje {
+    font-size: 15px;
+    line-height: 1.38;
+  }
+
+  /* --- Filas de la lista de chats ---------------------------------------- */
+
+  .chat-fila {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+    /* Area tactil comoda: una fila de lista se toca con el pulgar, en
+       movimiento, y antes median 58px con el nombre pegado al badge. */
+    min-height: 72px;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .chat-fila:active {
+    background: rgba(99, 102, 241, 0.12);
+  }
+  /* Separador que arranca despues del avatar, como en la app: 1rem de padding
+     + 52px de avatar + 0.75rem de hueco. */
+  .chat-fila + .chat-fila::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 5rem;
+    right: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
