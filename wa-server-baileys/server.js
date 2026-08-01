@@ -355,24 +355,33 @@ function recordLidMapping(line, msg) {
 
 /**
  * Direccion a la que se debe ENVIAR de verdad.
- * Devuelve { jid, problema } — si es un @lid del que no se conoce el telefono,
- * `problema` explica por que no se puede entregar, en vez de fingir un envio.
+ *
+ * Si conocemos el telefono real del @lid, se usa: es la direccion mas segura.
+ * Si NO lo conocemos, se INTENTA igual contra el @lid.
+ *
+ * Hasta el 01-ago-2026 aqui se rechazaba el envio de entrada, por la creencia
+ * —anotada el 30-jul— de que el error 463 lo causaba el @lid. El 31-jul se
+ * midio lo contrario: 463 es un bloqueo de la CUENTA, no de la direccion (la
+ * misma linea que fallaba contra un @lid fallaba tambien contra un telefono
+ * normal, y otra linea entregaba a los dos). Esa creencia falsa quedo metida
+ * en el puente y dejo sin respuesta a un cliente real: WhatsApp ya no publica
+ * el telefono de quien usa la privacidad nueva (`senderPn: null` en los tres
+ * mensajes que mando), asi que no habia nada que "aprender" y el bot, que si
+ * habia escrito tres respuestas correctas, nunca pudo entregarlas.
+ *
+ * No hace falta adivinar: despues de enviar se espera el acuse REAL de
+ * WhatsApp (`esperarRechazo`). Si de verdad lo rechaza, se reporta ese error
+ * autentico. Intentar y verificar es mejor que negarse por una suposicion.
  */
 function resolveSendJid(line, chatId) {
     const jid = normalizeJid(chatId);
-    if (!jid.endsWith('@lid')) return { jid, problema: null };
+    if (!jid.endsWith('@lid')) return { jid, telefonoConocido: true };
 
     const map = loadLidMap(line);
     const pn = map[jid];
-    if (pn) return { jid: pn, problema: null };
+    if (pn) return { jid: pn, telefonoConocido: true };
 
-    return {
-        jid,
-        problema:
-            `El destinatario ${jid} es un identificador interno (@lid) y todavia no se conoce su ` +
-            `telefono real. WhatsApp rechaza los envios a esa direccion con error 463. Se aprende ` +
-            `en cuanto esa persona escriba una vez a esta linea.`,
-    };
+    return { jid, telefonoConocido: false };
 }
 
 /**
@@ -1385,13 +1394,14 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
     const content = message || text;
     if (!chatId || !content) return res.status(400).json({ error: 'chatId y message/text son obligatorios' });
 
-    // Un @lid sin telefono conocido se rechaza AQUI. Antes se enviaba igual,
-    // Baileys devolvia un id valido y la app daba la respuesta por entregada,
-    // mientras WhatsApp la tiraba con error 463 y el cliente no recibia nada.
+    // Se intenta aunque no conozcamos el telefono: el acuse real de WhatsApp,
+    // unas lineas mas abajo, es quien dice si se entrego o no.
     const destino = resolveSendJid(line, chatId);
-    if (destino.problema) {
-        logger.error({ line, chatId, jid: destino.jid }, destino.problema);
-        return res.status(503).json({ error: destino.problema });
+    if (!destino.telefonoConocido) {
+        logger.warn(
+            { line, chatId, jid: destino.jid },
+            'Destino @lid sin telefono conocido (privacidad de WhatsApp): se intenta el envio y se verifica el acuse'
+        );
     }
     const jid = destino.jid;
 
@@ -1442,9 +1452,11 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
     if (!chatId || !mediaUrl) return res.status(400).json({ error: 'chatId y mediaUrl son obligatorios' });
 
     const destino = resolveSendJid(line, chatId);
-    if (destino.problema) {
-        logger.error({ line, chatId, jid: destino.jid }, destino.problema);
-        return res.status(503).json({ error: destino.problema });
+    if (!destino.telefonoConocido) {
+        logger.warn(
+            { line, chatId, jid: destino.jid },
+            'Destino @lid sin telefono conocido (privacidad de WhatsApp): se intenta el envio y se verifica el acuse'
+        );
     }
     const jid = destino.jid;
     const fullUrl = String(mediaUrl).startsWith('/') ? `${APP_URL}${mediaUrl}` : String(mediaUrl);

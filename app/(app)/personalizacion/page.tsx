@@ -49,12 +49,28 @@ export default async function CustomizationPage() {
     }
 
     if (sandboxContactId) {
+      /**
+       * SIEMPRE la MISMA conversación de pruebas.
+       *
+       * Antes esto era `.single()`, que falla cuando hay más de una fila. Con
+       * dos conversaciones de prueba ya creadas, la consulta devolvía error, el
+       * código concluía que no existía ninguna y creaba otra: cada visita a
+       * esta pantalla dejaba un chat nuevo. Medido el 01-ago-2026: 10
+       * conversaciones del contacto de pruebas, 9 sin un solo mensaje, y todas
+       * arriba en la lista de chats empujando a los clientes reales hacia
+       * abajo, porque la lista ordena por fecha del último mensaje y una
+       * conversación recién creada trae la fecha de hoy.
+       *
+       * Se toma la más antigua, que es la que tiene el historial de pruebas.
+       */
       const { data: existingConv } = await (adminClient as any)
         .from('conversations')
         .select('id')
         .eq('organization_id', orgId)
         .eq('contact_id', sandboxContactId)
-        .single();
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
       let sandboxConvId = existingConv?.id;
 

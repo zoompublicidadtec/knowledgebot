@@ -1,5 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server';
 
+/** Teléfono ficticio del simulador de Personalización. No es un cliente. */
+const TELEFONO_DEL_SIMULADOR = '+10000000000';
+
 /**
  * Los chats de la organizacion, con el ultimo mensaje de cada uno.
  *
@@ -52,7 +55,19 @@ export async function cargarConversaciones(orgId: string): Promise<ConversacionC
     .eq('organization_id', orgId)
     .order('last_message_at', { ascending: false });
 
-  const lista = (chats || []) as ConversacionConResumen[];
+  /**
+   * El simulador de Personalización NO es un cliente.
+   *
+   * El chat de pruebas del panel vive en el mismo teléfono ficticio
+   * (`+10000000000`, «Cliente Demo») y aparecía mezclado con los clientes
+   * reales, arriba del todo porque se creaba de nuevo cada rato. Quien vaya a
+   * usar el sistema no tiene por qué distinguir cuál de esos chats es de
+   * verdad. Se sigue probando igual desde Personalización; solo deja de
+   * ensuciar la bandeja.
+   */
+  const lista = ((chats || []) as ConversacionConResumen[]).filter(
+    (c) => c.contacts?.wa_phone !== TELEFONO_DEL_SIMULADOR
+  );
   if (lista.length === 0) return [];
 
   const { data: recientes } = await (supabase as any)
