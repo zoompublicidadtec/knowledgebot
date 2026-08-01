@@ -98,26 +98,70 @@ export function separarPieYAnalisis(texto: string): { pie: string; analisis: str
 }
 
 /**
- * Quita las marcas de formato de WhatsApp y deja el texto pelado.
+ * LAS MARCAS DE FORMATO DE WHATSAPP, EN UN SOLO SITIO
+ * ---------------------------------------------------
+ * `*negrita*`, `_cursiva_`, `~tachado~` y ```monoespaciado```.
+ *
+ * El delimitador no puede tocar una letra ni un digito, ni por delante ni por
+ * detras — es la regla de WhatsApp, y aqui hace falta de verdad: sin ella,
+ * `linea_1` o `business_info` salian en cursiva a mitad de palabra.
+ *
+ * ⚠ CUIDADO CON LA BARRA. En modo unicode (bandera `u`) solo se pueden escapar
+ * los caracteres de sintaxis de las expresiones regulares. `\_` y `\~` NO son
+ * escapes validos: el motor lanza «Invalid escape» al CONSTRUIR la expresion,
+ * antes de usarla siquiera. Eso tumbo la pantalla de Conversaciones el
+ * 01-ago-2026 — un generador que le ponia barra a los tres delimitadores por
+ * igual. De los tres, solo `*` la lleva.
+ *
+ * Y se construyen UNA vez, al cargar el modulo, no dentro de cada funcion: asi
+ * un error como aquel revienta al arrancar y no a mitad de un renglon de la
+ * lista, donde tarda en aparecer y se lleva la pagina entera por delante.
+ */
+type MarcaDeFormato = '*' | '_' | '~';
+
+const LIMITE_IZQUIERDO = String.raw`(?<![\p{L}\p{N}])`;
+const LIMITE_DERECHO = String.raw`(?![\p{L}\p{N}])`;
+
+function expresionDeMarca(marca: MarcaDeFormato, banderas: string): RegExp {
+  // La unica que necesita barra, y por eso no se genera con una plantilla ciega.
+  const d = marca === '*' ? '\\*' : marca;
+  return new RegExp(`${LIMITE_IZQUIERDO}${d}(\\S(?:[^${d}\\n]*\\S)?)${d}${LIMITE_DERECHO}`, banderas);
+}
+
+const MONOESPACIADO = /```([\s\S]+?)```/u;
+
+/** Para PINTAR: se busca la primera de cada tipo y se parte el texto ahi. */
+export const MARCAS_DE_FORMATO: { tipo: 'mono' | 'negrita' | 'cursiva' | 'tachado'; re: RegExp }[] = [
+  { tipo: 'mono', re: MONOESPACIADO },
+  { tipo: 'negrita', re: expresionDeMarca('*', 'u') },
+  { tipo: 'cursiva', re: expresionDeMarca('_', 'u') },
+  { tipo: 'tachado', re: expresionDeMarca('~', 'u') },
+];
+
+/** Para LIMPIAR: las mismas, en global. */
+const MARCAS_GLOBALES: RegExp[] = [
+  /```([\s\S]+?)```/gu,
+  expresionDeMarca('*', 'gu'),
+  expresionDeMarca('_', 'gu'),
+  expresionDeMarca('~', 'gu'),
+];
+
+/**
+ * Quita las marcas de formato y deja el texto pelado.
  *
  * En la burbuja esas marcas se pintan (ver `components/chat/whatsapp-text.tsx`),
  * pero en el renglon de la lista no hay negritas: alli lo unico que harian los
  * asteriscos es gastar los pocos caracteres que caben.
  */
 export function quitarFormato(texto: string): string {
-  // Misma regla de delimitadores que `components/chat/whatsapp-text.tsx`: no
-  // pueden tocar una letra ni un digito, para no partir `linea_1` por la mitad.
-  const marca = (d: string) =>
-    new RegExp(`(?<![\\p{L}\\p{N}])\\${d}(\\S(?:[^\\${d}\\n]*\\S)?)\\${d}(?![\\p{L}\\p{N}])`, 'gu');
-
-  return texto
-    .replace(/```([\s\S]+?)```/g, '$1')
-    .replace(marca('*'), '$1')
-    .replace(marca('_'), '$1')
-    .replace(marca('~'), '$1')
-    // Un mensaje largo llega con saltos de linea; en un renglon van como espacios.
-    .replace(/\s*\n+\s*/g, ' ')
-    .trim();
+  let limpio = texto;
+  for (const re of MARCAS_GLOBALES) limpio = limpio.replace(re, '$1');
+  return (
+    limpio
+      // Un mensaje largo llega con saltos de linea; en un renglon van como espacios.
+      .replace(/\s*\n+\s*/g, ' ')
+      .trim()
+  );
 }
 
 /** Un mensaje resumido a un renglon, para la lista de chats. */

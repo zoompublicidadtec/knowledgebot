@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { MARCAS_DE_FORMATO } from '@/lib/whatsapp/message-preview';
 
 /**
  * El texto de un mensaje, con el formato de WhatsApp ya aplicado.
@@ -28,40 +29,27 @@ interface Marca {
 }
 
 /**
- * El delimitador no puede tocar una letra ni un digito, ni por delante ni por
- * detras. Es la misma regla de WhatsApp, y aqui importa especialmente: sin
- * ella, `linea_1 y linea_2` o `business_info` — palabras que este negocio
- * escribe a diario — salian en cursiva a mitad de palabra.
+ * Como se reconoce cada marca lo decide `message-preview.ts`, que es el mismo
+ * sitio del que sale la version limpia para la lista. Aqui solo se dice como se
+ * pinta cada una.
+ *
+ * Antes este archivo tenia su propia copia del generador de expresiones, y esa
+ * copia traia el fallo que tumbo la pantalla el 01-ago-2026. Con una sola
+ * definicion, un fallo asi no puede vivir en dos sitios a la vez.
  */
-const ANTES = String.raw`(?<![\p{L}\p{N}])`;
-const DESPUES = String.raw`(?![\p{L}\p{N}])`;
+const COMO_SE_PINTA: Record<string, Marca['pinta']> = {
+  mono: (c) => <code className="font-mono text-[0.9em]">{c}</code>,
+  negrita: (c) => <strong className="font-semibold">{c}</strong>,
+  cursiva: (c) => <em className="italic">{c}</em>,
+  tachado: (c) => <s className="opacity-70">{c}</s>,
+};
 
-/** `*negrita*`, `_cursiva_`, `~tachado~`: mismo molde, distinto delimitador. */
-function marcaDeParaje(delimitador: string): RegExp {
-  const d = `\\${delimitador}`;
-  return new RegExp(`${ANTES}${d}(\\S(?:[^${d}\\n]*\\S)?)${d}${DESPUES}`, 'u');
-}
-
-const MARCAS: Marca[] = [
-  {
-    // ```monoespaciado```
-    re: /```([\s\S]+?)```/u,
-    literal: true,
-    pinta: (c) => <code className="font-mono text-[0.9em]">{c}</code>,
-  },
-  {
-    re: marcaDeParaje('*'),
-    pinta: (c) => <strong className="font-semibold">{c}</strong>,
-  },
-  {
-    re: marcaDeParaje('_'),
-    pinta: (c) => <em className="italic">{c}</em>,
-  },
-  {
-    re: marcaDeParaje('~'),
-    pinta: (c) => <s className="opacity-70">{c}</s>,
-  },
-];
+const MARCAS: Marca[] = MARCAS_DE_FORMATO.map(({ tipo, re }) => ({
+  re,
+  // Lo de dentro de ```mono``` se muestra tal cual, sin volver a interpretar.
+  literal: tipo === 'mono',
+  pinta: COMO_SE_PINTA[tipo],
+}));
 
 function interpretar(texto: string, semilla: string): ReactNode[] {
   // La marca que aparezca primero es la que manda. Si dos empiezan en el mismo
