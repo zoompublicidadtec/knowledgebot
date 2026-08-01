@@ -918,7 +918,50 @@ async function startSession(line, motivo = 'inicial') {
                 if (statusCode === DisconnectReason.loggedOut) {
                     st.status = 'logged_out';
                     st.keepAliveErrors++;
-                    logger.error({ line }, 'Sesión cerrada desde el teléfono. Hay que borrar la sesión y escanear un QR nuevo.');
+
+                    /**
+                     * BORRAR LAS CREDENCIALES AQUÍ MISMO.
+                     *
+                     * Este bloque decía «hay que borrar la sesión» y no la
+                     * borraba: lo hacía solo el botón «Desvincular número». Y
+                     * dejarlas puestas no es inofensivo, porque **un QR solo se
+                     * emite cuando NO hay credenciales**. Con las credenciales
+                     * revocadas en disco, cada intento de vincular volvía a
+                     * «logging in…» con el usuario viejo, WhatsApp respondía
+                     * `Connection Failure`, y la línea quedaba en «Generando
+                     * QR…» para siempre.
+                     *
+                     * Medido el 01-ago-2026: a las 14:47 WhatsApp cerró la
+                     * línea 2 (`conflict: device_removed`) y la línea quedó
+                     * imposible de recuperar desde el panel — hacía falta que
+                     * alguien entrara al servidor a borrar la carpeta. Con 8
+                     * puntos de venta eso significa un local caído hasta que
+                     * aparezca un técnico.
+                     *
+                     * Una sesión revocada por WhatsApp NO se recupera: lo único
+                     * correcto es partir de cero. Se borra y la línea queda
+                     * lista para dar un QR nuevo en cuanto el panel lo pida.
+                     */
+                    try {
+                        fs.rmSync(authDir(line), { recursive: true, force: true });
+                        logger.warn({ line }, 'Sesión revocada por WhatsApp: credenciales borradas, la línea queda lista para un QR nuevo');
+                    } catch (e) {
+                        logger.error({ line, err: e.message }, 'No se pudieron borrar las credenciales de la sesión revocada');
+                    }
+
+                    // Se limpia lo que describía a la sesión muerta: el número y
+                    // el QR viejo. Si no, el panel sigue mostrando el teléfono
+                    // anterior como si la línea fuera esa.
+                    st.connectedAt = null;
+                    st.phoneNumber = null;
+                    st.lastQR = null;
+                    st.lastQRDataUrl = null;
+                    st.starting = false;
+                    st.epoch += 1;
+                    st.lastError = 'La sesión se cerró desde el teléfono. Pide el QR desde el panel para volver a conectarla.';
+                    st.lastErrorAt = new Date().toISOString();
+
+                    logger.error({ line }, 'Sesión cerrada desde el teléfono. Pide el QR desde el panel para volver a conectarla.');
                     await callbackToApp('/api/whatsapp-lines/status', { line_key: line, status: 'disconnected' });
                     return;
                 }
