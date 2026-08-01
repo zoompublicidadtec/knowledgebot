@@ -136,6 +136,22 @@ WhatsApp adjunta el teléfono real en `key.senderPn`. El puente lo aprende y
 que lo guarda en `contacts.metadata.telefono`. `wa_phone` no se toca: sigue
 siendo la clave de enrutado con la que buscan las herramientas del agente.
 
+**Pero `senderPn` puede no llegar NUNCA, y hay que contar con eso.** Medido el
+01-ago-2026: un contacto escribió tres mensajes seguidos y los tres llegaron con
+`senderPn: null`, `senderLid: null`, `participantPn: null`. Es la privacidad
+nueva de WhatsApp, donde se puede escribir sin exponer el número. No hay nada
+que «aprender» y no lo habrá.
+
+Hasta ese día el puente **se negaba a enviar** en ese caso (`resolveSendJid()`
+devolvía un `problema` y la ruta respondía 503), heredando la causa falsa del
+30-jul según la cual el 463 lo provocaba el `@lid`. Resultado: el agente redactó
+tres respuestas correctas, el candado las aprobó, y ninguna salió.
+
+Ahora **se intenta el envío contra el `@lid` y decide el acuse REAL de
+WhatsApp**, que ya se verificaba con `esperarRechazo()`. Si de verdad lo
+rechaza, se reporta ese error auténtico en vez de una suposición. Intentar y
+verificar, nunca negarse por adelantado.
+
 Una sola función, **`mostrarContacto()`** en `lib/whatsapp/contact-identity.ts`,
 decide cómo se ve un contacto en todo el panel: el teléfono real si se conoce,
 nunca un `@lid` disfrazado de número, y el teléfono como nombre mientras no se

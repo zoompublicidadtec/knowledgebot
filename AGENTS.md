@@ -17,7 +17,7 @@ ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
 `EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
 
 El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`191373b`**. **Si el código cambió desde
+Está generado contra el commit **`ba6f351`**. **Si el código cambió desde
 entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
 
 ### Cómo consultarlo (por SSH al VPS)
@@ -29,7 +29,7 @@ cd /root/knowledgebot
 
 # 1) ¿El grafo sigue vigente? Lo que lo invalida es que cambie el CODIGO, no
 #    que avance el HEAD: un commit de documentacion no lo desactualiza.
-git diff --stat 191373b..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
+git diff --stat ba6f351..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
 #    Sin salida = el grafo esta al dia. Con salida = regenerar (paso 4).
 
 # 2) Entender un símbolo / concepto / archivo:
@@ -50,7 +50,7 @@ graphify diagnose multigraph
 
 ### Qué contiene el grafo
 
-- `graph.json` — grafo consultable. Al 01-ago-2026: **1.315 nodos y 2.190
+- `graph.json` — grafo consultable. Al 01-ago-2026: **1.348 nodos y 2.271
   aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
   contradictorias.
 - `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
@@ -148,6 +148,14 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
    > levanta solo, y los números de prueba se conectan y desconectan a voluntad.
    > Dejarlo escrito solo sirve para que alguien lo lea meses después y crea que
    > hay una línea rota.
+
+   **Corregir el documento no corrige el código.** El 01-ago-2026 se descubrió
+   que la causa falsa seguía viva dentro del puente: `resolveSendJid()` se
+   negaba a enviar a un `@lid` sin teléfono conocido «porque WhatsApp lo rechaza
+   con 463». Esa creencia se había desmentido el 31-jul aquí mismo, pero el
+   código escrito el 30 nunca se revisó, y dejó sin respuesta a un cliente real.
+   Al corregir una causa falsa, **buscar dónde quedó programada**, no solo
+   dónde quedó escrita.
 
 7. **Ningún dato del negocio se escribe en el código.** Medios de pago,
    condiciones, cuenta bancaria, garantía, tiempos de entrega, sitio web y los
