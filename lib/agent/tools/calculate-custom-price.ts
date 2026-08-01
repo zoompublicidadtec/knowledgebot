@@ -88,6 +88,31 @@ export function calculateCustomPriceTool() {
         let totalCost = 0;
         let isCalculated = false;
 
+        /**
+         * Un producto vendido POR UNIDAD no se calcula por área.
+         *
+         * Abajo, el atajo de DTF se dispara por el nombre, y "Gorra Dril 5
+         * Paneles DTF Textil" lo contiene. Sin esta puerta, una gorra entraba al
+         * cálculo de aprovechamiento del rollo: 12 gorras de 5x5 cm salían en
+         * $2.500 en total. Sus seis rangos por cantidad quedaban sin mirar.
+         *
+         * Si la CATEGORÍA tiene una regla de cálculo declarada (`pricing_rules`),
+         * eso es una decisión explícita del negocio y manda. Sin regla y vendido
+         * por unidad, aquí no hay nada que calcular: lo cotiza getProductPrice.
+         */
+        if (!rule && String(prodData.unit || '').toLowerCase() === 'unidad') {
+          logger.info('calculateCustomPrice: producto por unidad, se devuelve a getProductPrice', {
+            product_id, name: prodData.name,
+          });
+          return {
+            success: false,
+            error:
+              `"${prodData.name}" se vende POR UNIDAD: su precio depende solo de la cantidad, ` +
+              `no de las medidas. Ejecuta getProductPrice con este product_id y la cantidad que ` +
+              `pidió el cliente. NO le pidas ancho ni alto: ese dato no cambia el precio.`,
+          };
+        }
+
         const prodNameUpper = (prodData.name || '').toUpperCase();
         
         // --- HARDCODED FALLBACK FOR DTF UV / DTF TEXTIL ---

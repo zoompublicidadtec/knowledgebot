@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Phone, QrCode, Plus, Trash, Plug, SpinnerGap, Warning, ArrowCounterClockwise } from '@phosphor-icons/react';
+import { Phone, QrCode, Plus, Trash, Plug, SpinnerGap, Warning, ArrowCounterClockwise, PencilSimple } from '@phosphor-icons/react';
 
 interface WhatsAppLine {
   id: string;
@@ -235,6 +235,46 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
     }
   };
 
+  /**
+   * Renombrar la línea desde ESTA pantalla.
+   *
+   * El nombre editable ya existía —se guarda en `whatsapp_lines.display_name`,
+   * se muestra en cada chat («Escribió a …») y en la cabecera de la
+   * conversación— pero el único sitio donde se podía cambiar era la pantalla
+   * «Líneas de WhatsApp». Quien administra entra por aquí, así que veía
+   * «Línea 1, Línea 2» y daba por hecho que no se podía tocar.
+   *
+   * Cambia SOLO el nombre visible. `line_key` (`linea_1`, `linea_2`…) es la
+   * clave con la que se enrutan los mensajes y se agrupan las conversaciones:
+   * no se toca ni se muestra. Con 8 puntos de venta, el nombre es lo único que
+   * le dice al asesor de qué local le están escribiendo.
+   */
+  const handleRenameLine = async (lineKey: string, actual: string) => {
+    const nombre = prompt(
+      'Nombre visible de esta línea (ej: Local 23, Sede C, WhatsApp de Jorge):',
+      actual
+    );
+    if (nombre === null) return;
+    const limpio = nombre.trim();
+    if (!limpio || limpio === actual) return;
+
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/whatsapp-lines/${lineKey}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: limpio }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo renombrar la línea');
+      await fetchLines();
+    } catch (err: any) {
+      alert(`No se pudo renombrar: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleAddLine = async () => {
     const nextNum = lines.length + 1;
     if (nextNum > MAX_LINES) return alert(`Máximo ${MAX_LINES} líneas permitidas`);
@@ -299,7 +339,18 @@ Revise el estado en Líneas de WhatsApp.`);
             <div key={line.id} className="glass p-5 rounded-2xl flex flex-col relative overflow-hidden group">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-sm font-semibold text-white">{line.display_name}</h3>
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="text-sm font-semibold text-white">{line.display_name}</h3>
+                    <button
+                      type="button"
+                      onClick={() => handleRenameLine(line.line_key, line.display_name)}
+                      disabled={isLoading}
+                      title="Cambiar el nombre visible de esta línea"
+                      className="p-1 rounded-md text-slate-500 hover:text-white hover:bg-white/10 transition-all disabled:opacity-40"
+                    >
+                      <PencilSimple size={13} />
+                    </button>
+                  </div>
                   <p className={`text-xs mt-1 ${line.phone_number ? 'text-emerald-400' : 'text-slate-400'}`}>
                     {line.phone_number || 'Sin número detectado'}
                   </p>

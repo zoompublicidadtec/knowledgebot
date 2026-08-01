@@ -128,7 +128,11 @@ export function getProductPriceTool() {
         }
 
         // Fetch product details to get min_order_qty and notes
-        const { data: prodData } = await (supabase as any).from('products').select('min_order_qty, notes, name').eq('id', uuid).single();
+        // `unit` es la Unidad de medida que el dueño eligió en el panel. Faltaba
+        // en este select, así que `unit` valía siempre '' y NINGUNA de las reglas
+        // de abajo podía consultarla: el modo de cobro terminaba decidiéndose
+        // solo por palabras del nombre. Ver el comentario de `porCantidad`.
+        const { data: prodData } = await (supabase as any).from('products').select('min_order_qty, notes, name, unit').eq('id', uuid).single();
         
         // Formatear mensaje para la IA con todas las variantes y rangos (solo limpios)
         const variantesMsg = cleanTiers.map((r: any) => {
@@ -149,14 +153,44 @@ export function getProductPriceTool() {
         let mathHelp = `\nCÁLCULO EXACTO PARA LA CANTIDAD SOLICITADA (${quantity} unidades):\n`;
         const nameUpper = (prodData?.name || '').toUpperCase();
         const unit = (prodData?.unit || '').toLowerCase();
+
+        /**
+         * EL MODO DE COBRO SALE DE LA CONFIGURACIÓN, NO DEL NOMBRE.
+         *
+         * Las reglas de abajo se eligen por palabras del nombre ('DTF TEXTIL',
+         * 'VINILO', 'BANNER'…). Eso secuestra a cualquier producto que lleve esa
+         * palabra aunque se venda de otra forma.
+         *
+         * Medido el 01-ago-2026, con un cliente real: la **Gorra Dril 5 Paneles
+         * DTF Textil** (ZM-TEX-031) está bien configurada —`unidad`, mínimo 6 y
+         * seis rangos por cantidad, de $14.000 a $10.500— pero su nombre
+         * contiene "DTF TEXTIL", así que entraba en la regla del rollo de
+         * transferencia: el bot le pidió al cliente el ancho y el alto del logo,
+         * el cliente insistió y los dio (5x5 cm), y la cotización terminó en un
+         * error. Nunca miró los seis precios que tenía al lado. La venta se
+         * perdió pidiendo un dato que no hacía ninguna falta.
+         *
+         * Un producto vendido POR UNIDAD se cotiza por cantidad y punto. Las
+         * reglas por área quedan para lo que de verdad se mide (m², metro).
+         * `Araña 2x1m con Impresión Banner` ($110.000 la unidad) estaba rota por
+         * lo mismo y se arregla sola con esto.
+         */
+        const porCantidad = unit === 'unidad';
+        if (porCantidad) {
+          logger.info('Get price: producto por unidad, se cotiza por cantidad', {
+            product_id, name: prodData?.name, quantity,
+          });
+        }
+
         let customCalculated = false;
 
         // 1. DTF UV / DTF TEXTIL
         if (
+          !porCantidad && (
           uuid === 'a20da0d7-4149-4ed1-ad1a-aaa4cfe63458' ||
           uuid === '198d6ebf-6fb7-4906-8f35-32adb6f76cf3' ||
           nameUpper.includes('DTF UV') ||
-          nameUpper.includes('DTF TEXTIL')
+          nameUpper.includes('DTF TEXTIL'))
         ) {
           customCalculated = true;
           const isUV = uuid === 'a20da0d7-4149-4ed1-ad1a-aaa4cfe63458' || nameUpper.includes('UV');
@@ -216,13 +250,14 @@ export function getProductPriceTool() {
         }
         // 2. Vinilo + Poliestireno (impresión rígida) calibres 10 a 80
         else if (
+          !porCantidad && (
           uuid === '318776b0-ac26-46a6-a028-25a22a92c90d' || // cal 10
           uuid === '80daaf1a-6d0c-47a6-a7e7-103d27c89053' || // cal 20
           uuid === 'bd1ca085-0ddd-4687-a651-515876a6a67c' || // cal 30
           uuid === '8fda083f-7243-4014-97cb-b7ec3536b656' || // cal 40
           uuid === '7f86b358-fb63-40be-aca0-9978a5be9e5f' || // cal 60
           uuid === 'f3bbb32f-73ae-42d8-8ff8-3505d19cd99e' ||  // cal 80
-          nameUpper.includes('VINILO LAMINADO + POLI')
+          nameUpper.includes('VINILO LAMINADO + POLI'))
         ) {
           customCalculated = true;
           if (!width_cm || !height_cm) {
@@ -240,12 +275,13 @@ export function getProductPriceTool() {
         }
         // 3. Vinilos y Banners (unidad m2)
         else if (
+          !porCantidad && (
           unit === 'm2' ||
           unit === 'metro' ||
           nameUpper.includes('VINILO') ||
           nameUpper.includes('BANNER') ||
           nameUpper.includes('PANAFLEX') ||
-          nameUpper.includes('FROSTED')
+          nameUpper.includes('FROSTED'))
         ) {
           customCalculated = true;
           if (!width_cm || !height_cm) {
