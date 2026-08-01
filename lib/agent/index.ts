@@ -141,12 +141,25 @@ function collectAllowedReferences(steps: any[]): Set<string> {
   return allowed;
 }
 
-/** Referencias que el bot escribió al cliente, como "(Ref: MU-152)". */
+/**
+ * Referencias que el bot escribió al cliente, como "(Ref: MU-152)".
+ *
+ * La palabra "Referencia" escrita completa se leía a sí misma como una
+ * referencia inventada: "Ref" casaba con el patrón y "erencia" quedaba como el
+ * código. Medido el 01-ago-2026, el candado bloqueó dos intentos seguidos por
+ * las referencias fantasma "ERENCIA" y "ERENCIAS", gastando los reintentos que
+ * hacían falta para corregir el fallo de verdad. Se exige que la palabra
+ * termine ahí y que el código traiga un dígito o un guion, como todos los del
+ * catálogo (ZM-MUG-004, OF-448, HELIX-BAM).
+ */
 function extractCitedReferences(text: string): string[] {
   const out: string[] = [];
-  const re = /\bref[:.]?\s*([A-Z0-9][A-Z0-9._\- ]{1,24}?)\s*[)\],.]/gi;
+  const re = /\bref(?:erencias?|s)?\b[:.]?\s*([A-Z0-9][A-Z0-9._\- ]{1,24}?)\s*[)\],.]/gi;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) out.push(m[1].trim().toUpperCase());
+  while ((m = re.exec(text)) !== null) {
+    const ref = m[1].trim().toUpperCase();
+    if (/[-0-9]/.test(ref)) out.push(ref);
+  }
   return out;
 }
 
@@ -187,7 +200,8 @@ async function applyOutputGuardrail(
   questionStreak = 0,
   approvedPrices: Set<number> = new Set(),
   catalogHits: any[] = [],
-  fraseOfftopic = ''
+  fraseOfftopic = '',
+  palabrasPedidas: Set<string> = new Set()
 ): Promise<{ blocked: boolean; reason: string }> {
   try {
     // 1. Toda referencia citada al cliente tiene que existir de verdad. En
@@ -196,6 +210,31 @@ async function applyOutputGuardrail(
     //    en este turno y, para las demás (p. ej. un producto cotizado antes en
     //    la misma conversación), se comprueba contra la base.
     const cited = extractCitedReferences(responseText);
+
+    // 0.0 BUSCÓ OTRA COSA. Va PRIMERO a propósito: es la causa, y los demás
+    //     candados solo ven sus síntomas. Medido el 31-jul-2026, el cliente
+    //     escribió "quiero unos avisos para mi local" y el rastro del modelo fue
+    //     `searchCatalog("mug")` —lo que se hablaba antes—, así que le cotizó
+    //     mugs. Medido el 01-ago, ese mismo mensaje se fue por el candado de
+    //     referencias inventadas, que bloqueaba sin decirle nunca cuál era el
+    //     problema real: seguía hablando de lo que el cliente ya no pidió.
+    //
+    //     Solo se aplica cuando el modelo SÍ buscó: si no buscó nada está
+    //     rematando algo ya cotizado ("sí, los de 120 hojas") y ahí no hay nada
+    //     que reprochar. Basta con que UNA de sus búsquedas tenga que ver con lo
+    //     que el cliente acaba de escribir.
+    if (palabrasPedidas.size > 0) {
+      const consultas = consultasDeCatalogo(steps);
+      const alTema = consultas.some((q) =>
+        coincideAlgunaPalabra(palabrasPedidas, palabrasDeContenido(q))
+      );
+      if (consultas.length > 0 && !alTema) {
+        logger.error('GUARDRAIL: buscó algo distinto de lo que pidió el cliente', {
+          consultas, pidio: [...palabrasPedidas].join(','),
+        });
+        return { blocked: true, reason: 'search-off-topic' };
+      }
+    }
 
     // 0. RAIL DE RECUPERACIÓN: negar un producto que SÍ está en el catálogo es
     //    el fallo más caro, porque el cliente se va creyendo que no lo tenemos.
@@ -417,6 +456,9 @@ const PALABRAS_VACIAS = new Set([
   'seria', 'estoy', 'tengo', 'saber', 'decir', 'dime', 'mandame', 'envia',
   'enviame', 'ustedes', 'nosotros', 'tipo', 'clase', 'mismo', 'misma',
   'ahora', 'luego', 'entonces', 'tambien', 'ademas', 'mejor', 'quizas',
+  // "unos avisos" se consultaba como "unos avisos" y "unos": la muletilla
+  // arrastraba la búsqueda a cualquier cosa del catálogo.
+  'unos', 'unas', 'algo', 'cosa', 'cosas',
   'bueno', 'buenos', 'listo', 'verdad', 'señor', 'señora', 'senor', 'senora',
   'amigo', 'hermano', 'parcero', 'oiga', 'dijiste', 'dices', 'digame',
 ]);
@@ -500,11 +542,27 @@ async function probeCatalogo(
 
   // Contexto: "las de 20por30" no repite "organza", así que sin arrastrar los
   // mensajes anteriores el rail perdía el hilo y el bot cotizaba otra cosa.
+  //
+  // Pero el arrastre SOLO vale cuando el mensaje no nombra nada por sí mismo.
+  // Medido el 01-ago-2026 con tres productos seguidos en la misma conversación:
+  // ante "mejor dime que valen unos pocillos" la consulta salía como
+  // "unos pocillos cuadernos" y devolvía 12 cuadernos y CERO pocillos, que se le
+  // entregaban al modelo rotulados como "lo que pidió el cliente"; con "y unos
+  // esferos que valen?", 4 cuadernos y cero esferos. Y con "avisos" —que no
+  // existe en el catálogo— el arrastre era lo ÚNICO que quedaba: el bot cotizó
+  // los mugs del mensaje anterior (registro del 31-jul, `query: "mug"`).
+  //
+  // "las de 20por30" sigue funcionando: ese mensaje no trae ninguna palabra con
+  // letras, solo la medida, así que el hilo se arrastra igual que antes.
+  const traePalabraPropia = [...palabrasActuales].some((w) => /[a-z]/.test(w));
+
   const palabrasPrevias = new Set<string>();
-  for (const previo of historialCliente) {
-    if (String(previo || '').trim().startsWith('[El cliente envió')) continue;
-    for (const w of palabrasDeContenido(previo)) {
-      if (!palabrasActuales.has(w)) palabrasPrevias.add(w);
+  if (!traePalabraPropia) {
+    for (const previo of historialCliente) {
+      if (String(previo || '').trim().startsWith('[El cliente envió')) continue;
+      for (const w of palabrasDeContenido(previo)) {
+        if (!palabrasActuales.has(w)) palabrasPrevias.add(w);
+      }
     }
   }
 
@@ -605,6 +663,27 @@ function coincideAlgunaPalabra(pedidas: Set<string>, delProducto: Set<string>): 
     if (w.endsWith('s') && delProducto.has(w.slice(0, -1))) return true;
   }
   return false;
+}
+
+/**
+ * Con qué palabras buscó el modelo en el catálogo durante este turno.
+ *
+ * Es el dato que delata el encierro: en el caso de los avisos el cliente
+ * escribió "quiero unos avisos para mi local" y el rastro del modelo mostró
+ * `searchCatalog("mug")`. Buscó lo de antes, no lo que le acababan de pedir.
+ */
+function consultasDeCatalogo(steps: any[]): string[] {
+  const out: string[] = [];
+  for (const step of steps || []) {
+    for (const call of ((step.toolCalls || []) as any[])) {
+      if (call.toolName !== 'searchCatalog') continue;
+      // El SDK ha usado `args` y `input` según la versión: se aceptan las dos.
+      const args = call.input ?? call.args ?? {};
+      const q = typeof args === 'string' ? args : String(args.query || '');
+      if (q.trim()) out.push(q.trim());
+    }
+  }
+  return out;
 }
 
 /** Frases con las que el bot niega tener un producto. */
@@ -759,12 +838,25 @@ ${lineas}`;
         'BLOQUEADO DE NUEVO. No preguntes nada. Busca, cotiza y muestra 3 opciones con precios reales ahora mismo.',
         'ÚLTIMO INTENTO. Ejecuta searchCatalog + getProductPrice y entrega 3 opciones con precio, sin una sola pregunta previa.',
       ],
+      'search-off-topic': [
+        'ALTO. Buscaste en el catálogo con {BUSCADO}, pero el cliente acaba de pedir: {PEDIDO}. Le estás ofreciendo lo de antes. Ejecuta searchCatalog con las palabras EXACTAS que él escribió. Si no aparece nada que sirva, NO repitas lo que ya ofreciste: dile con naturalidad que quieres entenderle bien y hazle 1 o 2 preguntas cortas sobre lo que necesita.',
+        'BLOQUEADO DE NUEVO. Olvida los productos de los mensajes anteriores. El cliente pidió: {PEDIDO}. Búscalo con esas palabras, y si no hay resultados pregúntale a qué se refiere. PROHIBIDO volver a listar lo ya ofrecido.',
+        'ÚLTIMO INTENTO. No cotices nada de lo anterior. Sobre {PEDIDO}: o lo encuentras con searchCatalog, o le preguntas al cliente qué necesita exactamente. Una respuesta con preguntas es válida aquí.',
+      ],
     };
 
     const questionStreak = countQuestionStreak(messages);
     const approvedPrices = collectApprovedPrices(messages);
     let finalResponse: string | null = null;
     let loopMessages = [...messages];
+
+    // Lo que el cliente acaba de escribir, para contrastarlo con lo que el
+    // modelo fue a buscar al catálogo.
+    const palabrasPedidas = palabrasDeContenido(messageText);
+    // Cuando el bot buscó fuera de tema, preguntar deja de ser una falta: es
+    // justo lo que le estamos pidiendo. Sin esto, el candado del interrogatorio
+    // volvería a empujarlo a cotizar lo primero que tenga a mano.
+    let permitirPreguntar = false;
 
     for (let attempt = 0; attempt < MAX_RECALC_ATTEMPTS; attempt++) {
       const result = await generateText({
@@ -818,8 +910,8 @@ ${lineas}`;
 
       // Revisar con el guardrail
       const guardrailResult = await applyOutputGuardrail(
-        cleanedResponse, result.steps || [], questionStreak, approvedPrices,
-        catalogProbe.relevant, fraseOfftopic
+        cleanedResponse, result.steps || [], permitirPreguntar ? 0 : questionStreak,
+        approvedPrices, catalogProbe.relevant, fraseOfftopic, palabrasPedidas
       );
 
       // === REPARTIDOR DE FOTOS: capturar fotos+precios del rastro del bot ===
@@ -901,9 +993,13 @@ ${lineas}`;
       });
 
       // Añadir la respuesta bloqueada del bot + la orden de recalcular al historial
+      if (guardrailResult.reason === 'search-off-topic') permitirPreguntar = true;
+
       const orders = RECALC_ORDERS[guardrailResult.reason] || RECALC_ORDERS['no-calculator'];
       const orderText = (orders[attempt] || orders[orders.length - 1])
-        .replace('{PRODUCTOS}', catalogListado || 'los que devuelva searchCatalog');
+        .replace('{PRODUCTOS}', catalogListado || 'los que devuelva searchCatalog')
+        .replace('{BUSCADO}', consultasDeCatalogo(result.steps || []).join(' / ') || 'otra cosa')
+        .replace('{PEDIDO}', messageText.trim().slice(0, 200));
       loopMessages = [...loopMessages,
         { role: 'assistant', content: cleanedResponse },
         { role: 'user', content: orderText },
@@ -914,7 +1010,12 @@ ${lineas}`;
         logger.error('CANDADO v4: Máximo de recálculos alcanzado, entregando respuesta de respaldo', {
           orgId, conversationId,
         });
-        finalResponse = 'Ya estoy revisando eso con producción para darte el valor exacto. Cuéntame mientras qué cantidad manejas y te armo la cotización completa.';
+        // Si lo que falló fue que buscaba otra cosa, el respaldo NO puede
+        // prometer una cotización: sería seguir hablando de lo que el cliente
+        // no pidió. Se pregunta, que es lo que corresponde.
+        finalResponse = permitirPreguntar
+          ? 'Cuéntame un poco más de lo que necesitas para no ofrecerte algo que no era: ¿para qué lo vas a usar y qué tamaño o cantidad tienes en mente? Con eso lo reviso con el equipo y te confirmo.'
+          : 'Ya estoy revisando eso con producción para darte el valor exacto. Cuéntame mientras qué cantidad manejas y te armo la cotización completa.';
       }
     }
 
