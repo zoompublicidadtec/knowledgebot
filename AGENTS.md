@@ -17,7 +17,7 @@ ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
 `EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
 
 El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`70a1966`**. **Si el código cambió desde
+Está generado contra el commit **`a310b87`**. **Si el código cambió desde
 entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
 
 ### Cómo consultarlo (por SSH al VPS)
@@ -29,7 +29,7 @@ cd /root/knowledgebot
 
 # 1) ¿El grafo sigue vigente? Lo que lo invalida es que cambie el CODIGO, no
 #    que avance el HEAD: un commit de documentacion no lo desactualiza.
-git diff --stat 70a1966..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
+git diff --stat a310b87..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
 #    Sin salida = el grafo esta al dia. Con salida = regenerar (paso 4).
 
 # 2) Entender un símbolo / concepto / archivo:
