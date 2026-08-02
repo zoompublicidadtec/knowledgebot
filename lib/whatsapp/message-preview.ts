@@ -21,6 +21,17 @@ import type { Message } from '@/lib/database.types';
 export interface MediaDelMensaje {
   esImagen: boolean;
   esAudio: boolean;
+  /**
+   * Video o GIF. En WhatsApp un GIF NO viaja como .gif: viaja como un mp4
+   * corto, así que los dos caen aquí y se pintan con el mismo reproductor.
+   */
+  esVideo: boolean;
+  /**
+   * Sticker. Llega como `image/webp`, así que también es imagen y se pinta
+   * como tal — solo que en pequeño, porque un sticker a ancho completo se ve
+   * como una foto y no lo es.
+   */
+  esSticker: boolean;
   mimeType: string;
   /** El tipo que declara el puente: `image`, `ptt`, `audio`… */
   declaredType: string;
@@ -48,8 +59,19 @@ export function leerMedia(message: Pick<Message, 'raw'>): MediaDelMensaje {
   const declaredType: string = inbound?.mediaType || inbound?.type || outboundMedia?.type || '';
 
   return {
-    esImagen: mimeType.startsWith('image/') || declaredType === 'image',
+    esImagen: mimeType.startsWith('image/') || declaredType === 'image' || declaredType === 'sticker',
     esAudio: mimeType.startsWith('audio/') || declaredType === 'ptt' || declaredType === 'audio',
+    /**
+     * EL FALLO QUE ESTO CIERRA
+     * ------------------------
+     * El puente descarga y guarda los videos desde siempre (`classifyMedia`
+     * los reconoce), pero el panel solo sabía pintar dos cosas: imagen y
+     * audio. Un video o un GIF se bajaban, ocupaban su espacio en el
+     * almacenamiento… y en pantalla no aparecía nada. El dueño veía la
+     * burbuja y no entendía qué le habían mandado.
+     */
+    esVideo: mimeType.startsWith('video/') || declaredType === 'video',
+    esSticker: declaredType === 'sticker' || mimeType === 'image/webp',
     mimeType,
     declaredType,
     sizeKB: media?.size_bytes ? Math.max(1, Math.round(media.size_bytes / 1024)) : null,
@@ -191,9 +213,18 @@ export function resumirMensaje(
     return { icono: '⚠️', texto: 'Archivo que no se pudo descargar' };
   }
 
+  if (media.esSticker) {
+    return { icono: '🎨', texto: 'Sticker' };
+  }
+
   if (media.esImagen) {
     const { pie } = separarPieYAnalisis(texto);
     return { icono: '📷', texto: pie || 'Foto' };
+  }
+
+  if (media.esVideo) {
+    const { pie } = separarPieYAnalisis(texto);
+    return { icono: '🎬', texto: pie || 'Video' };
   }
 
   if (media.esAudio) {

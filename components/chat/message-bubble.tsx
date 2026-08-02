@@ -46,7 +46,8 @@ export function MessageBubble({
   const time = horaDelMensaje(message.created_at);
 
   const media = leerMedia(message);
-  const { esImagen, esAudio, mimeType, declaredType, sizeKB, r2Key, directUrl, mediaError } = media;
+  const { esImagen, esAudio, esVideo, esSticker, mimeType, declaredType, sizeKB, r2Key, directUrl, mediaError } =
+    media;
 
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [estadoMedia, setEstadoMedia] = useState<
@@ -86,6 +87,7 @@ export function MessageBubble({
   const src = signedUrl || directUrl;
   const hayImagen = esImagen && !!src;
   const hayAudio = esAudio && !!src;
+  const hayVideo = esVideo && !!src;
 
   // El puente incrusta la cita dentro del texto porque el agente necesita el
   // referente; aqui se quita, que la cita ya se pinta arriba en su propia caja.
@@ -124,7 +126,17 @@ export function MessageBubble({
           <div className="mt-1 mb-1 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10">
             <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-slate-400" />
             <span className="text-[10px] text-slate-400">
-              Cargando {esAudio ? 'la nota de voz' : esImagen ? 'la imagen' : 'el archivo'}…
+              Cargando{' '}
+              {esAudio
+                ? 'la nota de voz'
+                : esVideo
+                  ? 'el video'
+                  : esSticker
+                    ? 'el sticker'
+                    : esImagen
+                      ? 'la imagen'
+                      : 'el archivo'}
+              …
             </span>
           </div>
         )}
@@ -134,7 +146,9 @@ export function MessageBubble({
           <div className="mt-1 mb-1 px-2 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30">
             <p className="text-[10px] text-amber-300/90">
               El archivo ya no está disponible en el almacenamiento.
-              {sizeKB ? ` Era ${esAudio ? 'un audio' : 'una imagen'} de ${sizeKB} KB.` : ''}
+              {sizeKB
+                ? ` Era ${esAudio ? 'un audio' : esVideo ? 'un video' : 'una imagen'} de ${sizeKB} KB.`
+                : ''}
             </p>
           </div>
         )}
@@ -155,12 +169,27 @@ export function MessageBubble({
             tamano completo tocandola, como en WhatsApp: antes quedaba encajada
             en 208px de alto y una etiqueta impresa no se alcanzaba a leer. */}
         {hayImagen && (
-          <div className="mt-1 mb-2 rounded-lg overflow-hidden border border-white/10 bg-black/20 flex flex-col items-center justify-center gap-1">
-            <a href={src!} target="_blank" rel="noopener noreferrer" className="block w-full">
+          <div
+            className={
+              esSticker
+                ? 'mt-1 mb-2 flex items-center justify-start'
+                : 'mt-1 mb-2 rounded-lg overflow-hidden border border-white/10 bg-black/20 flex flex-col items-center justify-center gap-1'
+            }
+          >
+            <a
+              href={src!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={esSticker ? 'block' : 'block w-full'}
+            >
               <img
                 src={src!}
-                alt={aiDescription || imageCaption || 'Imagen adjunta'}
-                className="w-full max-h-72 lg:max-h-52 object-contain transition-transform duration-200 lg:hover:scale-[1.02]"
+                alt={aiDescription || imageCaption || (esSticker ? 'Sticker' : 'Imagen adjunta')}
+                className={
+                  esSticker
+                    ? 'h-28 w-28 object-contain'
+                    : 'w-full max-h-72 lg:max-h-52 object-contain transition-transform duration-200 lg:hover:scale-[1.02]'
+                }
                 onError={() => setEstadoMedia('no-disponible')}
               />
             </a>
@@ -172,6 +201,26 @@ export function MessageBubble({
                 <p className="text-[10px] text-slate-400 mt-1 leading-snug">{aiDescription}</p>
               </details>
             )}
+          </div>
+        )}
+
+        {/* Video y GIF.
+            Un GIF de WhatsApp no viaja como .gif: viaja como un mp4 corto, así
+            que los dos se pintan con el mismo reproductor. Hasta hoy el panel
+            no tenía rama para 'video': el archivo se descargaba y se guardaba,
+            pero en pantalla no aparecía nada. */}
+        {hayVideo && (
+          <div className="mt-1 mb-2 rounded-lg overflow-hidden border border-white/10 bg-black/20">
+            <video
+              controls
+              preload="metadata"
+              playsInline
+              className="w-full max-h-72 lg:max-h-52 object-contain"
+              onError={() => setEstadoMedia('no-disponible')}
+            >
+              <source src={src!} type={mimeType || 'video/mp4'} />
+              Tu navegador no soporta la reproducción de video.
+            </video>
           </div>
         )}
 
