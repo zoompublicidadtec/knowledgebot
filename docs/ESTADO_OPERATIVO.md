@@ -125,6 +125,18 @@ con reposo.
 > pasajero y las líneas de prueba se conectan y desconectan a voluntad. Dejarlo
 > escrito solo produce malentendidos meses después.
 
+### Las tres cosas distintas que parecen «se cayó la línea»
+
+No confundirlas: tienen causas y remedios distintos, y solo una es un fallo.
+
+| Lo que se ve | Qué es en realidad | Qué hace el sistema |
+|---|---|---|
+| **Corte de conexión** (`stream errored`, código 500) | Un tropiezo de red. Le pasa a toda conexión permanente. | **Reconecta solo.** Medido el 01-ago en la línea 2: caída y vuelta **en 4 segundos**. No es un fallo. |
+| **`conflict: device_removed`** (código 401) | WhatsApp **cerró la sesión desde la cuenta**: alguien quitó el dispositivo vinculado, o lo quitó WhatsApp. | **No se reconecta, y está bien**: las credenciales quedaron revocadas. Se borran solas y la línea queda lista para un QR nuevo. |
+| **Acuse con error `463`** | La línea **está conectada**; WhatsApp acepta el mensaje y lo rechaza después. Es un bloqueo de la CUENTA. | **Freno automático**: tras 3 rechazos seguidos deja de enviar 10 min, 30 min, 2 h, 6 h. Sigue recibiendo. |
+
+La confusión sale de que las tres aparecen en el panel como «la línea no responde». La primera se arregla sola, la segunda pide un QR, y la tercera pide **reposo** — nunca código.
+
 ### El `@lid` sí es un problema, pero de identidad, no de envío
 
 Un `@lid` es un identificador interno de WhatsApp de 14-15 dígitos que **no es
