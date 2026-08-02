@@ -280,12 +280,12 @@ async function esperarRechazo(id, ms = 4000) {
  * Envuelve el registro de Baileys para poder ver los acuses rechazados sin
  * tocar la libreria. Todo lo demas pasa tal cual.
  */
-function registroQueVigilaAcks(base, alFallar) {
+function registroQueVigilaAcks(base, alFallar, line) {
     const niveles = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
     return new Proxy(base, {
         get(target, prop) {
             if (prop === 'child') {
-                return (...a) => registroQueVigilaAcks(target.child(...a), alFallar);
+                return (...a) => registroQueVigilaAcks(target.child(...a), alFallar, line);
             }
             const v = target[prop];
             if (typeof v === 'function' && niveles.includes(prop)) {
@@ -299,6 +299,7 @@ function registroQueVigilaAcks(base, alFallar) {
                         ) {
                             alFallar(obj.attrs);
                         }
+                        detectarRestriccion(line, obj);
                     } catch { /* vigilar no puede romper el registro */ }
                     return v.apply(target, args);
                 };
@@ -306,6 +307,121 @@ function registroQueVigilaAcks(base, alFallar) {
             return typeof v === 'function' ? v.bind(target) : v;
         },
     });
+}
+
+/** Saca el texto de un nodo de WhatsApp, venga como Buffer o serializado. */
+function textoDeNodo(nodo) {
+    const partes = [];
+    const visitar = (n) => {
+        if (!n) return;
+        if (Array.isArray(n)) return n.forEach(visitar);
+        if (Buffer.isBuffer(n)) return void partes.push(n.toString('utf8'));
+        if (n.type === 'Buffer' && Array.isArray(n.data)) {
+            return void partes.push(Buffer.from(n.data).toString('utf8'));
+        }
+        if (typeof n === 'object') return visitar(n.content);
+    };
+    visitar(nodo);
+    return partes.join(' ');
+}
+
+/**
+ * WHATSAPP AVISA CUANDO RESTRINGE UNA CUENTA. HAY QUE ESCUCHARLO.
+ *
+ * El 01-ago-2026 la línea 2 dejó de entregar y nadie sabía por qué: todo daba
+ * «conectada», el código era el mismo que el de la línea 1, y cada envío moría
+ * con un 463 sin explicación. Se perdieron horas buscando el fallo en el
+ * sistema.
+ *
+ * El dato estaba llegando desde el principio. WhatsApp había mandado una
+ * notificación a esa cuenta:
+ *
+ *   {"xwa2_notify_account_reachout_timelock":{
+ *      "enforcement_type":"RESTRICT_ALL_COMPANIONS",
+ *      "is_active":true,
+ *      "time_enforcement_ends":"1786218427"}}
+ *
+ * Es decir: WhatsApp restringió **todos los dispositivos vinculados** de esa
+ * cuenta —WhatsApp Web incluido; el teléfono en sí NO— hasta una fecha exacta.
+ * Baileys no sabe interpretarla y la descartaba con un «Invalid mex newsletter
+ * notification», así que la única señal clara del problema se tiraba a la
+ * basura y el dueño quedaba adivinando.
+ *
+ * Aquí se lee, se guarda y se muestra en el panel con su fecha de fin. No se
+ * puede esquivar una restricción de WhatsApp —ni se debe intentar—, pero sí se
+ * puede dejar de buscar un fallo que no existe.
+ */
+function detectarRestriccion(line, obj) {
+    const nodo = obj && typeof obj === 'object' ? obj.node : null;
+    if (!nodo || nodo.tag !== 'notification' || !line) return;
+
+    const texto = textoDeNodo(nodo);
+    if (!texto.includes('reachout_timelock')) return;
+
+    const bruto = texto.slice(texto.indexOf('{'));
+    let datos = null;
+    try {
+        datos = JSON.parse(bruto)?.data?.xwa2_notify_account_reachout_timelock || null;
+    } catch { /* si cambia el formato, al menos queda el texto crudo */ }
+
+    const st = sessions.get(line);
+    if (!st) return;
+
+    const terminaMs = Number(datos?.time_enforcement_ends || 0) * 1000;
+    st.restriccion = {
+        activa: datos ? datos.is_active !== false : true,
+        tipo: datos?.enforcement_type || 'desconocido',
+        terminaISO: terminaMs ? new Date(terminaMs).toISOString() : null,
+        vistaISO: new Date().toISOString(),
+        crudo: datos ? undefined : bruto.slice(0, 300),
+    };
+
+    guardarRestriccion(line, st.restriccion);
+
+    logger.error(
+        { line, ...st.restriccion },
+        'WHATSAPP RESTRINGIÓ ESTA CUENTA: no es un fallo del sistema. Los dispositivos vinculados no pueden enviar hasta la fecha indicada. El teléfono en sí no está restringido.'
+    );
+}
+
+/**
+ * La restricción se guarda en disco porque WhatsApp la anuncia UNA vez.
+ * Sin esto, un reinicio del contenedor borraba la única explicación que
+ * teníamos y el panel volvía a decir «conectada» sin más, que es justo lo que
+ * hizo perder horas el 01-ago.
+ */
+function restriccionPath(line) {
+    return path.join(authDir(line), 'restriccion-whatsapp.json');
+}
+
+function guardarRestriccion(line, r) {
+    try {
+        fs.mkdirSync(authDir(line), { recursive: true });
+        fs.writeFileSync(restriccionPath(line), JSON.stringify(r, null, 2));
+    } catch (e) {
+        logger.warn({ line, err: e.message }, 'No se pudo guardar la restricción de WhatsApp');
+    }
+}
+
+function cargarRestriccion(line) {
+    try {
+        const f = restriccionPath(line);
+        if (!fs.existsSync(f)) return null;
+        return JSON.parse(fs.readFileSync(f, 'utf8'));
+    } catch {
+        return null;
+    }
+}
+
+/** ¿Hay una restricción de WhatsApp vigente sobre esta línea? */
+function restriccionVigente(st, line) {
+    let r = st?.restriccion;
+    if (!r && line) {
+        r = cargarRestriccion(line);
+        if (r && st) st.restriccion = r;
+    }
+    if (!r || !r.activa || !r.terminaISO) return null;
+    return Date.parse(r.terminaISO) > Date.now() ? r : null;
 }
 
 const lidMaps = new Map(); // line -> { '<lid>': '<telefono@s.whatsapp.net>' }
@@ -910,7 +1026,7 @@ async function startSession(line, motivo = 'inicial') {
             // Registro vigilado: es la unica forma de enterarse de que WhatsApp
             // rechazo un mensaje en el acuse, porque Baileys no lo emite como
             // evento y `sendMessage` ya se resolvio como si todo fuera bien.
-            logger: registroQueVigilaAcks(logger.child({ line }), attrs => registrarAckFallido(line, attrs)),
+            logger: registroQueVigilaAcks(logger.child({ line }), attrs => registrarAckFallido(line, attrs), line),
             browser: Browsers.macOS('Desktop'),
 
             // La sincronización de historial completo rompía la sesión por
@@ -1330,6 +1446,8 @@ function describeSessions() {
             reposoMinutosRestantes: Math.ceil(reposoRestante(st) / 60000),
             reposoHasta: st.pausadaHasta ? new Date(st.pausadaHasta).toISOString() : null,
             rechazosSeguidos: st.rechazosSeguidos || 0,
+            // Restriccion declarada por WhatsApp sobre la cuenta, si la hay.
+            restriccionWhatsApp: restriccionVigente(st, line),
         };
     }
     return out;
@@ -1503,6 +1621,18 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
     const { chatId, message, text } = req.body || {};
     const content = message || text;
     if (!chatId || !content) return res.status(400).json({ error: 'chatId y message/text son obligatorios' });
+
+    // WhatsApp declaró una restricción sobre esta cuenta: se dice con su fecha
+    // en vez de dejar que el envío muera con un 463 sin explicación.
+    const restr = restriccionVigente(st, line);
+    if (restr) {
+        const detalle =
+            `WhatsApp tiene restringida la cuenta de la línea "${line}" (${restr.tipo}) hasta ` +
+            `${restr.terminaISO}. Los dispositivos vinculados no pueden enviar; el teléfono en sí ` +
+            `no está restringido. No es un fallo del sistema y no hay nada que reintentar.`;
+        logger.warn({ line, ...restr }, detalle);
+        return res.status(503).json({ error: detalle, restringida: true, termina: restr.terminaISO });
+    }
 
     // FRENO: si WhatsApp viene rechazando esta línea, no se insiste.
     const enReposo = reposoRestante(st);
