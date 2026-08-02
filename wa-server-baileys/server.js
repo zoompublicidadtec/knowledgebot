@@ -719,7 +719,68 @@ function blankState() {
          */
         epoch: 0,
         reconnectTimer: null,
+
+        /**
+         * FRENO POR RECHAZOS DE WHATSAPP.
+         *
+         * Un acuse con error 463 es WhatsApp diciendo «pará»: el mensaje no se
+         * entregó y el que insiste se gana un castigo mayor. Hasta el
+         * 01-ago-2026 el puente no distinguía entre «no salió por la red» y
+         * «WhatsApp me está frenando», así que seguía respondiendo a cada
+         * mensaje entrante. Medido ese día en la línea 2: **de 13 intentos de
+         * envío, 10 rechazados** en 51 minutos. Ninguno llegó al cliente y cada
+         * uno hundía más la cuenta.
+         *
+         * Con el freno, tras varios rechazos seguidos la línea deja de ENVIAR
+         * durante un rato que crece solo. Seguir RECIBIENDO no se toca: ninguna
+         * consulta se pierde, quedan todas en el panel para atenderlas cuando
+         * la línea se recupere o desde otra línea.
+         */
+        rechazosSeguidos: 0,
+        pausadaHasta: 0,
+        pausaNivel: 0,
     };
+}
+
+/** Cuánto descansa una línea según cuántas veces seguidas la hayan frenado. */
+const PAUSAS_MS = [10 * 60_000, 30 * 60_000, 2 * 3600_000, 6 * 3600_000];
+/** Rechazos seguidos que hacen falta para frenar la línea. */
+const RECHAZOS_PARA_PAUSAR = 3;
+
+/** ¿Esta línea está en reposo? Devuelve los ms que le faltan, o 0. */
+function reposoRestante(st) {
+    if (!st?.pausadaHasta) return 0;
+    return Math.max(0, st.pausadaHasta - Date.now());
+}
+
+/** WhatsApp rechazó un envío de esta línea: se cuenta y, si insiste, se frena. */
+function contarRechazo(line) {
+    const st = sessions.get(line);
+    if (!st) return;
+    st.rechazosSeguidos = (st.rechazosSeguidos || 0) + 1;
+    if (st.rechazosSeguidos < RECHAZOS_PARA_PAUSAR) return;
+
+    const nivel = Math.min(st.pausaNivel || 0, PAUSAS_MS.length - 1);
+    const espera = PAUSAS_MS[nivel];
+    st.pausadaHasta = Date.now() + espera;
+    st.pausaNivel = Math.min((st.pausaNivel || 0) + 1, PAUSAS_MS.length - 1);
+    st.rechazosSeguidos = 0;
+    logger.error(
+        { line, minutos: Math.round(espera / 60000), reanuda: new Date(st.pausadaHasta).toISOString() },
+        'LÍNEA EN REPOSO: WhatsApp rechazó varios envíos seguidos. Se deja de enviar por esta línea para no agravar el bloqueo. Se sigue recibiendo con normalidad.'
+    );
+}
+
+/** Un envío entregado limpia el contador y levanta el castigo. */
+function contarEnvioBueno(line) {
+    const st = sessions.get(line);
+    if (!st) return;
+    if (st.rechazosSeguidos || st.pausaNivel || st.pausadaHasta) {
+        logger.info({ line }, 'Envío entregado: la línea vuelve a la normalidad');
+    }
+    st.rechazosSeguidos = 0;
+    st.pausadaHasta = 0;
+    st.pausaNivel = 0;
 }
 
 function authDir(line) {
@@ -1263,6 +1324,12 @@ function describeSessions() {
             // Cuantos contactos @lid tienen ya su telefono real aprendido. Sin
             // el, WhatsApp rechaza los envios a ese contacto con error 463.
             telefonosAprendidos: Object.keys(loadLidMap(line)).length,
+            // Freno por rechazos: lo que el panel necesita para avisar que la
+            // línea está descansando y hasta cuándo.
+            enReposo: reposoRestante(st) > 0,
+            reposoMinutosRestantes: Math.ceil(reposoRestante(st) / 60000),
+            reposoHasta: st.pausadaHasta ? new Date(st.pausadaHasta).toISOString() : null,
+            rechazosSeguidos: st.rechazosSeguidos || 0,
         };
     }
     return out;
@@ -1437,6 +1504,17 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
     const content = message || text;
     if (!chatId || !content) return res.status(400).json({ error: 'chatId y message/text son obligatorios' });
 
+    // FRENO: si WhatsApp viene rechazando esta línea, no se insiste.
+    const enReposo = reposoRestante(st);
+    if (enReposo > 0) {
+        const minutos = Math.ceil(enReposo / 60000);
+        const detalle =
+            `La línea "${line}" está en reposo ${minutos} min más: WhatsApp rechazó varios envíos seguidos. ` +
+            `Insistir agrava el bloqueo. Sigue recibiendo mensajes con normalidad; respondé desde otra línea si es urgente.`;
+        logger.warn({ line, minutos }, detalle);
+        return res.status(503).json({ error: detalle, en_reposo: true, minutos_restantes: minutos });
+    }
+
     // Se intenta aunque no conozcamos el telefono: el acuse real de WhatsApp,
     // unas lineas mas abajo, es quien dice si se entrego o no.
     const destino = resolveSendJid(line, chatId);
@@ -1461,9 +1539,11 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
             metrics.send_errors++;
             const detalle = `WhatsApp aceptó el mensaje y lo rechazó en el acuse (error ${rechazo.error}). El cliente NO lo recibió.`;
             logger.error({ line, jid, id: idReal, error: rechazo.error }, detalle);
+            contarRechazo(line);
             return res.status(502).json({ error: detalle, ack_error: rechazo.error });
         }
 
+        contarEnvioBueno(line);
         metrics.text_sent++;
         // El id REAL de WhatsApp: es lo que apaga el eco del puente.
         res.json({ data: { id: idReal || `baileys_${Date.now()}` } });
@@ -1493,6 +1573,17 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
 
     const { chatId, mediaUrl, caption } = req.body || {};
     if (!chatId || !mediaUrl) return res.status(400).json({ error: 'chatId y mediaUrl son obligatorios' });
+
+    // FRENO: el mismo reposo que para el texto. Ver `contarRechazo`.
+    const enReposoMedia = reposoRestante(st);
+    if (enReposoMedia > 0) {
+        const minutos = Math.ceil(enReposoMedia / 60000);
+        const detalle =
+            `La línea "${line}" está en reposo ${minutos} min más: WhatsApp rechazó varios envíos seguidos. ` +
+            `Insistir agrava el bloqueo. Sigue recibiendo mensajes con normalidad.`;
+        logger.warn({ line, minutos }, detalle);
+        return res.status(503).json({ error: detalle, en_reposo: true, minutos_restantes: minutos });
+    }
 
     const destino = resolveSendJid(line, chatId);
     if (!destino.telefonoConocido) {
@@ -1537,9 +1628,11 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
             metrics.send_errors++;
             const detalle = `WhatsApp aceptó la foto y la rechazó en el acuse (error ${rechazo.error}). El cliente NO la recibió.`;
             logger.error({ line, jid, id: idReal, error: rechazo.error }, detalle);
+            contarRechazo(line);
             return res.status(502).json({ error: detalle, ack_error: rechazo.error });
         }
 
+        contarEnvioBueno(line);
         metrics.media_sent++;
         logger.info({ line, jid, mime, kb: Math.round(buf.length / 1024) }, 'Media enviada');
         res.json({ data: { id: idReal || `baileys_media_${Date.now()}` } });
