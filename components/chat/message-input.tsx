@@ -145,34 +145,41 @@ export function MessageInput({ conversationId, contactPhone, onMessageSent }: Me
           if (archivo) void enviarArchivo(archivo);
         }}
       />
-      <button
-        type="button"
-        onClick={() => archivoRef.current?.click()}
-        disabled={ocupado}
-        aria-label="Adjuntar una foto o un archivo"
-        title="Adjuntar una foto o un archivo"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-400
-                   transition-colors hover:bg-white/5 hover:text-slate-200 disabled:opacity-40
-                   lg:h-10 lg:w-10"
-      >
-        {subiendo ? <SpinnerGap size={20} className="animate-spin" /> : <Paperclip size={20} />}
-      </button>
-
-      <textarea
-        ref={campoRef}
-        rows={1}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Escribe un mensaje de WhatsApp..."
-        aria-label="Escribe un mensaje de WhatsApp"
-        enterKeyHint={esTactil ? 'enter' : 'send'}
-        disabled={ocupado}
-        className="chat-campo flex-1 resize-none overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/70
-                   px-3.5 py-2.5 text-white outline-none transition-colors
-                   placeholder:text-slate-500 focus:border-primary-500/60 disabled:opacity-60
-                   lg:text-sm"
-      />
+      {/* El clip vive DENTRO de la pastilla, pegado al borde derecho.
+          Suelto a la izquierda robaba ancho al campo —que en el telefono es lo
+          que mas escasea— y se leia como una pieza de otro juego, no como parte
+          del cuadro de escribir. El hueco a la derecha del texto se lo hace
+          `pr-11` aqui y el `padding` de `.chat-campo` en globals.css, para que
+          lo escrito nunca pase por debajo del icono. */}
+      <div className="relative flex-1">
+        <textarea
+          ref={campoRef}
+          rows={1}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Escribe un mensaje de WhatsApp..."
+          aria-label="Escribe un mensaje de WhatsApp"
+          enterKeyHint={esTactil ? 'enter' : 'send'}
+          disabled={ocupado}
+          className="chat-campo block w-full resize-none overflow-y-auto rounded-2xl border border-white/10
+                     bg-slate-900/70 py-2.5 pl-3.5 pr-11 text-white outline-none transition-colors
+                     placeholder:text-slate-500 focus:border-primary-500/60 disabled:opacity-60
+                     lg:text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => archivoRef.current?.click()}
+          disabled={ocupado}
+          aria-label="Adjuntar una foto o un archivo"
+          title="Adjuntar una foto o un archivo"
+          className="absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-full
+                     text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-200
+                     disabled:opacity-40"
+        >
+          {subiendo ? <SpinnerGap size={18} className="animate-spin" /> : <Paperclip size={18} />}
+        </button>
+      </div>
       <button
         type="submit"
         disabled={ocupado || !hayTexto}

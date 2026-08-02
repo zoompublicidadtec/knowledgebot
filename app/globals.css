@@ -466,12 +466,15 @@ body {
     background: #0b1016;
   }
 
-  /* El campo: una pastilla, no una caja con marco. */
+  /* El campo: una pastilla, no una caja con marco.
+     El relleno de la derecha es mayor que el de la izquierda a proposito: ahi
+     va el clip, dentro de la pastilla, y sin ese hueco lo escrito le pasaria
+     por debajo. */
   .chat-pantalla .chat-campo {
     background: #202c33;
     border-color: transparent;
     border-radius: 22px;
-    padding: 0.55rem 0.9rem;
+    padding: 0.55rem 2.6rem 0.55rem 0.9rem;
   }
 
   /* El boton de enviar toma el verde del chat en lugar del indigo del panel:
