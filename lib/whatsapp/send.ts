@@ -1,6 +1,152 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createAdapter } from './adapter';
 import { logger } from '@/lib/logger';
+import { uploadBase64ToR2, getSignedMediaUrl, isR2Configured } from '@/lib/r2-storage';
+
+/** El mismo tope que aplica el puente, para avisar antes de subir en vano. */
+const MAX_MEDIA_MB = parseInt(process.env.MAX_MEDIA_MB || '20', 10);
+
+/**
+ * MANDA UNA IMAGEN O UN ARCHIVO AL CLIENTE DESDE EL PANEL.
+ *
+ * EL FALLO QUE ESTO CIERRA
+ * ------------------------
+ * Desde el panel solo se podía escribir texto. Un asesor que quería mandar la
+ * foto de un producto, un arte para aprobar o una cotización en PDF tenía que
+ * salirse del sistema y hacerlo desde el celular — y ese mensaje ya no queda
+ * en la conversación del CRM.
+ *
+ * LA TUBERÍA YA EXISTÍA ENTERA
+ * ----------------------------
+ * El puente tiene `/messages/send-media` desde hace tiempo, con el mismo freno
+ * por rechazos y la misma verificación del acuse que el texto, y el adaptador
+ * ya sabía llamarlo: es la vía por la que el bot le manda al cliente las fotos
+ * de los productos. Lo único que faltaba era esta función y un botón.
+ *
+ * ORDEN DE LOS PASOS, Y POR QUÉ
+ * -----------------------------
+ * El archivo se guarda ANTES de pedir el envío, porque el puente no recibe
+ * bytes: recibe una dirección y la descarga él. Sin el archivo ya guardado no
+ * hay nada que descargar.
+ *
+ * SI NO SALIÓ, NO SE GUARDA — igual que el texto. Ver `sendWhatsAppMessage`.
+ */
+export async function sendWhatsAppMedia(
+  orgId: string,
+  conversationId: string,
+  to: string,
+  base64Data: string,
+  mimetype: string,
+  caption?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+
+  try {
+    if (!isR2Configured()) {
+      return { ok: false, error: 'El almacenamiento de archivos no está configurado en el servidor.' };
+    }
+
+    // 3/4 es la proporción exacta de base64 a bytes.
+    const bytes = Math.floor((base64Data.length * 3) / 4);
+    if (bytes > MAX_MEDIA_MB * 1024 * 1024) {
+      return {
+        ok: false,
+        error: `El archivo pesa ${Math.round(bytes / 1024 / 1024)} MB y el máximo son ${MAX_MEDIA_MB} MB.`,
+      };
+    }
+
+    const { data: waConfig } = await supabase
+      .from('whatsapp_configs')
+      .select('*')
+      .eq('organization_id', orgId)
+      .single();
+
+    if (!waConfig) {
+      logger.error('No WhatsApp config found', { orgId });
+      return { ok: false, error: 'No hay una configuración de WhatsApp para este negocio.' };
+    }
+
+    const { data: conv } = await (supabase as any)
+      .from('conversations')
+      .select('line_key')
+      .eq('id', conversationId)
+      .single();
+
+    const lineKey = (conv as any)?.line_key || null;
+
+    const key = await uploadBase64ToR2(base64Data, mimetype);
+    if (!key) {
+      return { ok: false, error: 'No se pudo guardar el archivo antes de enviarlo.' };
+    }
+
+    const url = await getSignedMediaUrl(key);
+    if (!url) {
+      return { ok: false, error: 'No se pudo preparar el archivo para el envío.' };
+    }
+
+    const adapter = createAdapter(waConfig, lineKey);
+    const waMessageId = await adapter.sendMediaMessage(to, url, caption || undefined);
+
+    if (!waMessageId) {
+      logger.error('El archivo enviado desde el panel NO salió', {
+        orgId, conversationId, lineKey, to, mimetype, bytes,
+      });
+      if (lineKey) {
+        try {
+          const { logLineError } = await import('./log-line-error');
+          await logLineError({
+            lineKey,
+            orgId,
+            errorType: 'connection',
+            severity: 'error',
+            message: 'El puente rechazó un archivo enviado por un asesor desde el panel. El cliente no lo recibió.',
+            context: { conversationId, to, mimetype },
+          });
+        } catch (e) {
+          logger.warn('No se pudo registrar el error de línea', { error: String(e) });
+        }
+      }
+      return { ok: false, error: 'WhatsApp no aceptó el archivo. El cliente NO lo recibió.' };
+    }
+
+    /**
+     * Se guarda con la MISMA forma que trae un adjunto entrante, para que la
+     * burbuja lo pinte sin ninguna rama especial: `leerMedia` encuentra el tipo
+     * y la clave de R2 donde ya sabe buscarlos.
+     */
+    const tipo = mimetype.startsWith('image/')
+      ? 'image'
+      : mimetype.startsWith('video/')
+        ? 'video'
+        : mimetype.startsWith('audio/')
+          ? 'audio'
+          : 'document';
+
+    await (supabase as any).from('messages').insert({
+      conversation_id: conversationId,
+      organization_id: orgId,
+      wa_message_id: waMessageId,
+      direction: 'outbound',
+      sender: 'human',
+      content: caption || '',
+      raw: {
+        data: {
+          message: { mediaType: tipo, media: { mimetype, r2_key: key, size_bytes: bytes } },
+        },
+      },
+    });
+
+    await (supabase as any)
+      .from('conversations')
+      .update({ last_message_at: new Date().toISOString() })
+      .eq('id', conversationId);
+
+    return { ok: true };
+  } catch (err) {
+    logger.error('Send media failed', { error: String(err), orgId, conversationId });
+    return { ok: false, error: 'No se pudo enviar el archivo.' };
+  }
+}
 
 /**
  * Send a message to a WhatsApp contact from the dashboard (human sender).
