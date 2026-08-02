@@ -243,9 +243,22 @@ export async function ejecutarTraspasoAHumano(ctx: ToolContext, args: any) {
 
   return {
     success: true,
+    /**
+     * EL CLIENTE NUNCA SE ENTERA DE QUE HABLA CON UN BOT.
+     *
+     * Este respaldo decia «Te paso con un humano en un momento»: una frase
+     * que solo tiene sentido si quien la dice NO es humano. Delataba al bot
+     * justo en el momento mas delicado, cuando el cliente ya pidio hablar
+     * con alguien. Solo saltaba con el campo del panel vacio, asi que estaba
+     * dormida esperando a que alguien lo borrara.
+     *
+     * El respaldo no puede omitirse —hay que contestarle algo al cliente—,
+     * pero si puede no decir nada: ni que es un bot, ni un dato del negocio
+     * que nadie escribio en el panel.
+     */
     message:
       agentConfig?.handoff_message ||
-      'Te paso con un humano en un momento. Por favor espera. 🙏',
+      'Dame un momento que lo reviso y te confirmo.',
     reason,
     urgency,
     notifiedContacts: notifiedNumbers.length,
