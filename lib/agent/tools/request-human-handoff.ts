@@ -133,6 +133,93 @@ export function clientePideUnaPersona(mensaje: string | null | undefined): boole
 }
 
 /**
+ * LAS FRASES CON LAS QUE EL BOT ADMITE QUE NO PUDO CONTESTAR.
+ *
+ * Viven aquí y no sueltas en `index.ts` para que haya UNA sola definición: la
+ * que el agente entrega al cliente y la que se usa para detectar que se trabó
+ * son literalmente la misma cadena. Si alguien reescribe el respaldo y la
+ * copia de la detección queda vieja, el sistema deja de darse cuenta de que
+ * está fallando — y ese es justo el fallo que esto viene a cerrar.
+ */
+export const RESPALDO_PREGUNTAR =
+  'Cuéntame un poco más de lo que necesitas para no ofrecerte algo que no era: ¿para qué lo vas a usar y qué tamaño o cantidad tienes en mente? Con eso lo reviso con el equipo y te confirmo.';
+export const RESPALDO_COTIZAR =
+  'Ya estoy revisando eso con producción para darte el valor exacto. Cuéntame mientras qué cantidad manejas y te armo la cotización completa.';
+export const RESPALDO_ERROR = 'Dame un segundo que reviso eso y te confirmo.';
+
+const RESPALDOS = [RESPALDO_PREGUNTAR, RESPALDO_COTIZAR, RESPALDO_ERROR];
+
+/** Texto comparable: sin mayúsculas, sin signos, sin espacios de más. */
+function normalizar(t: string | null | undefined): string {
+  return String(t || '').toLowerCase().replace(/[^a-záéíóúñü0-9]+/gi, ' ').trim();
+}
+
+function esRespaldo(t: string | null | undefined): boolean {
+  const n = normalizar(t);
+  return !!n && RESPALDOS.some((r) => normalizar(r) === n);
+}
+
+/** Dos mensajes que dicen lo mismo: repetirse es no avanzar. */
+function casiElMismo(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = normalizar(a);
+  const y = normalizar(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  // Uno que contiene al otro entero también es repetirse, siempre que haya
+  // texto suficiente: con frases cortas cualquier cosa contiene a cualquiera.
+  const [corto, largo] = x.length <= y.length ? [x, y] : [y, x];
+  return corto.length >= 40 && largo.includes(corto);
+}
+
+/**
+ * ¿EL BOT LLEVA DOS TURNOS SEGUIDOS SIN AVANZAR?
+ *
+ * EL FALLO QUE ESTO CIERRA
+ * ------------------------
+ * El 02-ago-2026 el dueño mostró una conversación de su panel. El otro lado
+ * era **otro bot** —de prospección, ofreciendo páginas web— y el bot de ZOOM
+ * le contestó **dos veces seguidas el mismo saludo** («Hola, hablas con Oscar
+ * Herrera…») antes de cotizarle portarretratos. Nadie se enteró: la
+ * conversación se quedó en «Entrada», con el bot encendido, dando vueltas.
+ *
+ * Hasta hoy una conversación solo llegaba a «Sin Atender» si el cliente pedía
+ * una persona o si el modelo decidía escalar. **Nada detectaba que el bot se
+ * hubiera trabado**, que es el caso más común y el más silencioso.
+ *
+ * DOS SEÑALES, LAS DOS DURAS
+ * --------------------------
+ * - El bot entregó una de sus frases de respaldo: es el propio código
+ *   admitiendo que agotó los reintentos y no supo qué contestar.
+ * - El bot repitió lo que ya había dicho: no está llevando la conversación a
+ *   ningún lado.
+ *
+ * POR QUÉ A LA SEGUNDA Y NO A LA PRIMERA
+ * --------------------------------------
+ * Decisión del dueño (02-ago). Un tropiezo suelto lo remonta el bot en el
+ * mensaje siguiente; apagarlo ahí llenaría el panel de tarjetas que no
+ * necesitaban a nadie. Dos seguidas ya no es un tropiezo.
+ *
+ * SIN CONTADORES EN LA BASE
+ * -------------------------
+ * No hace falta guardar nada: los mensajes anteriores del bot ya vienen
+ * cargados en el turno, y de ellos se deduce si el turno pasado también se
+ * trabó. Un contador guardado puede desincronizarse; los mensajes, no.
+ */
+export function elBotNoAvanza(params: {
+  respuesta: string | null | undefined;
+  mensajesPreviosDelBot: string[];
+}): boolean {
+  const previos = params.mensajesPreviosDelBot || [];
+  const ultimo = previos[previos.length - 1];
+  const penultimo = previos[previos.length - 2];
+
+  const ahora = esRespaldo(params.respuesta) || casiElMismo(params.respuesta, ultimo);
+  if (!ahora) return false;
+
+  return esRespaldo(ultimo) || casiElMismo(ultimo, penultimo);
+}
+
+/**
  * EL ÚNICO SITIO QUE TRASPASA A UN HUMANO.
  *
  * Pasan por aquí las dos vías: la herramienta que llama el modelo y la regla

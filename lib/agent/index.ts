@@ -15,6 +15,10 @@ import {
   requestHumanHandoffTool,
   clientePideUnaPersona,
   ejecutarTraspasoAHumano,
+  elBotNoAvanza,
+  RESPALDO_PREGUNTAR,
+  RESPALDO_COTIZAR,
+  RESPALDO_ERROR,
 } from './tools/request-human-handoff';
 import { calculateCustomPriceTool } from './tools/calculate-custom-price';
 import { updatePipelineStageTool } from './tools/update-pipeline-stage';
@@ -729,6 +733,15 @@ export async function runAgentForMessage(params: {
       }
     }
 
+    /**
+     * Lo que el bot ya dijo antes, del más viejo al más nuevo. Es lo único que
+     * hace falta para saber si se está trabando: no se guarda ningún contador.
+     */
+    const mensajesPreviosDelBot = [...(history || [])]
+      .reverse()
+      .filter((m: any) => m.direction !== 'inbound' && m.content)
+      .map((m: any) => String(m.content));
+
     // Add current message if not already the last one in history
     const lastMsg = rawMessages[rawMessages.length - 1];
     if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== messageText) {
@@ -1062,10 +1075,38 @@ ${lineas}`;
         // Si lo que falló fue que buscaba otra cosa, el respaldo NO puede
         // prometer una cotización: sería seguir hablando de lo que el cliente
         // no pidió. Se pregunta, que es lo que corresponde.
-        finalResponse = permitirPreguntar
-          ? 'Cuéntame un poco más de lo que necesitas para no ofrecerte algo que no era: ¿para qué lo vas a usar y qué tamaño o cantidad tienes en mente? Con eso lo reviso con el equipo y te confirmo.'
-          : 'Ya estoy revisando eso con producción para darte el valor exacto. Cuéntame mientras qué cantidad manejas y te armo la cotización completa.';
+        // Los textos viven en request-human-handoff.ts: la frase que se entrega
+        // y la que detecta que el bot se trabó tienen que ser LA MISMA.
+        finalResponse = permitirPreguntar ? RESPALDO_PREGUNTAR : RESPALDO_COTIZAR;
       }
+    }
+
+    /**
+     * SI EL BOT NO AVANZA DOS TURNOS SEGUIDOS, QUE LO TOME UNA PERSONA.
+     *
+     * Va ANTES de mover la tarjeta a propósito. Si aquí se traspasa, la etapa
+     * queda en «Sin Atender» —puesta por el sistema en nombre de una persona— y
+     * `moverEtapaSiAvanza` se niega a tocarla. El orden es la garantía: al
+     * revés, un turno trabado que igual soltó un precio se iría a «Ventas».
+     *
+     * El cliente ya recibió su respuesta; esto no la cambia. Solo apaga el bot,
+     * mueve la conversación a «Sin Atender» y la hace sonar en la campana.
+     */
+    try {
+      if (elBotNoAvanza({ respuesta: finalResponse, mensajesPreviosDelBot })) {
+        const traspaso: any = await ejecutarTraspasoAHumano(toolContext, {
+          reason: 'El bot no avanzó dos turnos seguidos: se repitió o no supo qué contestar',
+          urgency: 'medium',
+        });
+        logger.warn('El bot no avanza: la conversación pasa a «Sin Atender»', {
+          orgId, conversationId, contactId, traspasado: !!traspaso?.success,
+        });
+      }
+    } catch (errTrabado) {
+      // Que falle esto no puede dejar al cliente sin su respuesta.
+      logger.error('No se pudo traspasar una conversación trabada', {
+        error: String(errTrabado), orgId, conversationId,
+      });
     }
 
     /**
@@ -1110,6 +1151,6 @@ ${lineas}`;
       orgId,
       conversationId,
     });
-    return 'Dame un segundo que reviso eso y te confirmo.';
+    return RESPALDO_ERROR;
   }
 }
