@@ -20,6 +20,32 @@
 
 ---
 
+
+## 0.1 Prueba masiva del 02-ago-2026 — qué funciona y qué no
+
+30 clientes distintos (contacto y teléfono propios) repartidos entre las 3
+líneas, ejecutando el agente real sin enviar un solo mensaje de WhatsApp.
+**31 conversaciones, 99 mensajes, 49 respuestas aprobadas, 0 de respaldo.**
+
+Se dispara con `POST /api/agent/test` y la cabecera `x-bridge-key` (la misma
+llave del webhook). El guion vive fuera del repo; para repetirla basta con
+volver a crear la tanda: es la red de seguridad para probar cambios sin tocar
+clientes ni quemar números.
+
+| Área | Estado |
+|---|---|
+| Saludo, identidad y tono | ✅ |
+| Datos del negocio (dirección, web, teléfono) desde el panel | ✅ |
+| Catálogo, precios reales y cotización por cantidad | ✅ |
+| Cambio de tema a mitad de conversación | ✅ (ya no arrastra el producto anterior) |
+| Objeciones de precio y comparación con la competencia | ✅ |
+| Cierre a etapa «Vendido» | ✅ |
+| Dato del negocio vacío en el panel | ✅ dice que lo consulta, **no lo inventa** |
+| **Pipeline / Kanban** | 🔴 **casi no se usa**: de 3 negociaciones activas solo 1 pasó a «Ventas». «¿me haces mejor precio?» y «estoy comparando proveedores» se quedaron en Entrada |
+| **Newsletters y canales de WhatsApp** | 🔴 **crean conversaciones**: entró `…@newsletter` con 1 mensaje y 0 respuestas. No deberían generar chat |
+
+Esos dos 🔴 son los pendientes conocidos al cerrar el 02-ago-2026.
+
 ## 1. Arquitectura real (verificada el 2026-07-29)
 
 ```

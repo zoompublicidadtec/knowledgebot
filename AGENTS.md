@@ -62,7 +62,7 @@ servicios, catálogo, logs), el VPS sigue siendo la fuente de verdad (ver §4).
 
 ## 1. Mapa de la documentación, y quién gana cuando se contradicen
 
-Hay 9 archivos `.md` en el proyecto y **se contradecían entre sí**. Este es el
+Hay 6 archivos `.md` en el proyecto (eran 9; tres se borraron por muertos). Este es el
 orden de autoridad: si dos documentos dicen cosas distintas, manda el de arriba.
 
 | # | Documento | Qué es | Fiabilidad |
@@ -71,11 +71,15 @@ orden de autoridad: si dos documentos dicen cosas distintas, manda el de arriba.
 | 2 | `docs/REGISTRO_DE_CAMBIOS.md` | Bitácora de cada cambio con la prueba que se hizo | **Historia verificada** |
 | 3 | `AGENTS.md` (este archivo) | Reglas de trabajo y mapa de documentos | Reglas vigentes |
 | 4 | `CLAUDE.md` | Solo importa `@AGENTS.md`. **No escribir contenido aquí** | — |
-| 5 | `knowledgebot_memoria_tecnica.md` | Relato técnico de junio/julio 2026 | ⚠️ **Histórico, con datos falsos ya señalados dentro** |
-| 6 | `README.md` | Instalación y stack, en inglés | ⚠️ Parcialmente obsoleto |
-| 7 | `docs/planes/*.md` | Planes de trabajo cerrados o superados | Archivo |
-| 8 | `data/README_BASE_DE_DATOS.md` | Describe el catálogo **de origen** de importados (junio 2026) | Solo origen de datos |
-| 9 | `catalogo_catalogospromocionales/README.md` y `BASE_DE_DATOS/README_BASE_DE_DATOS.md` | Ídem; el segundo es copia del primero | Solo origen de datos |
+| 5 | `README.md` | Instalación y stack, en inglés | ⚠️ Parcialmente obsoleto |
+| 6 | `data/README_BASE_DE_DATOS.md` y `catalogo_catalogospromocionales/README.md` | Describen el catálogo **de origen** de los importados (junio 2026) | Solo origen de datos |
+
+> **El 02-ago-2026 se borraron tres documentos muertos**, por orden del dueño:
+> `knowledgebot_memoria_tecnica.md` (31 KB de relato con datos falsos ya
+> desmentidos: decía que el modelo era DeepSeek y que se usaba Meta Cloud API),
+> `docs/planes/` (planes cerrados) y la copia duplicada
+> `catalogo_catalogospromocionales/BASE_DE_DATOS/README_BASE_DE_DATOS.md`.
+> Quedan **6 documentos**. No crear nuevos: mantener estos.
 
 ## 2. Los siete datos que la documentación vieja tiene mal
 
@@ -194,7 +198,7 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
    conversaciones.
 
    La meta son **8 líneas** centralizadas en el CRM: diseñar todo pensando en eso.
-5. **No crear archivos `.md` nuevos.** Mantener sincronizados solo los 9 que ya
+5. **No crear archivos `.md` nuevos.** Mantener sincronizados solo los 6 que ya
    existen, y hacerlo **en el VPS y en el repo local a la vez**. Esa divergencia
    fue la causa de la confusión: `CLAUDE.md` existía solo en el VPS y
    `docs/planes/` solo en la copia local.
