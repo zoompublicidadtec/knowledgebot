@@ -369,6 +369,10 @@ function detectarRestriccion(line, obj) {
 
     const terminaMs = Number(datos?.time_enforcement_ends || 0) * 1000;
     st.restriccion = {
+        // La restricción es de la CUENTA, no de la ranura. Sin este campo, el
+        // castigo de un número se le aplicaba al siguiente que ocupara la misma
+        // ranura. Ver `restriccionVigente`.
+        telefono: st.phoneNumber || null,
         activa: datos ? datos.is_active !== false : true,
         tipo: datos?.enforcement_type || 'desconocido',
         terminaISO: terminaMs ? new Date(terminaMs).toISOString() : null,
@@ -413,7 +417,20 @@ function cargarRestriccion(line) {
     }
 }
 
-/** ¿Hay una restricción de WhatsApp vigente sobre esta línea? */
+/**
+ * ¿Hay una restricción de WhatsApp vigente sobre el número que hay AHORA en
+ * esta ranura?
+ *
+ * La restricción es de la CUENTA. Se guarda dentro de la carpeta de la ranura
+ * porque es donde vive la sesión, pero **solo vale para el número que la
+ * recibió**. Medido el 02-ago-2026: el dueño conectó un número nuevo a la
+ * ranura 2 y el puente le negó todos los envíos con el castigo del número
+ * anterior — WhatsApp no había rechazado ni uno solo. Un guardián que inventa
+ * el problema que dice prevenir es peor que no tenerlo.
+ *
+ * Si el teléfono no coincide, la restricción no aplica y el archivo se borra:
+ * pertenece a una cuenta que ya no está en esta ranura.
+ */
 function restriccionVigente(st, line) {
     let r = st?.restriccion;
     if (!r && line) {
@@ -421,6 +438,20 @@ function restriccionVigente(st, line) {
         if (r && st) st.restriccion = r;
     }
     if (!r || !r.activa || !r.terminaISO) return null;
+
+    const telefonoActual = st?.phoneNumber || null;
+    if (telefonoActual && r.telefono && r.telefono !== telefonoActual) {
+        logger.info(
+            { line, restriccionDe: r.telefono, numeroActual: telefonoActual },
+            'La restricción guardada es de otro número: no aplica a esta línea y se descarta'
+        );
+        if (st) st.restriccion = null;
+        try { fs.rmSync(restriccionPath(line), { force: true }); } catch { /* da igual */ }
+        return null;
+    }
+    // Sin teléfono anotado no se puede saber de quién era: no se aplica.
+    if (!r.telefono) return null;
+
     return Date.parse(r.terminaISO) > Date.now() ? r : null;
 }
 
