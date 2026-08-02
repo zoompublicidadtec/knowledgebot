@@ -135,6 +135,37 @@ No confundirlas: tienen causas y remedios distintos, y solo una es un fallo.
 | **`conflict: device_removed`** (código 401) | WhatsApp **cerró la sesión desde la cuenta**: alguien quitó el dispositivo vinculado, o lo quitó WhatsApp. | **No se reconecta, y está bien**: las credenciales quedaron revocadas. Se borran solas y la línea queda lista para un QR nuevo. |
 | **Acuse con error `463`** | La línea **está conectada**; WhatsApp acepta el mensaje y lo rechaza después. Es un bloqueo de la CUENTA. | **Freno automático**: tras 3 rechazos seguidos deja de enviar 10 min, 30 min, 2 h, 6 h. Sigue recibiendo. |
 
+#### Detrás del 463 hay una notificación de WhatsApp, y ahora se lee
+
+El 02-ago-2026 se descubrió de dónde sale el 463. WhatsApp le manda a la cuenta
+restringida una notificación que Baileys descarta como *«Invalid mex newsletter
+notification»*. Decodificada:
+
+```json
+{"xwa2_notify_account_reachout_timelock":{
+   "enforcement_type":"RESTRICT_ALL_COMPANIONS",
+   "is_active":true,
+   "time_enforcement_ends":"1786218427"}}
+```
+
+- **`RESTRICT_ALL_COMPANIONS`** — restringe **todos los dispositivos
+  vinculados** de esa cuenta: Baileys, WhatsApp Web y Desktop. **El teléfono en
+  sí NO está restringido**, y por eso desde el celular se envía con normalidad
+  mientras el puente recibe 463. Es la confusión más natural del mundo y hay que
+  tenerla presente antes de buscar el fallo en el sistema.
+- **`time_enforcement_ends`** — la fecha exacta en que se levanta. En el caso
+  medido: 7 días justos desde que WhatsApp cerró la sesión.
+
+El puente ahora **lee esa notificación, la guarda en disco** (WhatsApp la anuncia
+una sola vez y un reinicio borraba la explicación), la expone en `/diagnostic`
+como `restriccionWhatsApp` y responde a los envíos con la fecha de fin en vez de
+morir con un 463 sin explicación.
+
+> **Regla:** ante un 463, mirar `restriccionWhatsApp` en `/diagnostic` ANTES de
+> tocar nada. Si hay fecha de fin, no hay nada que arreglar: hay que esperar. Y
+> **no sirve de prueba que el número envíe bien desde el celular**: el teléfono
+> nunca está restringido por esta medida.
+
 La confusión sale de que las tres aparecen en el panel como «la línea no responde». La primera se arregla sola, la segunda pide un QR, y la tercera pide **reposo** — nunca código.
 
 ### El `@lid` sí es un problema, pero de identidad, no de envío
