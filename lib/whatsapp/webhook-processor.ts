@@ -568,6 +568,15 @@ export async function processInboundMessage(
             });
           }
         }
+      } else if (message.mediaType === 'sticker') {
+        /**
+         * UN STICKER NO SE MANDA A DESCRIBIR.
+         *
+         * Llega como `image/webp`, así que caía en la rama de las imágenes y
+         * se le gastaba una llamada de IA a cada dibujo para acabar escribiendo
+         * «[Imagen adjunta de cliente: un pulgar amarillo]» debajo del sticker.
+         * No aporta nada: el dueño ya lo está viendo.
+         */
       } else if (mimetype.startsWith('image/')) {
         try {
           const imageDescription = await describeImage(message.media.data, mimetype);
@@ -679,8 +688,27 @@ export async function processInboundMessage(
       return { success: true, conversationId };
     }
 
+    /**
+     * UN STICKER SE GUARDA Y SE VE, PERO NO DESPIERTA AL BOT.
+     *
+     * Es la mitad que sí tenía razón de la regla vieja del puente: un dibujo no
+     * es una consulta. Si el agente corriera, recibiría un mensaje sin palabras
+     * y contestaría cualquier cosa —o dispararía el candado de búsqueda fuera
+     * de tema— por un pulgar arriba.
+     *
+     * Aquí es el sitio correcto para cortarlo: el mensaje ya está guardado y el
+     * dueño lo ve en su panel. Antes se cortaba en el puente, y eso apagaba las
+     * dos cosas a la vez.
+     */
+    const esSticker = message.mediaType === 'sticker';
+    if (esSticker) {
+      logger.info('Sticker recibido: se guarda para el panel, el agente no interviene', {
+        orgId, conversationId,
+      });
+    }
+
     // 5. If bot active and message is not from me, invoke agent
-    if (botActive && !message.fromMe) {
+    if (botActive && !message.fromMe && !esSticker) {
       if (conversationsInFlight.has(conversationId)) {
         logger.info('El agente está ocupado con esta conversación; se espera turno', { conversationId });
         const huboTurno = await esperarTurno(conversationId);

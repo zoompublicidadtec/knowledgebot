@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/actions';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppMedia } from '@/lib/whatsapp/send';
+import { convertirANotaDeVoz, MIME_NOTA_DE_VOZ } from '@/lib/whatsapp/nota-de-voz';
 import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
@@ -35,6 +36,9 @@ export async function POST(request: NextRequest) {
     const conversationId = String(form.get('conversationId') || '').trim();
     const to = String(form.get('to') || '').trim();
     const caption = String(form.get('caption') || '').trim();
+    // El micrófono del panel manda `ptt=1`. Un clip normal no manda nada y
+    // sigue el mismo camino de siempre.
+    const esNotaDeVoz = String(form.get('ptt') || '') === '1';
     const file = form.get('file');
 
     if (!conversationId || !to || !(file instanceof File) || file.size === 0) {
@@ -56,14 +60,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Conversación no encontrada.' }, { status: 404 });
     }
 
-    const base64 = Buffer.from(await file.arrayBuffer()).toString('base64');
+    // El tipo se anota a mano: `Buffer.from` devuelve `Buffer<ArrayBuffer>` y
+    // `Buffer.concat` —lo que sale del conversor— devuelve `Buffer<ArrayBufferLike>`.
+    // Sin la anotacion, TypeScript no deja reasignar la variable.
+    let bytes: Buffer = Buffer.from(await file.arrayBuffer());
+    let mimetype = file.type || 'application/octet-stream';
+
+    /**
+     * SI NO SE PUEDE CONVERTIR, NO SE MANDA NADA.
+     *
+     * El navegador graba en webm/opus y WhatsApp solo pinta la onda de una nota
+     * de voz si llega en ogg/opus. Mandarla sin convertir le llegaría al cliente
+     * como un archivo que tiene que descargar y abrir aparte. Antes que eso,
+     * se corta aquí y se le dice al asesor.
+     */
+    if (esNotaDeVoz) {
+      try {
+        bytes = await convertirANotaDeVoz(bytes);
+        mimetype = MIME_NOTA_DE_VOZ;
+      } catch (err) {
+        logger.error('No se pudo preparar la nota de voz', {
+          error: String(err), conversationId, mime: file.type,
+        });
+        return NextResponse.json(
+          { error: 'No se pudo preparar la nota de voz. No se envió nada.' },
+          { status: 400 },
+        );
+      }
+    }
+
     const resultado = await sendWhatsAppMedia(
       orgId,
       conversationId,
       to,
-      base64,
-      file.type || 'application/octet-stream',
+      bytes.toString('base64'),
+      mimetype,
       caption,
+      esNotaDeVoz,
     );
 
     if (!resultado.ok) {

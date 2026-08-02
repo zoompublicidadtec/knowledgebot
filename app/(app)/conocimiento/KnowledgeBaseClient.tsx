@@ -89,6 +89,102 @@ interface KnowledgeBaseClientProps {
   initialCategories: Category[];
 }
 
+/**
+ * EL FORMULARIO DE PRECIOS TIENE QUE HABLAR EL IDIOMA DE LA UNIDAD ELEGIDA.
+ *
+ * Síntoma (02-ago-2026): «Intento crear un aviso exterior y no lo puedo
+ * guardar, porque el panel solo guarda rangos de precio por volumen. Un aviso
+ * no se compra por volumen sino por tamaño».
+ *
+ * La base de datos NO tenía el problema. `products.unit` ya acepta m2, metro y
+ * millar; hay 19 productos guardados con m2; y el bot los cotiza bien: el
+ * Banner Laminado (ZM-GEN-279) está a $30.000 el m² y para uno de 200x100 cm
+ * responde $60.000. El modelo de datos se queda como está.
+ *
+ * Lo que fallaba eran las PALABRAS. Se elegía arriba «Unidad de medida: Metro
+ * Cuadrado (m²)» y abajo seguía diciendo «Rangos de Precios por Volumen»,
+ * «Cantidad Mínima» y «Cantidad Máxima». No había forma de adivinar que para
+ * decir «$300.000 el metro cuadrado» hay que escribir: desde 1, hasta vacío,
+ * precio 300000, unitario. El formulario solo sabía hablar de cantidades.
+ */
+interface IdiomaDePrecio {
+  titulo: string;
+  ayuda: string;
+  boton: string;
+  /** Frase visible que explica el caso de precio único. null = no hace falta. */
+  pista: string | null;
+  ejemploVariante: string;
+  varianteInicial: string;
+  desdeCorto: string;
+  hastaCorto: string;
+  desdeLargo: string;
+  hastaLargo: string;
+  /** Cómo se lee el precio en la ficha guardada: «$300.000 por m²». */
+  seCobra: string;
+}
+
+/** El idioma de siempre: cantidades. Vale para unidad, servicio y paquete. */
+const IDIOMA_POR_VOLUMEN: IdiomaDePrecio = {
+  titulo: 'Rangos de Precios por Volumen',
+  ayuda: 'Define cuánto cuesta el producto según la cantidad del pedido y técnica.',
+  boton: 'Agregar Rango',
+  pista: null,
+  ejemploVariante: 'Variante (ej: Sin marca, Láser)',
+  varianteInicial: 'Estándar',
+  desdeCorto: 'Mín',
+  hastaCorto: 'Máx (vacio = ∞)',
+  desdeLargo: 'Cantidad mínima del rango',
+  hastaLargo: 'Cantidad máxima (dejar vacío si no tiene límite)',
+  seCobra: 'por unidad',
+};
+
+/** Las unidades que se cobran por medida, no por cantidad. */
+const IDIOMA_POR_UNIDAD: Record<string, IdiomaDePrecio> = {
+  m2: {
+    titulo: 'Precio por metro cuadrado',
+    ayuda: 'Define cuánto cuesta cada m² según el material o el acabado.',
+    boton: 'Agregar tramo',
+    pista: 'Escribe 1 en «desde» y deja «hasta» vacío para un precio único por m². Solo agrega más tramos si el m² cambia de precio según el tamaño.',
+    ejemploVariante: 'Material o acabado (ej: Sin iluminación, Con LED interior, Backlight, Acrílico 5 mm)',
+    varianteInicial: 'Precio por m²',
+    desdeCorto: 'Desde',
+    hastaCorto: 'Hasta',
+    desdeLargo: 'Metros cuadrados desde',
+    hastaLargo: 'Metros cuadrados hasta (dejar vacío si no tiene límite)',
+    seCobra: 'por m²',
+  },
+  metro: {
+    titulo: 'Precio por metro lineal',
+    ayuda: 'Define cuánto cuesta cada metro según el material o el acabado.',
+    boton: 'Agregar tramo',
+    pista: 'Escribe 1 en «desde» y deja «hasta» vacío para un precio único por metro. Solo agrega más tramos si el metro cambia de precio según el largo.',
+    ejemploVariante: 'Material o acabado (ej: Vinilo blanco, Reflectivo, Con instalación)',
+    varianteInicial: 'Precio por metro',
+    desdeCorto: 'Desde',
+    hastaCorto: 'Hasta',
+    desdeLargo: 'Metros lineales desde',
+    hastaLargo: 'Metros lineales hasta (dejar vacío si no tiene límite)',
+    seCobra: 'por metro',
+  },
+  millar: {
+    titulo: 'Precio por millar',
+    ayuda: 'Define cuánto cuesta cada millar (1.000 unidades) según la técnica.',
+    boton: 'Agregar tramo',
+    pista: 'Escribe 1 en «desde» y deja «hasta» vacío para un precio único por millar. Los tramos van en millares, no en unidades.',
+    ejemploVariante: 'Variante (ej: Tiro, Tiro y retiro, Full color)',
+    varianteInicial: 'Precio por millar',
+    desdeCorto: 'Desde',
+    hastaCorto: 'Hasta',
+    desdeLargo: 'Millares desde',
+    hastaLargo: 'Millares hasta (dejar vacío si no tiene límite)',
+    seCobra: 'por millar',
+  },
+};
+
+function idiomaDePrecio(unit: string): IdiomaDePrecio {
+  return IDIOMA_POR_UNIDAD[unit] || IDIOMA_POR_VOLUMEN;
+}
+
 export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBaseClientProps) {
   // Tabs State
   const [activeTab, setActiveTab] = useState<'catalog' | 'glossary' | 'marking'>('catalog');
@@ -389,11 +485,38 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     setFormSuccess('Producto duplicado como borrador. Ajusta los precios y presiona Guardar.');
   };
 
+  /** Las palabras que le tocan a la unidad elegida ahora mismo. */
+  const idiomaPrecio = idiomaDePrecio(unit);
+
+  /**
+   * Al cambiar la unidad, deja la fila de precios preparada para esa unidad.
+   *
+   * Solo si la fila está EN BLANCO: una sola fila, sin precio escrito y con la
+   * variante que puso el propio formulario. Nunca se pisa algo que el dueño ya
+   * escribió, porque perder un precio tecleado es peor que un rótulo mal puesto.
+   */
+  const cambiarUnidad = (nuevaUnidad: string) => {
+    setUnit(nuevaUnidad);
+    const idioma = idiomaDePrecio(nuevaUnidad);
+    setPriceTiers(prev => {
+      if (prev.length !== 1) return prev;
+      const fila = prev[0];
+      const sinPrecio = !fila.price || Number(fila.price) === 0;
+      const variantesQuePoneElPanel = [
+        IDIOMA_POR_VOLUMEN.varianteInicial,
+        ...Object.values(IDIOMA_POR_UNIDAD).map(i => i.varianteInicial),
+        '',
+      ];
+      if (!sinPrecio || !variantesQuePoneElPanel.includes(fila.variant)) return prev;
+      return [{ ...fila, variant: idioma.varianteInicial, min_qty: 1, max_qty: null }];
+    });
+  };
+
   // Price Tiers Row Handlers
   const addPriceTierRow = () => {
     setPriceTiers(prev => [
       ...prev,
-      { variant: 'Estándar', min_qty: 1, max_qty: null, price: 0, price_basis: 'unitario' }
+      { variant: idiomaPrecio.varianteInicial, min_qty: 1, max_qty: null, price: 0, price_basis: 'unitario' }
     ]);
   };
 
@@ -994,7 +1117,10 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                                     ${Number(t.price).toLocaleString('es-CO')}
                                   </td>
                                   <td className="py-1.5 text-slate-400">
-                                    {t.price_basis === 'unitario' ? 'por unidad'
+                                    {/* «Unitario» no significa lo mismo en un
+                                        esfero que en un aviso: aquí se lee con
+                                        la unidad del producto, «por m²». */}
+                                    {t.price_basis === 'unitario' ? idiomaDePrecio(it.unit).seCobra
                                       : t.price_basis === 'lote_total' ? 'por el lote completo'
                                       : t.price_basis === 'cm2' ? 'por cm²'
                                       : t.price_basis}
@@ -1140,7 +1266,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                   <label className="text-xs font-semibold text-slate-300">Unidad de medida</label>
                   <select
                     value={unit}
-                    onChange={(e) => setUnit(e.target.value)}
+                    onChange={(e) => cambiarUnidad(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-primary-500 transition-all"
                   >
                     <option value="unidad">Unidad (ud)</option>
@@ -1294,9 +1420,9 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                   <div>
                     <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">
                       <CurrencyDollar size={16} className="text-primary-400" />
-                      Rangos de Precios por Volumen
+                      {idiomaPrecio.titulo}
                     </h3>
-                    <p className="text-[10px] text-slate-400">Define cuánto cuesta el producto según la cantidad del pedido y técnica.</p>
+                    <p className="text-[10px] text-slate-400">{idiomaPrecio.ayuda}</p>
                   </div>
                   <button
                     type="button"
@@ -1304,9 +1430,17 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-medium text-white transition-all"
                   >
                     <Plus size={12} />
-                    Agregar Rango
+                    {idiomaPrecio.boton}
                   </button>
                 </div>
+
+                {/* La instrucción que faltaba: sin ella no había forma de saber
+                    que un precio único por m² se escribe desde 1 / hasta vacío. */}
+                {idiomaPrecio.pista && (
+                  <p className="text-[11px] text-primary-300 bg-primary-500/5 border border-primary-500/20 rounded-lg px-3 py-2">
+                    {idiomaPrecio.pista}
+                  </p>
+                )}
 
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
                   {priceTiers.map((tier, idx) => (
@@ -1316,7 +1450,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                         <input
                           type="text"
                           required
-                          placeholder="Variante (ej: Sin marca, Láser)"
+                          placeholder={idiomaPrecio.ejemploVariante}
                           value={tier.variant}
                           onChange={(e) => updatePriceTierRow(idx, 'variant', e.target.value)}
                           className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-white/10 text-white text-xs focus:outline-none focus:border-primary-500"
@@ -1329,20 +1463,20 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                           type="number"
                           required
                           min={1}
-                          placeholder="Mín"
+                          placeholder={idiomaPrecio.desdeCorto}
                           value={tier.min_qty}
                           onChange={(e) => updatePriceTierRow(idx, 'min_qty', Number(e.target.value))}
                           className="w-16 px-2 py-1.5 rounded-lg bg-slate-950 border border-white/10 text-white text-xs focus:outline-none focus:border-primary-500 text-center"
-                          title="Cantidad Mínima"
+                          title={idiomaPrecio.desdeLargo}
                         />
                         <span className="text-slate-500 text-xs">-</span>
                         <input
                           type="number"
-                          placeholder="Máx (vacio = ∞)"
+                          placeholder={idiomaPrecio.hastaCorto}
                           value={tier.max_qty || ''}
                           onChange={(e) => updatePriceTierRow(idx, 'max_qty', e.target.value ? Number(e.target.value) : null)}
                           className="w-20 px-2 py-1.5 rounded-lg bg-slate-950 border border-white/10 text-white text-xs focus:outline-none focus:border-primary-500 text-center"
-                          title="Cantidad Máxima (dejar vacío si no tiene límite)"
+                          title={idiomaPrecio.hastaLargo}
                         />
                       </div>
 

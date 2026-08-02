@@ -27,6 +27,15 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+# ffmpeg: convierte lo que graba el navegador (webm/opus) a lo unico que
+# WhatsApp acepta como NOTA DE VOZ (ogg/opus). Sin el, el audio llega como
+# archivo adjunto y el cliente no lo puede oir de un toque.
+#
+# Va aqui, en la etapa final, y no arriba del todo: puesto antes invalidaria
+# la capa del `npm install`, y este proyecto NO tiene package-lock del puente,
+# asi que reinstalar seria dejar que las librerias cambien solas.
+RUN apk add --no-cache ffmpeg
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3003

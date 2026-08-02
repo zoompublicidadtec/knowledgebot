@@ -46,6 +46,55 @@ export interface MediaDelMensaje {
   citado: string | null;
 }
 
+/**
+ * Lo minimo que hace falta para responder CITANDO a un mensaje.
+ *
+ * El panel ya sabia PINTAR una cita (la caja gris con el mensaje al que se
+ * responde), porque el puente la extrae de lo que llega. Lo que no se podia era
+ * CREAR una: elegir en el panel a que mensaje se le responde.
+ *
+ * WhatsApp no cita por texto sino por identificador: hay que decirle cual era
+ * el mensaje (`id`) y de quien (`fromMe`). El texto viaja solo para que el
+ * telefono del cliente pinte la vista previa mientras resuelve el original.
+ */
+export interface MensajeCitado {
+  /** `wa_message_id`: el identificador que le puso WhatsApp. */
+  id: string;
+  /** true si lo escribimos nosotros (el bot o un asesor). */
+  fromMe: boolean;
+  /** Vista previa de lo citado. */
+  texto: string;
+}
+
+/**
+ * Arma la cita a partir de un mensaje del panel.
+ *
+ * Devuelve null si el mensaje no tiene identificador de WhatsApp: sin el no hay
+ * a que citar, y es mejor no ofrecer el boton que ofrecer uno que falla.
+ */
+export function citaDesdeMensaje(
+  m: Pick<Message, 'wa_message_id' | 'direction' | 'content' | 'raw'>,
+): MensajeCitado | null {
+  if (!m.wa_message_id) return null;
+
+  const media = leerMedia(m);
+  const escrito = quitarCita(m.content);
+  // El sticker se mira ANTES que la imagen: un sticker tambien es image/webp.
+  const texto =
+    escrito ||
+    (media.esSticker ? '[Sticker]'
+      : media.esAudio ? '[Nota de voz]'
+      : media.esVideo ? '[Video]'
+      : media.esImagen ? '[Foto]'
+      : '[Archivo]');
+
+  return {
+    id: m.wa_message_id,
+    fromMe: m.direction === 'outbound',
+    texto: texto.slice(0, 300),
+  };
+}
+
 /** Clasifica el adjunto de un mensaje. No decide nada de como se pinta. */
 export function leerMedia(message: Pick<Message, 'raw'>): MediaDelMensaje {
   const rawObj = message.raw as any;

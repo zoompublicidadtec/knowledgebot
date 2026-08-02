@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ConversationList } from '@/components/chat/conversation-list';
 import { MessageBubble } from '@/components/chat/message-bubble';
 import { MessageInput } from '@/components/chat/message-input';
+import { citaDesdeMensaje, type MensajeCitado } from '@/lib/whatsapp/message-preview';
 import { toggleBotAction } from '@/lib/conversations/actions';
 import { mostrarContacto } from '@/lib/whatsapp/contact-identity';
 import { etiquetaDeDia, mismoDia } from '@/lib/chat/fechas';
@@ -28,6 +29,8 @@ export default function ChatClientPage({
   const [messages, setMessages] = useState(initialMessages);
   const [botActive, setBotActive] = useState(currentConversation.bot_active);
   const [contact, setContact] = useState(currentConversation.contacts);
+  /** Mensaje elegido con la flecha de la burbuja, para responderle citandolo. */
+  const [citando, setCitando] = useState<MensajeCitado | null>(null);
   const [isPending, startTransition] = useTransition();
   /** El contenedor de mensajes: es el unico sitio que se desplaza. */
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -389,7 +392,15 @@ export default function ChatClientPage({
                       </span>
                     </div>
                   )}
-                  <MessageBubble message={msg} agrupado={agrupado} />
+                  <MessageBubble
+                    message={msg}
+                    agrupado={agrupado}
+                    onResponder={
+                      msg.wa_message_id
+                        ? () => setCitando(citaDesdeMensaje(msg))
+                        : undefined
+                    }
+                  />
                 </div>
               );
             })
@@ -405,6 +416,8 @@ export default function ChatClientPage({
           conversationId={conversationId}
           contactPhone={contact?.wa_phone || ''}
           onMessageSent={handleOptimisticMessageSent}
+          citado={citando}
+          onCancelarCita={() => setCitando(null)}
         />
       </div>
     </div>

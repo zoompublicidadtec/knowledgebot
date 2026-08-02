@@ -5,6 +5,7 @@ import type { Message } from '@/lib/database.types';
 import { leerMedia, quitarCita, separarPieYAnalisis } from '@/lib/whatsapp/message-preview';
 import { horaDelMensaje } from '@/lib/chat/fechas';
 import { TextoWhatsApp } from './whatsapp-text';
+import { ArrowBendUpLeft } from '@phosphor-icons/react';
 
 /**
  * Burbuja de mensaje del panel de Conversaciones.
@@ -29,8 +30,14 @@ import { TextoWhatsApp } from './whatsapp-text';
 export function MessageBubble({
   message,
   agrupado = false,
+  onResponder,
 }: {
   message: Message;
+  /**
+   * Responder citando ESTE mensaje. Si no llega, el boton no se pinta: es lo
+   * que pasa con un mensaje que todavia no tiene identificador de WhatsApp.
+   */
+  onResponder?: () => void;
   /**
    * `true` cuando el mensaje anterior es del mismo remitente y del mismo dia.
    * Entonces la burbuja pierde la cola, como en WhatsApp: la cola marca donde
@@ -110,9 +117,26 @@ export function MessageBubble({
           ${isBot ? 'bubble-bot' : ''}
           ${isHuman ? 'bubble-human' : ''}
           ${agrupado ? 'burbuja-agrupada' : ''}
-          relative shadow-sm max-w-[85%] sm:max-w-md md:max-w-lg
+          group/burbuja relative shadow-sm max-w-[85%] sm:max-w-md md:max-w-lg
         `}
       >
+        {/* La flecha de responder aparece al pasar el raton por encima. En
+            pantalla tactil no hay «pasar por encima», asi que ahi se ve
+            siempre: si no, en el telefono no habria forma de citar. */}
+        {onResponder && (
+          <button
+            type="button"
+            onClick={onResponder}
+            aria-label="Responder citando este mensaje"
+            title="Responder citando este mensaje"
+            className="absolute -top-2 right-1 z-10 hidden h-7 w-7 items-center justify-center
+                       rounded-full bg-slate-800/95 text-slate-300 shadow ring-1 ring-white/10
+                       transition-colors hover:bg-slate-700 hover:text-white
+                       group-hover/burbuja:flex max-lg:flex"
+          >
+            <ArrowBendUpLeft size={14} />
+          </button>
+        )}
         {/* Cita del mensaje citado (reply) - solo se muestra si hay cita */}
         {media.citado && (
           <div className="mb-1 px-2 py-1 border-l-2 border-slate-500 bg-slate-800/40 rounded text-[11px] text-slate-300 italic line-clamp-2">

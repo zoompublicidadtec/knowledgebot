@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { createAdapter } from './adapter';
 import { logger } from '@/lib/logger';
 import { uploadBase64ToR2, getSignedMediaUrl, isR2Configured } from '@/lib/r2-storage';
+import type { MensajeCitado } from './message-preview';
 
 /** El mismo tope que aplica el puente, para avisar antes de subir en vano. */
 const MAX_MEDIA_MB = parseInt(process.env.MAX_MEDIA_MB || '20', 10);
@@ -38,6 +39,8 @@ export async function sendWhatsAppMedia(
   base64Data: string,
   mimetype: string,
   caption?: string,
+  /** true = nota de voz (ogg/opus ya convertido). Ver lib/whatsapp/nota-de-voz.ts */
+  esNotaDeVoz = false,
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = createAdminClient();
 
@@ -85,7 +88,7 @@ export async function sendWhatsAppMedia(
     }
 
     const adapter = createAdapter(waConfig, lineKey);
-    const waMessageId = await adapter.sendMediaMessage(to, url, caption || undefined);
+    const waMessageId = await adapter.sendMediaMessage(to, url, caption || undefined, esNotaDeVoz);
 
     if (!waMessageId) {
       logger.error('El archivo enviado desde el panel NO salió', {
@@ -244,6 +247,100 @@ export async function sendWhatsAppMessage(
     return true;
   } catch (err) {
     logger.error('Send message failed', { error: String(err), orgId, conversationId });
+    return false;
+  }
+}
+
+/**
+ * LA MISMA VÍA, PERO CITANDO A UN MENSAJE.
+ *
+ * Va AL LADO de `sendWhatsAppMessage`, sin tocarla. Esa función carga la regla
+ * de «si no salió, no se guarda», que costó descubrir con mensajes fantasma
+ * medidos el 01-ago-2026; no se toca para agregar algo nuevo al costado.
+ *
+ * Lo único que cambia respecto de aquella:
+ *   1. le pasa la cita al puente, que es quien la arma para WhatsApp; y
+ *   2. guarda la cita en `raw` con la MISMA forma que trae un mensaje entrante
+ *      citado, para que la burbuja la pinte sin ninguna rama nueva.
+ *
+ * El panel ya sabía VER citas desde hace tiempo. Lo que no había era forma de
+ * CREAR una.
+ */
+export async function sendWhatsAppReply(
+  orgId: string,
+  conversationId: string,
+  to: string,
+  text: string,
+  citado: MensajeCitado,
+): Promise<boolean> {
+  const supabase = createAdminClient();
+
+  try {
+    const { data: waConfig } = await supabase
+      .from('whatsapp_configs')
+      .select('*')
+      .eq('organization_id', orgId)
+      .single();
+
+    if (!waConfig) {
+      logger.error('No WhatsApp config found', { orgId });
+      return false;
+    }
+
+    const { data: conv } = await (supabase as any)
+      .from('conversations')
+      .select('line_key')
+      .eq('id', conversationId)
+      .single();
+
+    const lineKey = (conv as any)?.line_key || null;
+
+    const adapter = createAdapter(waConfig, lineKey);
+    const waMessageId = await adapter.sendTextMessage(to, text, citado);
+
+    // La misma regla que arriba: sin acuse de WhatsApp no hay mensaje en el
+    // chat. Un mensaje fantasma deja al asesor esperando una respuesta que
+    // nunca va a llegar.
+    if (!waMessageId) {
+      logger.error('La respuesta citada escrita desde el panel NO se pudo enviar', {
+        orgId, conversationId, lineKey, to,
+      });
+      if (lineKey) {
+        try {
+          const { logLineError } = await import('./log-line-error');
+          await logLineError({
+            lineKey,
+            orgId,
+            errorType: 'connection',
+            severity: 'error',
+            message: 'El puente rechazó una respuesta citada escrita por un asesor desde el panel. El cliente no la recibió.',
+            context: { conversationId, to },
+          });
+        } catch (e) {
+          logger.warn('No se pudo registrar el error de línea', { error: String(e) });
+        }
+      }
+      return false;
+    }
+
+    await (supabase as any).from('messages').insert({
+      conversation_id: conversationId,
+      organization_id: orgId,
+      wa_message_id: waMessageId,
+      direction: 'outbound',
+      sender: 'human',
+      content: text,
+      raw: { data: { message: { quoted: { body: citado.texto } } } },
+    });
+
+    await (supabase as any)
+      .from('conversations')
+      .update({ last_message_at: new Date().toISOString() })
+      .eq('id', conversationId);
+
+    return true;
+  } catch (err) {
+    logger.error('Send reply failed', { error: String(err), orgId, conversationId });
     return false;
   }
 }

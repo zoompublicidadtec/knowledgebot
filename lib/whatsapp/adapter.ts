@@ -6,8 +6,20 @@ import { getSendBridgeUrl, bridgeHeaders } from './bridge';
 
 /** Abstract adapter interface for WhatsApp messaging */
 export interface WhatsAppAdapter {
-  sendTextMessage(to: string, text: string): Promise<string | null>;
-  sendMediaMessage(to: string, mediaUrl: string, caption?: string): Promise<string | null>;
+  /**
+   * `citado` es opcional: sin el, el envio es exactamente el de siempre.
+   * Ver `MensajeCitado` en lib/whatsapp/message-preview.ts.
+   */
+  sendTextMessage(
+    to: string,
+    text: string,
+    citado?: { id: string; fromMe: boolean; texto: string },
+  ): Promise<string | null>;
+  /**
+   * `ptt` = push to talk: marca el audio como NOTA DE VOZ, no como archivo
+   * adjunto. Es opcional para no tocar a ninguno de los que ya la llaman.
+   */
+  sendMediaMessage(to: string, mediaUrl: string, caption?: string, ptt?: boolean): Promise<string | null>;
   parseInboundMessage(body: Record<string, unknown>): NormalizedMessage | null;
 }
 
@@ -42,7 +54,7 @@ export function createMetaAdapter(config: WhatsAppConfig): WhatsAppAdapter {
       }
     },
 
-    async sendMediaMessage(to: string, mediaUrl: string, caption?: string): Promise<string | null> {
+    async sendMediaMessage(to: string, mediaUrl: string, caption?: string, _ptt?: boolean): Promise<string | null> {
       logger.warn('Meta sendMediaMessage not fully implemented - falling back to text representation', { mediaUrl });
       return this.sendTextMessage(to, `${caption ? caption + ' ' : ''}${mediaUrl}`);
     },
@@ -88,7 +100,11 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
   const sessionId = lineKey || config.openwa_session_id || 'default';
 
   return {
-    async sendTextMessage(to: string, text: string): Promise<string | null> {
+    async sendTextMessage(
+      to: string,
+      text: string,
+      citado?: { id: string; fromMe: boolean; texto: string },
+    ): Promise<string | null> {
       try {
         // Pass the exact ID as stored (which includes @c.us or @lid)
         const chatId = to.replace('+', '');
@@ -97,7 +113,9 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
           {
             method: 'POST',
             headers: bridgeHeaders(),
-            body: JSON.stringify({ chatId, text }),
+            // `quoted` solo viaja cuando se esta respondiendo a algo: sin el,
+            // el puente hace exactamente lo mismo que hacia hasta hoy.
+            body: JSON.stringify({ chatId, text, ...(citado ? { quoted: citado } : {}) }),
           }
         );
 
@@ -121,7 +139,7 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
       }
     },
 
-    async sendMediaMessage(to: string, mediaUrl: string, caption?: string): Promise<string | null> {
+    async sendMediaMessage(to: string, mediaUrl: string, caption?: string, ptt?: boolean): Promise<string | null> {
       try {
         const chatId = to.replace('+', '');
         const res = await fetch(
@@ -129,7 +147,9 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
           {
             method: 'POST',
             headers: bridgeHeaders(),
-            body: JSON.stringify({ chatId, mediaUrl, caption }),
+            // `ptt` solo viaja cuando es una nota de voz: el puente sin esa
+            // marca se comporta exactamente igual que hasta ahora.
+            body: JSON.stringify({ chatId, mediaUrl, caption, ...(ptt ? { ptt: true } : {}) }),
           }
         );
 

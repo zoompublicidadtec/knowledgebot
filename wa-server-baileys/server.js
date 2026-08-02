@@ -56,7 +56,8 @@
  *   POST /api/sessions/:s/start
  *   POST /api/sessions/:s/logout
  *   GET  /api/sessions/:s/chats/:chatId/history?limit=
- *   POST /api/sessions/:s/messages/send-text   { chatId, message|text }
+ *   POST /api/sessions/:s/messages/send-text   { chatId, message|text,
+ *                                                 quoted?: {id, fromMe, texto} }
  *   POST /api/sessions/:s/messages/send-media  { chatId, mediaUrl, caption }
  *
  * Webhook hacia la app (contrato inmutable):
@@ -106,7 +107,14 @@ const {
     isJidGroup,
     isJidBroadcast,
     Browsers,
+    // Las dos que usa el manejador propio de `stream:error` (ver startSession):
+    // son las MISMAS que usa Baileys por dentro, no una copia nuestra.
+    getAllBinaryNodeChildren,
+    getErrorCodeFromStreamError,
 } = require('@whiskeysockets/baileys');
+// Baileys reporta el motivo del corte como un Boom, y `connection.update` lee
+// `lastDisconnect.error.output.statusCode`. Con un Error pelado se perderia.
+const { Boom } = require('@hapi/boom');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
@@ -168,6 +176,10 @@ const metrics = {
     media_downloaded: 0,
     media_too_large: 0,
     download_errors: 0,
+    // Cuantas veces se ignoro un acuse repetido de WhatsApp en vez de tirar la
+    // conexion. Si este numero sube y las lineas siguen conectadas, el arreglo
+    // esta trabajando. Se ve en GET /metrics.
+    acuses_ignorados: 0,
     webhooks_sent: 0,
     webhooks_suppressed_shadow: 0,
     webhooks_failed: 0,
@@ -706,6 +718,32 @@ function extractBody(msg) {
  * `contextInfo` puede venir colgando de cualquier tipo de mensaje, no solo del
  * texto: tambien de una foto, un audio o un video con "responder".
  */
+/**
+ * ARMA LA CITA PARA UN ENVIO DESDE EL PANEL.
+ *
+ * `extractQuoted`, justo debajo, hace lo contrario: lee la cita de lo que
+ * LLEGA. Esta hace falta para lo que SALE, que hasta hoy no existia — el panel
+ * sabia pintar citas y no sabia crearlas.
+ *
+ * Baileys no cita por un id suelto: pide el mensaje entero. Se le arma el
+ * minimo que usa para componer el `contextInfo`: de que chat, de quien, y cual.
+ * El texto viaja solo como vista previa; el telefono del cliente resuelve el
+ * original por el identificador.
+ */
+function construirCitado(jid, quoted) {
+    if (!quoted || !quoted.id) return null;
+    return {
+        key: {
+            remoteJid: jid,
+            fromMe: quoted.fromMe === true || quoted.fromMe === 'true',
+            id: String(quoted.id),
+        },
+        // Sin texto, WhatsApp pinta la caja de la cita vacia hasta que resuelve
+        // el original. Un guion se lee mejor que un hueco.
+        message: { conversation: String(quoted.texto || '').slice(0, 500) || '-' },
+    };
+}
+
 function extractQuoted(msg) {
     const m = msg.message || {};
     const ctx =
@@ -1084,14 +1122,24 @@ async function startSession(line, motivo = 'inicial') {
         const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useMultiFileAuthState(dir);
 
+        // Registro vigilado: es la unica forma de enterarse de que WhatsApp
+        // rechazo un mensaje en el acuse, porque Baileys no lo emite como
+        // evento y `sendMessage` ya se resolvio como si todo fuera bien.
+        //
+        // Se guarda en una variable porque el manejador propio de
+        // `stream:error` (mas abajo) escribe por el mismo registro, para que lo
+        // que quede anotado sea identico a lo que anotaba la libreria.
+        const registroDeLaLinea = registroQueVigilaAcks(
+            logger.child({ line }),
+            attrs => registrarAckFallido(line, attrs),
+            line
+        );
+
         const sock = makeWASocket({
             auth: state,
             printQRInTerminal: false,
             version,
-            // Registro vigilado: es la unica forma de enterarse de que WhatsApp
-            // rechazo un mensaje en el acuse, porque Baileys no lo emite como
-            // evento y `sendMessage` ya se resolvio como si todo fuera bien.
-            logger: registroQueVigilaAcks(logger.child({ line }), attrs => registrarAckFallido(line, attrs), line),
+            logger: registroDeLaLinea,
             browser: Browsers.macOS('Desktop'),
 
             // La sincronización de historial completo rompía la sesión por
@@ -1103,6 +1151,68 @@ async function startSession(line, motivo = 'inicial') {
         st.sock = sock;
         logger.info({ line, epoch, motivo }, 'Socket creado');
         sock.ev.on('creds.update', saveCreds);
+
+        /**
+         * UN ACUSE DE RECIBO NO ES UN ERROR: NO SE CORTA LA CONEXIÓN POR ÉL.
+         *
+         * Aquí estaba la causa de que las líneas se cayeran cada ~50 minutos.
+         * Medido el 02-ago-2026 sobre 5 horas de registro: linea_3 se cayó a
+         * las 14:22:48, 15:12:52, 16:02:56, 16:53:02 y 17:43:06 UTC. Entre una
+         * y otra: 50m04s, 50m04s, 50m06s, 50m04s. Es un reloj, no una
+         * casualidad. Y el reloj NO estaba aquí: no hay ningún temporizador de
+         * 50 minutos en el puente, ni cron, ni systemd. Lo manda WhatsApp.
+         *
+         * Lo que llegaba, textual:
+         *   {"tag":"stream:error","attrs":{},
+         *    "content":[{"tag":"ack","attrs":{"class":"message","type":"media",
+         *                "id":"3A0DF74A8F30B473DED8"}}]}
+         *
+         * Es WhatsApp reenviando el acuse de un mensaje que quedó a medias —el
+         * mismo id se repetía en TODAS las caídas de esa línea—, no un error de
+         * sesión. Pero Baileys 6.7.24 corta ante CUALQUIER `stream:error`
+         * (`lib/Socket/socket.js:507`), y para decidir por qué corta llama a
+         * `getErrorCodeFromStreamError` (`lib/Utils/generics.js:276`):
+         *      node.attrs.code    -> este nodo no trae `code`
+         *   || CODE_MAP['ack']    -> 'ack' no está en la tabla
+         *   || badSession (500)   -> asume «sesión corrupta»
+         * Por eso el registro decía `statusCode: 500`. Al reconectar, el acuse
+         * seguía pendiente del otro lado y a los ~50 minutos volvía a llegar.
+         *
+         * LA REGLA AÑADIDA: si el nodo NO trae `code` y todos sus hijos son
+         * `ack`, se anota y se sigue. Cualquier otro `stream:error` se trata
+         * exactamente igual que antes, con el mismo texto y el mismo Boom.
+         *
+         * POR QUÉ ES SEGURO. Solo se quita el corte proactivo ante un paquete
+         * que ni siquiera trae código de error. Si la conexión muriera de
+         * verdad, las dos redes de seguridad de Baileys siguen intactas y no se
+         * tocan:
+         *   - el latido, que la da por perdida a los ~35 s (socket.js:294)
+         *   - el cierre del socket (socket.js:445) y `xmlstreamend` (:447)
+         *
+         * NO ES DE UNA LÍNEA. No existe una sola línea de código propia de
+         * linea_1, linea_2 ni linea_3: las tres pasan por aquí. El fallo estaba
+         * latente en todas, y la línea de la empresa lo tendría también.
+         */
+        sock.ws.removeAllListeners('CB:stream:error');
+        sock.ws.on('CB:stream:error', (node) => {
+            const hijos = getAllBinaryNodeChildren(node);
+            const soloAcuses = hijos.length > 0 && hijos.every(h => h.tag === 'ack');
+
+            if (!node?.attrs?.code && soloAcuses) {
+                metrics.acuses_ignorados++;
+                logger.warn(
+                    { line, acuses: hijos.map(h => h.attrs?.id) },
+                    'Acuse ignorado: no es un error, la conexión sigue en pie'
+                );
+                return;
+            }
+
+            // Cualquier otro caso: lo mismo que hacía Baileys, palabra por
+            // palabra, por el mismo registro y con el mismo Boom.
+            registroDeLaLinea.error({ node }, 'stream errored out');
+            const { reason, statusCode } = getErrorCodeFromStreamError(node);
+            sock.end(new Boom(`Stream Errored (${reason})`, { statusCode, data: node }));
+        });
 
         sock.ev.on('connection.update', async (update) => {
             if (esViejo()) return;
@@ -1476,8 +1586,23 @@ async function handleIncoming(line, msg, sock) {
 
     const cls = classifyMedia(msg);
 
-    // Los stickers no aportan a una cotización y ensucian el hilo.
-    if (cls && cls.kind === 'sticker') return;
+    /**
+     * EL STICKER SE VE, PERO NO HACE HABLAR AL BOT.
+     *
+     * Aquí el sticker se descartaba entero —«no aporta a una cotización y
+     * ensucia el hilo»—, y esa frase mezclaba dos cosas distintas. Que no
+     * aporte a una cotización es cierto. Que ensucie el hilo, no: un cliente
+     * que manda un pulgar arriba ESTÁ contestando, y al dueño le sirve verlo.
+     *
+     * Medido el 02-ago-2026: el dueño mandó varios stickers y en el panel no
+     * apareció ninguno, ni siquiera un rastro. No había cómo saber que el
+     * cliente había respondido.
+     *
+     * Lo que de verdad había que evitar —que el bot le conteste a un dibujo—
+     * se decide en la app, que es donde se decide si corre el agente
+     * (`webhook-processor`), y no tirando el mensaje aquí. Descartar en el
+     * puente apagaba las dos cosas a la vez.
+     */
 
     let mediaData = null;
     let mediaError = false;
@@ -1790,7 +1915,7 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
         return res.status(400).json({ error: `Línea "${line}" no está conectada (${st?.status || 'sin sesión'})` });
     }
 
-    const { chatId, message, text } = req.body || {};
+    const { chatId, message, text, quoted } = req.body || {};
     const content = message || text;
     if (!chatId || !content) return res.status(400).json({ error: 'chatId y message/text son obligatorios' });
 
@@ -1830,7 +1955,12 @@ app.post('/api/sessions/:session/messages/send-text', async (req, res) => {
 
     try {
         await typing(st.sock, jid);
-        const sent = await st.sock.sendMessage(jid, { text: content });
+        // Sin `quoted` en el cuerpo, `citado` es null y esto es exactamente el
+        // mismo envio de siempre: `sendMessage(jid, { text })`.
+        const citado = construirCitado(jid, quoted);
+        const sent = citado
+            ? await st.sock.sendMessage(jid, { text: content }, { quoted: citado })
+            : await st.sock.sendMessage(jid, { text: content });
         const idReal = sent?.key?.id;
 
         // No basta con que sendMessage no falle: WhatsApp puede rechazarlo
@@ -1873,7 +2003,7 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
         return res.status(400).json({ error: `Línea "${line}" no está conectada (${st?.status || 'sin sesión'})` });
     }
 
-    const { chatId, mediaUrl, caption } = req.body || {};
+    const { chatId, mediaUrl, caption, ptt } = req.body || {};
     if (!chatId || !mediaUrl) return res.status(400).json({ error: 'chatId y mediaUrl son obligatorios' });
 
     // FRENO: el mismo reposo que para el texto. Ver `contarRechazo`.
@@ -1910,7 +2040,28 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
         const mime = (r.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
 
         let content;
-        if (mime.startsWith('image/')) {
+
+        /**
+         * UNA NOTA DE VOZ NO ES UN AUDIO ADJUNTO.
+         *
+         * Para que WhatsApp la pinte como la onda que se oye de un toque, tiene
+         * que llegar en ogg/opus Y marcada `ptt`. Sin la marca llega como un
+         * archivo que el cliente tiene que descargar y abrir aparte.
+         *
+         * El envase lo arregla la app antes de subirlo (`lib/whatsapp/
+         * nota-de-voz.ts`, con ffmpeg): el navegador graba en webm/opus y aqui
+         * tiene que entrar ya convertido. Si no llegara convertido se corta,
+         * porque mandar una nota de voz que el cliente no puede oir de un toque
+         * es peor que no mandarla.
+         */
+        const quierenNotaDeVoz = ptt === true || ptt === 'true' || ptt === 1;
+
+        if (quierenNotaDeVoz) {
+            if (mime !== 'audio/ogg') {
+                throw new Error(`Una nota de voz tiene que llegar en audio/ogg y llego en "${mime}"`);
+            }
+            content = { audio: buf, mimetype: 'audio/ogg; codecs=opus', ptt: true };
+        } else if (mime.startsWith('image/')) {
             content = { image: buf, mimetype: mime, caption: caption || undefined };
         } else if (mime.startsWith('audio/')) {
             content = { audio: buf, mimetype: mime };
@@ -1936,7 +2087,10 @@ app.post('/api/sessions/:session/messages/send-media', async (req, res) => {
 
         contarEnvioBueno(line);
         metrics.media_sent++;
-        logger.info({ line, jid, mime, kb: Math.round(buf.length / 1024) }, 'Media enviada');
+        logger.info(
+            { line, jid, mime, kb: Math.round(buf.length / 1024), notaDeVoz: quierenNotaDeVoz },
+            quierenNotaDeVoz ? 'Nota de voz enviada' : 'Media enviada'
+        );
         res.json({ data: { id: idReal || `baileys_media_${Date.now()}` } });
     } catch (err) {
         metrics.send_errors++;

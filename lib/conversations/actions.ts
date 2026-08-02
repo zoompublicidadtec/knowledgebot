@@ -1,7 +1,8 @@
 'use server';
 
 import { createAdminClient as createClient } from '@/lib/supabase/server';
-import { sendWhatsAppMessage } from '@/lib/whatsapp/send';
+import { sendWhatsAppMessage, sendWhatsAppReply } from '@/lib/whatsapp/send';
+import type { MensajeCitado } from '@/lib/whatsapp/message-preview';
 import { redirect } from 'next/navigation';
 
 /**
@@ -72,7 +73,12 @@ export async function toggleBotAction(conversationId: string, botActive: boolean
 export async function sendMessageAction(
   conversationId: string,
   to: string,
-  text: string
+  text: string,
+  /**
+   * Mensaje al que se responde. Cuando llega, el envio va por la via citada;
+   * cuando no, por la de siempre, sin cambiar ni una linea de aquel camino.
+   */
+  citado?: MensajeCitado,
 ) {
   const supabase = await createClient();
   const { getCurrentUser } = await import('@/lib/auth/actions');
@@ -80,7 +86,9 @@ export async function sendMessageAction(
   if (!profile) return { error: 'Organización no encontrada' };
   const orgId = profile.organization_id;
 
-  const success = await sendWhatsAppMessage(orgId, conversationId, to, text);
+  const success = citado
+    ? await sendWhatsAppReply(orgId, conversationId, to, text, citado)
+    : await sendWhatsAppMessage(orgId, conversationId, to, text);
   if (!success) {
     return { error: 'Error al enviar el mensaje de WhatsApp' };
   }

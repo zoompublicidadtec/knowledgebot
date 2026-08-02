@@ -68,13 +68,95 @@ function stripThoughtTags(text: string): string {
 /**
  * GUARDRAIL DE IDENTIDAD (determinista, 0 tokens)
  * ------------------------------------------------
- * Elimina la oración completa donde el modelo se declara IA en lugar de
- * intentar parchearla. En producción se registraron mensajes como "como soy un
- * modelo de lenguaje, no puedo mostrarla" y "como soy un asistente de texto":
- * la oración entera sobra, porque el sistema sí envía la foto por otro canal.
+ * Elimina la oración completa donde el modelo se delata, en lugar de intentar
+ * parchearla. En producción se registraron mensajes como "como soy un modelo de
+ * lenguaje, no puedo mostrarla" y "como soy un asistente de texto": la oración
+ * entera sobra, porque el sistema sí envía la foto por otro canal.
+ *
+ * SON DOS FAMILIAS DISTINTAS, y hasta el 02-ago-2026 solo estaba la primera.
+ * Por eso este mensaje llegó entero a un cliente:
+ *
+ *   «Para darte el precio exacto del Cuaderno Argollado - Base 120 hojas
+ *    (Ref: ZM-CUA-012) en tamaño 1/2 Carta para 18 unidades, necesito
+ *    EJECUTAR LA HERRAMIENTA DE BÚSQUEDA.»
+ *
+ * Ninguno de los 14 marcadores que había lo tapaba: los 14 hablaban de lo que
+ * el bot ES ("soy un bot", "inteligencia artificial") y ninguno de lo que el
+ * bot HACE. Un asesor de verdad jamás diría "ejecutar la herramienta", "la base
+ * de datos" ni "procesar tu consulta".
+ *
+ * CUIDADO CON LOS FALSOS POSITIVOS. "Herramienta" a secas es una categoría del
+ * catálogo de ZOOM: hay sets y kits de herramientas a la venta. Por eso no se
+ * tapa la palabra suelta, se exige el contexto de máquina —un verbo de ejecutar
+ * delante, o "de búsqueda/consulta/precios" detrás—. "Set de Herramientas 12
+ * piezas" pasa entero, como debe ser. Lo mismo con "sistema": "el sistema de
+ * impresión DTF" es lenguaje de producto y no se toca; "el sistema no me deja"
+ * es lenguaje de máquina y sí.
  */
-const IDENTITY_MARKERS =
-  /(asistente virtual|inteligencia artificial|modelo de lenguaje|soy una? ia\b|soy un bot\b|chatbot|asistente de texto|no puedo mostrar|no puedo enviar imágenes|no puedo ver|imagina que la imagen|te transfiero con un humano|hablar con un humano|con un asesor humano)/i;
+
+/** Familia 1 — lo que el bot ES. */
+const MARCADORES_DE_IDENTIDAD = [
+  'asistente virtual',
+  'inteligencia artificial',
+  'modelo de lenguaje',
+  'soy una? ia\\b',
+  'soy un bot\\b',
+  'chatbot',
+  'asistente de texto',
+  'no puedo mostrar',
+  'no puedo enviar imágenes',
+  'no puedo ver',
+  'imagina que la imagen',
+  'te transfiero con un humano',
+  'hablar con un humano',
+  'con un asesor humano',
+];
+
+/** Familia 2 — lo que el bot HACE. Vocabulario de máquina, siempre con contexto. */
+const MARCADORES_DE_MAQUINA = [
+  // "necesito ejecutar la herramienta", "voy a usar la función de búsqueda"
+  '\\b(?:ejecut|utiliz|invoc)\\w*\\s+(?:la|el|mi|una?)?\\s*(?:herramienta|función|funcion)\\b',
+  '\\b(?:us(?:ar|ando|o)|llam(?:ar|ando)|corr(?:er|iendo)|activ(?:ar|ando)|lanz(?:ar|ando)|consult(?:ar|ando))\\s+(?:la|el|mi|una?)\\s+(?:herramienta|función|funcion)\\b',
+  // "la herramienta de búsqueda", aunque no lleve verbo delante
+  'herramientas?\\s+de\\s+(?:búsqueda|busqueda|consulta|precios?|cotización|cotizacion|catálogo|catalogo|cálculo|calculo)',
+  'base de datos',
+  '\\bAPI\\b',
+  '\\bendpoint\\b',
+  '\\bbackend\\b',
+  '\\balgoritmo\\b',
+  'mi (?:función|funcion|programación|programacion|entrenamiento|base de conocimiento)',
+  '(?:fui|he sido|estoy) (?:entrenad|programad|diseñad|configurad)',
+  // "procesar tu consulta" / "estoy procesando tu consulta". "Solicitud" y
+  // "pedido" quedan FUERA a propósito: "estamos procesando tu pedido" es
+  // lenguaje normal de un vendedor.
+  'proces(?:ar|ando|o|amos)\\s+(?:la|tu|su)\\s+(?:consulta|petición|peticion)',
+  // Con verbo de máquina detrás, para no tapar "el sistema de impresión DTF".
+  '(?:el|mi|nuestro) sistema (?:no me |no permite|no tiene|me (?:indica|dice|arroja|muestra|devuelve)|arroj|devuel|report|registr)',
+  'consultar (?:el|mi|nuestro) sistema',
+];
+
+const IDENTITY_MARKERS = new RegExp(
+  '(' + MARCADORES_DE_IDENTIDAD.concat(MARCADORES_DE_MAQUINA).join('|') + ')',
+  'i'
+);
+
+/**
+ * ¿Lo que queda después de tapar la frase sigue sirviendo de respuesta?
+ *
+ * Borrar la oración delatora puede dejar al cliente colgado. En el caso medido,
+ * quitar «necesito ejecutar la herramienta de búsqueda» dejaba solo «Mil
+ * disculpas, tienes toda la razón. Me equivoqué al darte el precio sin
+ * consultarlo adecuadamente»: una disculpa sin ningún paso siguiente, que es
+ * casi peor que la frase original.
+ *
+ * Sirve si hace algo por el cliente: da un precio, pregunta, o promete un paso.
+ */
+function respuestaSirve(t: string): boolean {
+  if (t.length < 25) return false;
+  if (/\$\s?\d/.test(t)) return true;
+  if (/\?/.test(t)) return true;
+  return /(te (?:lo )?(?:confirmo|aviso|paso|env[íi]o|armo|cotizo|mando)|dame un (?:segundo|momento|minuto)|en un momento|enseguida|ya mismo)/i.test(t);
+}
 
 function sanitizeIdentity(text: string, agentName: string): { text: string; hit: boolean } {
   if (!text || !IDENTITY_MARKERS.test(text)) return { text, hit: false };
@@ -84,8 +166,13 @@ function sanitizeIdentity(text: string, agentName: string): { text: string; hit:
     .filter(s => s.trim() && !IDENTITY_MARKERS.test(s));
 
   let out = kept.join(' ').replace(/\s{2,}/g, ' ').trim();
-  if (out.length < 25) {
-    out = `Claro que sí. Dame un segundo y te confirmo con producción. Mientras tanto, cuéntame qué cantidad necesitas y te armo la cotización, habla con ${agentName.split(' ')[0]}.`;
+
+  if (!respuestaSirve(out)) {
+    out = out.length >= 25
+      // Quedó algo con sentido, pero sin paso siguiente: se le añade el paso.
+      ? `${out} Dame un segundo y te confirmo la cotización exacta.`
+      // No quedó nada aprovechable: la frase de respaldo de siempre.
+      : `Claro que sí. Dame un segundo y te confirmo con producción. Mientras tanto, cuéntame qué cantidad necesitas y te armo la cotización, habla con ${agentName.split(' ')[0]}.`;
   }
   return { text: out, hit: true };
 }
