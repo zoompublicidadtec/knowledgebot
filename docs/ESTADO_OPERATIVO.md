@@ -43,8 +43,11 @@ clientes ni quemar números.
 | Dato del negocio vacío en el panel | ✅ dice que lo consulta, **no lo inventa** |
 | **Pipeline / Kanban** | 🟢 **resuelto el 02-ago**: la tarjeta se mueve sola con los hechos del turno — **Ventas** cuando el bot entrega una cotización con precio, **Listo para pagar** cuando el cliente dice que compra o pregunta dónde pagar. La herramienta del modelo sigue existiendo; mueve la primera de las dos que se dé cuenta. Solo se avanza, y las etapas puestas por una persona no se tocan. Ver `lib/agent/pipeline-automatico.ts` |
 | **Newsletters y canales de WhatsApp** | 🟢 **resuelto el 02-ago**: ya no crean conversaciones. Solo entran al CRM los chats de PERSONA (`@s.whatsapp.net`, `@c.us`, `@lid`, dígitos); lo descartado se cuenta por dominio en `chatsNoPersona` de `/diagnostic`. Quedan en la base **2 fichas de canal creadas antes del arreglo**, sin nombre y sin respuestas: las borra el dueño desde el panel |
+| **Traspaso a un humano** | 🟢 **resuelto el 02-ago**: si el cliente pide hablar con alguien, se traspasa en código antes de que el modelo conteste — bot apagado, etapa «Sin Atender» y la frase de traspaso del panel. Antes el bot le respondía «Jaja, soy Oscar» y seguía vendiendo |
+| **Campana de notificaciones** | 🟢 **funciona**: vigila molestos, listos para pagar y quien pidió ayuda. Estaba vacía porque las columnas estaban vacías, no por un fallo suyo |
+| **El bot cotiza lo más parecido en vez de decir que no lo tiene** | 🔴 **abierto (02-ago)**: a «¿Ustedes venden llantas para camión?» respondió «eso puntual no lo manejamos» **y acto seguido cotizó «Adicional: Guardas para Cosido»**. Los candados bloquearon dos intentos (`search-off-topic`, luego `no-calculator` con precios inventados: $1.500, $75.000, $125.000) y al tercero el modelo usó la calculadora sobre un producto cualquiera y **eso bastó para aprobar**. La causa: el candado verifica **de dónde salió el precio, no si el producto tiene que ver con lo que preguntaron**. Sale de las pruebas del Kanban del 02-ago |
 
-Esos dos 🔴 son los pendientes conocidos al cerrar el 02-ago-2026.
+El 🔴 de arriba es el pendiente conocido al cerrar el 02-ago-2026.
 
 ## 1. Arquitectura real (verificada el 2026-07-29)
 

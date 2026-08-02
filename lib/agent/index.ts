@@ -11,7 +11,11 @@ import { queryKnowledgeBaseTool } from './tools/query-knowledge-base';
 import { searchCatalogTool, runCatalogSearch } from './tools/search-catalog';
 import { getProductPriceTool } from './tools/get-product-price';
 import { saveContactInfoTool } from './tools/save-contact-info';
-import { requestHumanHandoffTool } from './tools/request-human-handoff';
+import {
+  requestHumanHandoffTool,
+  clientePideUnaPersona,
+  ejecutarTraspasoAHumano,
+} from './tools/request-human-handoff';
 import { calculateCustomPriceTool } from './tools/calculate-custom-price';
 import { updatePipelineStageTool } from './tools/update-pipeline-stage';
 import { etapaPorHechos, moverEtapaSiAvanza } from './pipeline-automatico';
@@ -772,6 +776,40 @@ export async function runAgentForMessage(params: {
     );
 
     const toolContext = { orgId, contactId, contactPhone, contactName, conversationId };
+
+    /**
+     * SI EL CLIENTE PIDE UNA PERSONA, SE LE DA — Y ANTES DE QUE EL MODELO HABLE.
+     *
+     * Medido el 02-ago-2026: ante «No me sirve el bot, quiero hablar con un
+     * asesor humano de verdad por favor», el bot respondió «Jaja, soy Oscar,
+     * del equipo comercial» y no traspasó nada. Quedó en «Entrada», con el bot
+     * encendido y sin avisar a nadie.
+     *
+     * Va aquí arriba, y no como un candado de salida, por dos razones: el
+     * modelo ya no puede contestarle otra cosa, y no se gasta una llamada al
+     * modelo para algo que ya está decidido.
+     *
+     * La herramienta `requestHumanHandoff` sigue existiendo y sirve para lo que
+     * esta regla no puede ver: una queja grave, un caso que el bot no resuelve.
+     * Esto solo pone el piso — lo pedido con todas las letras.
+     */
+    if (clientePideUnaPersona(messageText)) {
+      const traspaso: any = await ejecutarTraspasoAHumano(toolContext, {
+        reason: 'El cliente pidió expresamente hablar con una persona',
+        urgency: 'medium',
+      });
+      if (traspaso?.success) {
+        logger.warn('El cliente pidió una persona: traspaso determinista, el modelo no interviene', {
+          orgId, conversationId, contactId,
+        });
+        return traspaso.message;
+      }
+      // Si el traspaso falló, es preferible que conteste el bot a dejar al
+      // cliente sin respuesta: se sigue con el turno normal.
+      logger.error('No se pudo traspasar a una persona; sigue el bot', {
+        orgId, conversationId, contactId,
+      });
+    }
 
     // === RAIL DE RECUPERACIÓN DETERMINISTA ===
     // La búsqueda con las palabras del cliente se ejecuta aquí, no cuando al
