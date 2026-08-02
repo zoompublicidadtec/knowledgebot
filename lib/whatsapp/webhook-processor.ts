@@ -8,7 +8,7 @@ import { transcribeAudio } from './transcribe';
 import { describeImage } from './describe-image';
 import { logLineError } from './log-line-error';
 import { getPhotosForConversation } from '@/lib/agent';
-import { contactIdVariants, pickCanonicalContact, waDigits, type ContactRow } from './contact-identity';
+import { contactIdVariants, dominioWa, esChatDePersona, pickCanonicalContact, waDigits, type ContactRow } from './contact-identity';
 import { uploadBase64ToR2, isR2Configured } from '@/lib/r2-storage';
 
 /**
@@ -224,6 +224,28 @@ export async function processInboundMessage(
   }) => Promise<string | null>
 ): Promise<ProcessResult> {
   const startTime = Date.now();
+
+  /**
+   * PRIMERA COMPUERTA: solo las personas entran al CRM.
+   *
+   * Esta comprobación vive aquí, y no solo en el puente, porque **aquí nace
+   * cada ficha de contacto** y a esta función llegan TODOS los puentes. Si
+   * mañana se levanta otro puente, o vuelve el de whatsapp-web.js, el CRM
+   * sigue sin abrirle ficha a un canal de WhatsApp. El puente filtra para no
+   * gastar el viaje; esto garantiza el invariante venga de donde venga.
+   *
+   * Ver `esChatDePersona` en lib/whatsapp/contact-identity.ts.
+   */
+  if (!esChatDePersona(message.from)) {
+    logger.warn('Chat que no es una persona: no se crea contacto ni conversación', {
+      orgId,
+      lineKey,
+      from: message.from,
+      dominio: dominioWa(message.from) || '(sin dominio)',
+    });
+    return { success: false };
+  }
+
   const supabase = createAdminClient();
 
   try {

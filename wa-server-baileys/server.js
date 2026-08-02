@@ -176,6 +176,14 @@ const metrics = {
     send_errors: 0,
     /** Mensajes que WhatsApp acepto y luego rechazo en el acuse. */
     acks_rechazados: 0,
+    /**
+     * Chats que NO son personas (canales, grupos, difusiones, estados): no se
+     * reenvian y no abren ficha en el CRM. Se publica el desglose por dominio
+     * para que un tipo de chat nuevo de WhatsApp se vea el mismo dia en
+     * /diagnostic, en vez de colarse en el panel disfrazado de cliente.
+     */
+    chats_no_persona: 0,
+    chats_no_persona_por_dominio: {},
     last_download_ms: 0,
     last_post_ms: 0,
 };
@@ -1322,10 +1330,82 @@ function yaEntregado(line, id) {
     return false;
 }
 
+// ============================================================
+// QUIEN ES UNA PERSONA
+// ============================================================
+
+/**
+ * Dominios de WhatsApp que pertenecen a una PERSONA.
+ *
+ * MISMA REGLA que `esChatDePersona` en lib/whatsapp/contact-identity.ts. Esta
+ * copia existe porque el puente es un proceso Node aparte y no puede importar
+ * del codigo de la app. Si aqui se agrega un dominio, agregarlo alla tambien.
+ *
+ * El filtro anterior era una LISTA NEGRA —grupos, difusiones y estados— y todo
+ * lo demas pasaba. El 02-ago-2026 entro `120363315571514607@newsletter`, un
+ * canal, y el CRM le abrio ficha sin nombre y conversacion en linea_3. Tapar
+ * solo `@newsletter` habria sido corregir el sintoma: WhatsApp estrena tipos de
+ * chat cada tanto y cada uno se colaria igual. Se invierte: pasa lo que SI es
+ * una persona.
+ */
+const DOMINIOS_DE_PERSONA = new Set(['s.whatsapp.net', 'c.us', 'lid']);
+
+function dominioDeJid(jid) {
+    const s = String(jid || '');
+    const idx = s.lastIndexOf('@');
+    return idx === -1 ? '' : s.slice(idx + 1).toLowerCase();
+}
+
+function esChatDePersona(jid) {
+    const s = String(jid || '').trim();
+    if (!s) return false;
+    const dominio = dominioDeJid(s);
+    if (!dominio) return /^\+?\d{7,20}$/.test(s);
+    return DOMINIOS_DE_PERSONA.has(dominio);
+}
+
+/**
+ * Chats no-persona ya anotados, para no repetir la misma linea de log en cada
+ * mensaje de un canal que publica seguido.
+ */
+const chatsNoPersonaVistos = new Set();
+
+/**
+ * El descarte NUNCA es mudo.
+ *
+ * Invertir a lista blanca trae el riesgo de dejar fuera EN SILENCIO a un
+ * cliente real si WhatsApp estrena un dominio nuevo para personas. Ese error ya
+ * se cometio en este proyecto enumerando las lineas una por una. Por eso cada
+ * dominio descartado se cuenta y se publica en /diagnostic, y cada chat nuevo
+ * se anota una vez en el log con que hacer si resulta ser un cliente.
+ */
+function registrarChatNoPersona(line, jid) {
+    const dominio = dominioDeJid(jid) || '(sin dominio)';
+    metrics.chats_no_persona++;
+    metrics.chats_no_persona_por_dominio[dominio] =
+        (metrics.chats_no_persona_por_dominio[dominio] || 0) + 1;
+
+    // Cota de memoria: los grupos y canales son pocos, pero el puente corre
+    // meses sin reiniciarse y este Set no debe crecer sin fin.
+    if (chatsNoPersonaVistos.size > 500) chatsNoPersonaVistos.clear();
+    if (chatsNoPersonaVistos.has(jid)) return;
+    chatsNoPersonaVistos.add(jid);
+
+    logger.warn(
+        { line, jid, dominio },
+        'Chat que no es una persona: no se reenvia y no abre ficha en el CRM. Si esto resulta ser un cliente real, el dominio de persona falta en DOMINIOS_DE_PERSONA (server.js y lib/whatsapp/contact-identity.ts)'
+    );
+}
+
 async function handleIncoming(line, msg, sock) {
     const jid = msg.key.remoteJid;
     if (!jid) return;
-    if (isJidGroup(jid) || isJidBroadcast(jid) || jid === 'status@broadcast') return;
+    // Lista blanca: grupos (@g.us), difusiones y estados (@broadcast) y canales
+    // (@newsletter) quedan fuera por no estar en DOMINIOS_DE_PERSONA.
+    if (!esChatDePersona(jid)) {
+        registrarChatNoPersona(line, jid);
+        return;
+    }
     if (!msg.message) return;
 
     metrics.messages_received++;
@@ -1565,6 +1645,15 @@ app.get('/diagnostic', (req, res) => {
         ok: true,
         bridge: 'baileys',
         sessions: describeSessions(),
+        /**
+         * Lo que se descarto por no ser una persona, con su desglose por
+         * dominio. Si aqui aparece un dominio desconocido y a la vez un cliente
+         * dice que no le respondieron, ese es el sitio donde mirar.
+         */
+        chatsNoPersona: {
+            total: metrics.chats_no_persona,
+            porDominio: metrics.chats_no_persona_por_dominio,
+        },
         bridgeTime: new Date().toISOString(),
     });
 });

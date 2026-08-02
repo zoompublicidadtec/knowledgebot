@@ -50,6 +50,63 @@ export function waDigits(waId: string | null | undefined): string {
 }
 
 /**
+ * Dominios de WhatsApp que pertenecen a una PERSONA:
+ *
+ *   - `s.whatsapp.net` — teléfono, la forma normal de Baileys
+ *   - `c.us`           — la misma persona vista por whatsapp-web.js
+ *   - `lid`            — persona que oculta su teléfono (privacidad)
+ */
+const DOMINIOS_DE_PERSONA = new Set(['s.whatsapp.net', 'c.us', 'lid']);
+
+/** El sufijo de un identificador de WhatsApp, en minúsculas y sin la arroba. */
+export function dominioWa(waId: string | null | undefined): string {
+  const raw = String(waId || '').trim();
+  const idx = raw.lastIndexOf('@');
+  return idx === -1 ? '' : raw.slice(idx + 1).toLowerCase();
+}
+
+/**
+ * ¿Este identificador es una PERSONA a la que se le puede vender?
+ *
+ * EL FALLO QUE ESTO CIERRA
+ * ------------------------
+ * El 02-ago-2026 entró `120363315571514607@newsletter` —un canal de WhatsApp,
+ * no una persona— y el CRM le abrió ficha SIN NOMBRE y conversación en
+ * `linea_3`: 1 mensaje, 0 respuestas. En el panel se veía como un cliente más,
+ * y el dueño no tenía forma de saber que no lo era.
+ *
+ * El puente descartaba por LISTA NEGRA —grupos, difusiones, estados— y todo lo
+ * demás pasaba. Tapar solo `@newsletter` habría sido corregir el síntoma:
+ * WhatsApp estrena tipos de chat cada tanto (canales, comunidades, chats de
+ * IA) y cada uno volvería a colarse igual, de a uno, hasta que alguien lo note.
+ *
+ * Se invierte la regla: **pasa lo que SÍ es una persona, y nada más.**
+ *
+ * EL RIESGO DE INVERTIRLA, Y POR QUÉ SE ASUME IGUAL
+ * -------------------------------------------------
+ * Una lista blanca puede dejar fuera EN SILENCIO a un cliente real si WhatsApp
+ * estrena un dominio nuevo para personas. Ese error ya se cometió aquí,
+ * enumerando las líneas una por una: cualquier línea nueva quedaba fuera sin
+ * avisar. La diferencia es cuál conjunto es abierto. Las líneas son un conjunto
+ * ABIERTO que crece con el negocio; estos dominios son un conjunto CERRADO que
+ * define el protocolo de WhatsApp, no el dueño.
+ *
+ * Aun así el descarte NO es mudo: quien llama a esta función deja constancia en
+ * el log y en el contador por dominio de `/diagnostic`. Un dominio nuevo se ve
+ * el mismo día en vez de descubrirse por un cliente que nunca fue respondido.
+ */
+export function esChatDePersona(waId: string | null | undefined): boolean {
+  const raw = String(waId || '').trim();
+  if (!raw) return false;
+
+  const dominio = dominioWa(raw);
+  // Sin sufijo: los puentes entregan dígitos sueltos, y eso sí es una persona.
+  if (!dominio) return /^\+?\d{7,20}$/.test(raw);
+
+  return DOMINIOS_DE_PERSONA.has(dominio);
+}
+
+/**
  * Todas las formas con las que los puentes pueden nombrar al mismo contacto.
  * Se usa para buscar en `contacts` sin depender del sufijo que llegó hoy.
  */
