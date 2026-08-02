@@ -309,6 +309,32 @@ function registroQueVigilaAcks(base, alFallar, line) {
     });
 }
 
+/**
+ * ¿Ese remitente es otra de NUESTRAS líneas?
+ *
+ * Se compara contra los números que el propio puente tiene conectados. Si un
+ * `@lid` no trae teléfono, se busca en el mapa aprendido de cada línea.
+ * Devuelve el nombre de la línea propia, o null.
+ */
+function esLineaPropia(remitenteJid, lineaQueRecibe) {
+    if (!remitenteJid) return null;
+    const soloDigitos = (j) => String(j || '').split('@')[0].replace(/\D/g, '');
+    const numero = soloDigitos(remitenteJid);
+    if (!numero) return null;
+
+    for (const [otraLinea, otroSt] of sessions) {
+        if (otraLinea === lineaQueRecibe) continue;
+        if (otroSt?.phoneNumber && soloDigitos(otroSt.phoneNumber) === numero) return otraLinea;
+    }
+
+    // El remitente puede venir como @lid: se mira el telefono aprendido.
+    if (remitenteJid.endsWith('@lid')) {
+        const aprendido = loadLidMap(lineaQueRecibe)[remitenteJid];
+        if (aprendido) return esLineaPropia(aprendido, lineaQueRecibe);
+    }
+    return null;
+}
+
 /** Saca el texto de un nodo de WhatsApp, venga como Buffer o serializado. */
 function textoDeNodo(nodo) {
     const partes = [];
@@ -1308,6 +1334,32 @@ async function handleIncoming(line, msg, sock) {
     // Se aprende el telefono real del chat ANTES de nada: es lo unico que
     // permite responderle a un contacto @lid sin que WhatsApp lo rechace.
     recordLidMapping(line, msg);
+
+    /**
+     * UNA LÍNEA NUESTRA NO ES UN CLIENTE.
+     *
+     * Si un mensaje llega desde otra de nuestras propias líneas, el agente lo
+     * atiende como si fuera un cliente y responde. Esa respuesta llega a la
+     * otra línea, que también responde. **Dos bots conversando para siempre.**
+     *
+     * Medido el 02-ago-2026: un mensaje de prueba entre la línea 1 y la línea 2
+     * disparó un ida y vuelta de 14 mensajes en 2 minutos que no paraba solo.
+     * Con las 8 líneas previstas en un mismo negocio esto no es un caso raro:
+     * basta que alguien escriba de un local a otro para quemar dos números
+     * reales a base de mensajes automáticos.
+     *
+     * El puente sabe qué números son suyos —son las líneas que él mismo
+     * atiende— así que aquí se corta: se registra y no se reenvía al agente.
+     */
+    const remitente = normalizeJid(msg.key.senderPn || msg.key.participantPn || jid);
+    const propio = !fromMe && esLineaPropia(remitente, line);
+    if (propio) {
+        logger.warn(
+            { line, remitente, deLinea: propio },
+            'Mensaje recibido desde OTRA LÍNEA PROPIA: no se pasa al agente para evitar que dos bots se respondan sin fin'
+        );
+        return;
+    }
 
     // ── Un mensaje, una entrega ─────────────────────────────────────────────
     // WhatsApp reemite el MISMO mensaje mas de una vez: primero sin resolver
