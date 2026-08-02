@@ -41,7 +41,7 @@ clientes ni quemar números.
 | Objeciones de precio y comparación con la competencia | ✅ |
 | Cierre a etapa «Vendido» | ✅ |
 | Dato del negocio vacío en el panel | ✅ dice que lo consulta, **no lo inventa** |
-| **Pipeline / Kanban** | 🔴 **casi no se usa**: de 3 negociaciones activas solo 1 pasó a «Ventas». «¿me haces mejor precio?» y «estoy comparando proveedores» se quedaron en Entrada |
+| **Pipeline / Kanban** | 🟢 **resuelto el 02-ago**: la tarjeta se mueve sola con los hechos del turno — **Ventas** cuando el bot entrega una cotización con precio, **Listo para pagar** cuando el cliente dice que compra o pregunta dónde pagar. La herramienta del modelo sigue existiendo; mueve la primera de las dos que se dé cuenta. Solo se avanza, y las etapas puestas por una persona no se tocan. Ver `lib/agent/pipeline-automatico.ts` |
 | **Newsletters y canales de WhatsApp** | 🟢 **resuelto el 02-ago**: ya no crean conversaciones. Solo entran al CRM los chats de PERSONA (`@s.whatsapp.net`, `@c.us`, `@lid`, dígitos); lo descartado se cuenta por dominio en `chatsNoPersona` de `/diagnostic`. Quedan en la base **2 fichas de canal creadas antes del arreglo**, sin nombre y sin respuestas: las borra el dueño desde el panel |
 
 Esos dos 🔴 son los pendientes conocidos al cerrar el 02-ago-2026.

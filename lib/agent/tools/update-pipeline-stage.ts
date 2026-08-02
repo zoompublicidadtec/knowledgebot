@@ -1,6 +1,6 @@
 import { tool, jsonSchema } from 'ai';
-import { createAdminClient } from '../../supabase/admin';
 import { logger } from '../../logger';
+import { moverEtapaSiAvanza } from '../pipeline-automatico';
 
 interface ToolContext {
   orgId: string;
@@ -32,6 +32,18 @@ interface ToolContext {
  * No escribe en la tabla messages (evita duplicados en el panel de conversaciones).
  * Tampoco pausa el bot: 'sales' y 'sold' mantienen la IA activa según la lógica
  * central de actions.ts.
+ *
+ * ESTA HERRAMIENTA YA NO ES LA ÚNICA VÍA, NI LA PRINCIPAL.
+ * -------------------------------------------------------
+ * Medido el 02-ago-2026: de 32 conversaciones el modelo movió 2 tarjetas,
+ * mientras 18 clientes habían recibido una cotización con precio. Depender de
+ * que se acuerde no funciona, así que ahora la etapa se deduce de los hechos
+ * del turno en `lib/agent/pipeline-automatico.ts`.
+ *
+ * La herramienta se conserva por decisión del dueño (02-ago): mueven las dos
+ * vías, la primera que se dé cuenta. Pero **la escritura es una sola** —
+ * `moverEtapaSiAvanza`— para que las dos garantías se cumplan venga de donde
+ * venga: solo se avanza, y una etapa puesta por una persona no se toca.
  */
 export function updatePipelineStageTool(ctx: ToolContext) {
   return tool({
@@ -72,60 +84,39 @@ export function updatePipelineStageTool(ctx: ToolContext) {
         };
       }
 
-      const supabase = createAdminClient();
-
-      // 1. Leer metadata actual del contacto (para conservar otros campos y registrar previousStage)
-      const { data: contact, error: fetchErr } = await (supabase as any)
-        .from('contacts')
-        .select('id, metadata')
-        .eq('id', ctx.contactId)
-        .single();
-
-      if (fetchErr || !contact) {
-        logger.error('updatePipelineStage: contacto no encontrado', {
-          error: fetchErr?.message, contactId: ctx.contactId,
-        });
-        return { success: false, error: 'No se encontró el contacto.' };
-      }
-
-      const previousStage = (contact.metadata || {}).stage || 'inbox';
-
-      // No-op si ya está en esa etapa
-      if (previousStage === stage) {
-        return { success: true, previousStage, newStage: stage, message: 'Ya estaba en esta etapa.' };
-      }
-
-      // 2. Actualizar el stage conservando el resto de metadata
-      const { error: updateErr } = await (supabase as any)
-        .from('contacts')
-        .update({ metadata: { ...(contact.metadata || {}), stage } })
-        .eq('id', ctx.contactId);
-
-      if (updateErr) {
-        logger.error('updatePipelineStage: error actualizando stage', {
-          error: updateErr.message, contactId: ctx.contactId,
-        });
-        return { success: false, error: 'Error al actualizar la etapa.' };
-      }
-
-      // 3. NO tocar bot_active: 'sales' y 'sold' mantienen el bot activo
-      //    (coherente con la lógica central de lib/conversations/actions.ts).
-
-      logger.info('Pipeline stage actualizado por el agente', {
+      const resultado = await moverEtapaSiAvanza({
         orgId: ctx.orgId,
-        conversationId: ctx.conversationId,
         contactId: ctx.contactId,
-        contactName: ctx.contactName,
-        previousStage,
-        newStage: stage,
-        reason,
+        conversationId: ctx.conversationId,
+        destino: stage,
+        motivo: `pedido por el modelo: ${reason}`,
       });
+
+      const previousStage = resultado.etapaAnterior ?? 'inbox';
+
+      if (!resultado.movido) {
+        // Que no se moviera casi nunca es un error: lo normal es que la regla
+        // automática ya la hubiera movido, o que una persona la tenga en una
+        // etapa que el código no toca. El modelo no necesita saber más.
+        if (resultado.razon === 'contacto-no-encontrado') {
+          return { success: false, error: 'No se encontró el contacto.' };
+        }
+        if (resultado.razon === 'error-al-escribir') {
+          return { success: false, error: 'Error al actualizar la etapa.' };
+        }
+        return {
+          success: true,
+          previousStage,
+          newStage: previousStage,
+          message: 'El cliente ya estaba en esa etapa o en una más avanzada.',
+        };
+      }
 
       return {
         success: true,
         previousStage,
         newStage: stage,
-        message: `Cliente movido a ${stage === 'sold' ? 'Vendido' : 'Ventas'}.`,
+        message: `Cliente movido a ${stage === 'sold' ? 'Listo para pagar' : 'Ventas'}.`,
       };
     },
   } as any);

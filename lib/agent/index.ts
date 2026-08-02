@@ -14,6 +14,7 @@ import { saveContactInfoTool } from './tools/save-contact-info';
 import { requestHumanHandoffTool } from './tools/request-human-handoff';
 import { calculateCustomPriceTool } from './tools/calculate-custom-price';
 import { updatePipelineStageTool } from './tools/update-pipeline-stage';
+import { etapaPorHechos, moverEtapaSiAvanza } from './pipeline-automatico';
 import { logger } from '../logger';
 import type { AgentConfig } from '../database.types';
 
@@ -848,6 +849,14 @@ ${lineas}`;
     const questionStreak = countQuestionStreak(messages);
     const approvedPrices = collectApprovedPrices(messages);
     let finalResponse: string | null = null;
+
+    /**
+     * El rastro del ULTIMO intento. Vive fuera del bucle porque la etapa del
+     * Pipeline se decide al final, con lo que de verdad se le entrego al
+     * cliente: si el candado bloqueo la respuesta y hubo recalculo, lo que
+     * cuenta es el intento que salio, no los que se descartaron.
+     */
+    let pasosDelTurno: any[] = [];
     let loopMessages = [...messages];
 
     // Lo que el cliente acaba de escribir, para contrastarlo con lo que el
@@ -880,6 +889,8 @@ ${lineas}`;
         maxSteps: 50,
         temperature: 0.4,
       } as any);
+
+      pasosDelTurno = result.steps || [];
 
       logger.info('Agent finished', {
         orgId, conversationId,
@@ -1017,6 +1028,41 @@ ${lineas}`;
           ? 'Cuéntame un poco más de lo que necesitas para no ofrecerte algo que no era: ¿para qué lo vas a usar y qué tamaño o cantidad tienes en mente? Con eso lo reviso con el equipo y te confirmo.'
           : 'Ya estoy revisando eso con producción para darte el valor exacto. Cuéntame mientras qué cantidad manejas y te armo la cotización completa.';
       }
+    }
+
+    /**
+     * LA TARJETA SE MUEVE SOLA, CON LO QUE PASO.
+     *
+     * Va aqui, al final del turno, porque solo aqui se sabe las dos cosas: lo
+     * que el cliente escribio y lo que de verdad se le entrego. Va DESPUES del
+     * candado a proposito: una cotizacion bloqueada no llego al cliente, asi
+     * que no es una negociacion y no mueve nada.
+     *
+     * Si esto falla, el cliente igual recibe su respuesta. Una tarjeta en la
+     * columna equivocada es un fastidio; quedarse sin contestar es perder al
+     * cliente. Ver lib/agent/pipeline-automatico.ts.
+     */
+    try {
+      const destino = etapaPorHechos({
+        mensajeDelCliente: messageText,
+        respuestaDelBot: finalResponse,
+        steps: pasosDelTurno,
+      });
+      if (destino) {
+        await moverEtapaSiAvanza({
+          orgId,
+          contactId,
+          conversationId,
+          destino,
+          motivo: destino === 'sold'
+            ? 'el cliente dijo que compra o pregunto donde pagar'
+            : 'el bot entrego una cotizacion con precio',
+        });
+      }
+    } catch (errEtapa) {
+      logger.error('No se pudo mover la etapa del Pipeline', {
+        error: String(errEtapa), orgId, conversationId,
+      });
     }
 
     return finalResponse;
