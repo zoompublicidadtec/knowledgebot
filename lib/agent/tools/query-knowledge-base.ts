@@ -71,23 +71,73 @@ function normalizar(s: string): string {
 }
 
 /**
+ * Palabras vacías del español: no dicen nada del negocio y solo hacen ruido.
+ *
+ * Sustituyen al filtro que había antes —descartar toda palabra de 3 letras o
+ * menos—, que es la causa del fallo medido el 03-ago-2026: a «¿tienen página
+ * web?» el bot contestó «no tenemos una página web como tal» teniendo la
+ * dirección guardada en el panel. El bot buscó bien; lo que se perdió por el
+ * camino fue la palabra **web**, de tres letras. Medir por longitud descarta
+ * justo lo que importa (web, iva, nit, pdf) y deja pasar lo que no (para,
+ * como, esta), así que en vez de medirlas se nombran.
+ */
+const PALABRAS_VACIAS = new Set([
+  'para', 'como', 'que', 'los', 'las', 'del', 'una', 'uno', 'unos', 'unas',
+  'con', 'por', 'sus', 'mas', 'muy', 'este', 'esta', 'esto', 'esos', 'esas',
+  'ese', 'esa', 'sobre', 'donde', 'cual', 'cuales', 'cuanto', 'cuanta',
+  'tienen', 'tiene', 'hay', 'dame', 'decir', 'saber', 'favor', 'porfa',
+  'quiero', 'necesito', 'ustedes', 'usted', 'ademas', 'tambien', 'algun',
+  'alguna', 'hola', 'buenas', 'gracias', 'sera', 'seria', 'puedes', 'podrias',
+]);
+
+/**
+ * Quita el plural del español, para poder comparar singular con plural.
+ *
+ * Sin esto, «direcciones» no encontraba la ficha «Dirección»: la comparación
+ * era en un solo sentido (¿cabe el término dentro del título?) y el plural,
+ * al ser más largo que el singular, nunca cabía. Medido el 03-ago-2026: a
+ * «dame direcciones y números de contacto» devolvió teléfono y correo y se
+ * saltó la dirección, que sí estaba guardada en el panel.
+ */
+function raiz(palabra: string): string {
+  if (palabra.length > 5 && palabra.endsWith('es')) return palabra.slice(0, -2);
+  if (palabra.length > 4 && palabra.endsWith('s')) return palabra.slice(0, -1);
+  return palabra;
+}
+
+/**
  * Busca por palabras, sin embeddings: son pocas fichas y el coste debe ser 0.
  * Puntúa las coincidencias en el título por encima de las del contenido, porque
  * el título es lo que el dueño eligió para nombrar el tema.
+ *
+ * El título se compara **palabra por palabra**, no como un solo texto: así
+ * «web» encuentra «Sitio web» sin que una palabra corta pueda colarse dentro
+ * de otra cualquiera. Una raíz de 3 letras solo vale si es la palabra entera;
+ * a partir de 4 se acepta que una contenga a la otra, que es lo que hace que
+ * «garantias» y «garantía» sean la misma cosa.
  */
 function buscarEnFichas(fichas: FichaNegocio[], consulta: string): FichaNegocio[] {
   const términos = normalizar(consulta)
     .split(/[^a-z0-9]+/)
-    .filter(t => t.length > 3);
+    .filter(t => t.length >= 3 && !PALABRAS_VACIAS.has(t))
+    .map(raiz);
   if (términos.length === 0) return [];
+
+  const casan = (palabraDelTitulo: string, término: string): boolean =>
+    palabraDelTitulo === término ||
+    (término.length >= 4 && palabraDelTitulo.includes(término)) ||
+    (palabraDelTitulo.length >= 4 && término.includes(palabraDelTitulo));
 
   return fichas
     .map(f => {
-      const titulo = normalizar(f.title);
+      const palabrasDelTitulo = normalizar(f.title)
+        .split(/[^a-z0-9]+/)
+        .filter(Boolean)
+        .map(raiz);
       const contenido = normalizar(f.content);
       let puntos = 0;
       for (const t of términos) {
-        if (titulo.includes(t)) puntos += 3;
+        if (palabrasDelTitulo.some(p => casan(p, t))) puntos += 3;
         else if (contenido.includes(t)) puntos += 1;
       }
       return { f, puntos };

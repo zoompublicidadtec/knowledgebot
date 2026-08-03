@@ -343,6 +343,18 @@ tabla: la herramienta ahora lee de donde el dueño ya escribía.
 **Ahora** `queryKnowledgeBase` lee `business_info` (`fichasDelNegocio()` y
 `buscarEnFichas()` en `lib/agent/tools/query-knowledge-base.ts`). Es
 determinista, no gasta embeddings y se actualiza en cuanto se guarda el panel.
+> **Corregido el 03-ago-2026 — leer el dato no basta si el buscador no lo
+> encuentra.** Tener la ficha no sirvió de nada mientras `buscarEnFichas`
+> **descartaba toda palabra de 3 letras o menos**: a «¿tienen página web?» se
+> perdía justamente **«web»**, se buscaba solo «pagina», no había resultados, y
+> el bot respondía *«no tenemos una página web como tal»* teniendo la dirección
+> guardada. El segundo defecto era comparar **en un solo sentido**, así que
+> «direcciones» nunca encontraba «Dirección». Ahora las palabras vacías se
+> **nombran** en vez de medirse por longitud, `raiz()` quita el plural de los
+> dos lados y el título se compara palabra por palabra. Batería de 17 casos:
+> **antes 12/17, después 17/17**. Destapó tres campos más que también se
+> perdían — garantía, teléfonos en plural y la propia dirección—, y esos no se
+> habían reportado: nadie sabía que faltaban.
 
 #### Lo que estaba escrito en el código y ahora vive en el panel
 
