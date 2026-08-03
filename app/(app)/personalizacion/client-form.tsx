@@ -45,6 +45,29 @@ export default function CustomizationClientForm({ initialConfig }: Customization
   const [cuentas, setCuentas] = useState<any[]>(
     Array.isArray(persona?.payment_accounts) ? persona.payment_accounts : []
   );
+  /**
+   * Sedes: lista sin límite, y cada sede con sus propios teléfonos.
+   *
+   * Si el negocio todavía tiene el par dirección/teléfono suelto de antes, se
+   * convierte en la primera sede al abrir el panel. Así el dueño ve su dato de
+   * siempre en el sitio donde ahora vive, y no hay dos lugares que digan lo
+   * mismo: al guardar, `address` y `phone` se vuelven a derivar de esta lista.
+   */
+  const [sedes, setSedes] = useState<any[]>(() => {
+    if (Array.isArray(businessInfo?.sedes) && businessInfo.sedes.length > 0) {
+      return businessInfo.sedes;
+    }
+    const direccion = String(businessInfo?.address || '').trim();
+    const telefono = String(businessInfo?.phone || '').trim();
+    if (!direccion && !telefono) return [];
+    return [
+      {
+        nombre: '',
+        direccion,
+        telefonos: telefono ? [{ numero: telefono, tipo: 'ambos' }] : [],
+      },
+    ];
+  });
 
   function addService() {
     setServices((prev) => [
@@ -466,38 +489,167 @@ export default function CustomizationClientForm({ initialConfig }: Customization
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold mb-1 text-slate-400">Teléfono público</label>
-            <input
-              name="businessPhone"
-              type="text"
-              defaultValue={businessInfo.phone || ''}
-              className="input text-sm"
-              placeholder="+52 55 1234 5678"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold mb-1 text-slate-400">Dirección física</label>
-            <input
-              name="businessAddress"
-              type="text"
-              defaultValue={businessInfo.address || ''}
-              className="input text-sm"
-              placeholder="Av. Principal 123, Col. Centro"
-            />
-          </div>
-          <div>
             <label className="block text-xs font-semibold mb-1 text-slate-400">Email público</label>
             <input
               name="businessEmail"
               type="email"
               defaultValue={businessInfo.email || ''}
               className="input text-sm"
-              placeholder="Mi Empresa"
+              placeholder="contacto@miempresa.com"
             />
           </div>
+        </div>
+
+        {/* ── Sedes ──────────────────────────────────────────────────────────
+            Hasta el 03-ago-2026 había UN campo de dirección y UNO de teléfono.
+            Un negocio con varios locales no cabe ahí: el bot solo podía dar una
+            dirección, siempre la misma, sin importar cuál le sirviera al
+            cliente.
+
+            Cada número dice si sirve para llamar, para WhatsApp o para las dos
+            cosas. Sin esa distinción, a quien pregunta «¿a qué número llamo?»
+            el bot le puede dar uno que solo recibe mensajes, y lo manda a un
+            teléfono que nunca va a timbrar.
+
+            Lo que estaba escrito en los dos campos viejos se convierte solo en
+            la primera sede al abrir el panel: no se pierde nada. */}
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300">
+                Sedes, direcciones y teléfonos
+              </label>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Agregue todas las sedes que tenga, cada una con sus propios números. Si no
+                agrega ninguna, el bot dirá que el equipo se lo confirma y{' '}
+                <strong>nunca inventará</strong> una dirección ni un teléfono.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSedes([...sedes, { nombre: '', direccion: '', telefonos: [] }])}
+              className="btn-secondary text-xs shrink-0"
+            >
+              + Agregar sede
+            </button>
+          </div>
+
+          <input type="hidden" name="sedesJson" value={JSON.stringify(sedes)} />
+
+          {sedes.length === 0 && (
+            <p className="text-xs text-slate-500 italic">Sin sedes todavía.</p>
+          )}
+
+          {sedes.map((s: any, i: number) => {
+            const actualizar = (campo: string, valor: any) => {
+              const copia = [...sedes];
+              copia[i] = { ...copia[i], [campo]: valor };
+              setSedes(copia);
+            };
+            const telefonos: any[] = Array.isArray(s.telefonos) ? s.telefonos : [];
+            const actualizarTelefono = (j: number, campo: string, valor: string) => {
+              const lista = [...telefonos];
+              lista[j] = { ...lista[j], [campo]: valor };
+              actualizar('telefonos', lista);
+            };
+
+            return (
+              <div
+                key={i}
+                className="rounded-lg border border-slate-700/60 bg-slate-900/40 p-3 space-y-3"
+              >
+                <div className="flex flex-col md:flex-row md:items-end gap-2">
+                  <div className="md:w-1/3">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Nombre de la sede
+                    </label>
+                    <input
+                      type="text"
+                      value={s.nombre || ''}
+                      onChange={e => actualizar('nombre', e.target.value)}
+                      className="input text-sm"
+                      placeholder="Centro, Norte, Bodega..."
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Dirección
+                    </label>
+                    <input
+                      type="text"
+                      value={s.direccion || ''}
+                      onChange={e => actualizar('direccion', e.target.value)}
+                      className="input text-sm"
+                      placeholder="Cra 28 #10-86, Local 104"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSedes(sedes.filter((_: any, k: number) => k !== i))}
+                    className="text-xs text-red-400 hover:text-red-300 px-2 py-2 shrink-0"
+                  >
+                    Eliminar sede
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                      Teléfonos de esta sede
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        actualizar('telefonos', [...telefonos, { numero: '', tipo: 'ambos' }])
+                      }
+                      className="btn-secondary text-[11px] shrink-0"
+                    >
+                      + Agregar teléfono
+                    </button>
+                  </div>
+
+                  {telefonos.length === 0 && (
+                    <p className="text-[11px] text-slate-500 italic">
+                      Sin teléfonos. El bot dará la dirección y dirá que confirma el número.
+                    </p>
+                  )}
+
+                  {telefonos.map((t: any, j: number) => (
+                    <div key={j} className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={t.numero || ''}
+                        onChange={e => actualizarTelefono(j, 'numero', e.target.value)}
+                        className="input text-sm flex-1"
+                        placeholder="+57 321 201 6229"
+                      />
+                      <select
+                        value={t.tipo || 'ambos'}
+                        onChange={e => actualizarTelefono(j, 'tipo', e.target.value)}
+                        className="input text-sm sm:w-52"
+                      >
+                        <option value="ambos">Llamadas y WhatsApp</option>
+                        <option value="llamada">Solo para llamar</option>
+                        <option value="whatsapp">Solo WhatsApp</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          actualizar(
+                            'telefonos',
+                            telefonos.filter((_: any, k: number) => k !== j)
+                          )
+                        }
+                        className="text-xs text-red-400 hover:text-red-300 px-2 shrink-0"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

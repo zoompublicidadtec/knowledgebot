@@ -12,8 +12,6 @@ export async function saveAgentConfigAction(formData: FormData) {
 
   // Business Info
   const businessName = (formData.get('businessName') as string) || '';
-  const businessAddress = (formData.get('businessAddress') as string) || '';
-  const businessPhone = (formData.get('businessPhone') as string) || '';
   const businessEmail = (formData.get('businessEmail') as string) || '';
   const cancellationPolicy = (formData.get('cancellationPolicy') as string) || '';
   // Datos del negocio que el bot necesita para responder sin inventar. Son
@@ -30,6 +28,53 @@ export async function saveAgentConfigAction(formData: FormData) {
    * un abogado añade "Honorarios" y "Horarios de audiencia", una clínica añade
    * "Preparación para exámenes". El bot los consulta por su título.
    */
+  /**
+   * Sedes: lista sin límite, cada una con su dirección y sus propios teléfonos.
+   *
+   * Antes había UN campo de dirección y UNO de teléfono, y con eso el bot solo
+   * podía dar una sede. Cada número guarda además si sirve para llamar, para
+   * WhatsApp o para las dos cosas: darle a quien pregunta «¿a qué número
+   * llamo?» un número que solo recibe mensajes es mandarlo a un teléfono que
+   * nunca va a timbrar.
+   *
+   * El tipo se guarda SOLO si es uno de los tres conocidos. Un valor raro no se
+   * corrige a un valor por defecto que suene bien: se deja vacío, y entonces el
+   * bot ofrece el número a secas, sin afirmar para qué sirve.
+   */
+  const sedesRaw = formData.get('sedesJson') as string;
+  const TIPOS_DE_TELEFONO = ['llamada', 'whatsapp', 'ambos'];
+  let sedes: Array<Record<string, any>> = [];
+  try {
+    const parsed = sedesRaw ? JSON.parse(sedesRaw) : [];
+    sedes = (Array.isArray(parsed) ? parsed : [])
+      .map((s: any) => ({
+        nombre: String(s?.nombre || '').trim(),
+        direccion: String(s?.direccion || '').trim(),
+        telefonos: (Array.isArray(s?.telefonos) ? s.telefonos : [])
+          .map((t: any) => {
+            const tipo = String(t?.tipo || '').trim().toLowerCase();
+            return {
+              numero: String(t?.numero || '').trim(),
+              tipo: TIPOS_DE_TELEFONO.includes(tipo) ? tipo : '',
+            };
+          })
+          .filter((t: any) => t.numero),
+      }))
+      // Una sede sin dirección y sin un solo teléfono no dice nada: no se guarda.
+      .filter((s: any) => s.direccion || s.telefonos.length > 0);
+  } catch {
+    return { error: 'Formato de sedes inválido. Intenta de nuevo.' };
+  }
+
+  /**
+   * `address` y `phone` siguen existiendo porque los lee el encabezado del
+   * prompt. Se DERIVAN de la primera sede para que haya una sola verdad: el
+   * dueño edita la lista y nada más. Si borra todas las sedes, quedan vacíos, y
+   * vacío es lo correcto — el bot omite la frase y dice que lo consulta.
+   */
+  const sedePrincipal: any = sedes[0];
+  const direccionPrincipal = String(sedePrincipal?.direccion || '').trim();
+  const telefonoPrincipal = String(sedePrincipal?.telefonos?.[0]?.numero || '').trim();
   /**
    * Cuentas de pago. El titular se guarda completo pero NUNCA sale completo:
    * `enmascararTitular()` lo recorta antes de que el bot lo diga, porque un
@@ -100,8 +145,9 @@ export async function saveAgentConfigAction(formData: FormData) {
 
   const businessInfo = {
     name: businessName,
-    address: businessAddress,
-    phone: businessPhone,
+    address: direccionPrincipal,
+    phone: telefonoPrincipal,
+    sedes,
     email: businessEmail,
     cancellation_policy: cancellationPolicy,
     website: businessWebsite,

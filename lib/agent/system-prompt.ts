@@ -106,6 +106,24 @@ export function buildSystemPrompt(
 ): string {
   const persona = resolvePersona(config);
   const businessInfo = config.business_info as unknown as BusinessInfo;
+  /**
+   * Con VARIAS sedes, el encabezado NO nombra una direccion ni un telefono.
+   *
+   * Medido el 03-ago-2026 con dos sedes cargadas: a «¿donde quedan ubicados?»
+   * el bot contesto con UNA sola —la del encabezado— aunque queryKnowledgeBase
+   * le habia devuelto la lista entera; se ve en el registro. Un dato suelto
+   * puesto arriba pesa mas que una ficha recuperada, y con varios locales ese
+   * dato suelto es media verdad. Quitandolo, la unica fuente es la lista, que
+   * es donde estan todas.
+   *
+   * Con una sola sede queda igual que siempre: ahi el dato no engaña. Y notese
+   * que esto ACORTA el prompt en vez de agregarle una regla, que es el sentido
+   * correcto segun la regla del proyecto.
+   */
+  const sedesConfiguradas: any[] = Array.isArray((businessInfo as any)?.sedes)
+    ? (businessInfo as any).sedes
+    : [];
+  const variasSedes = sedesConfiguradas.length > 1;
   const services = (config.services as unknown as ServiceConfig[]) || [];
   const hours = (config.business_hours as unknown as BusinessHours) || {};
 
@@ -258,7 +276,7 @@ Precio por cuaderno = suma de componentes. Total = eso × cantidad. Aclara siemp
 
 ## Contexto
 Fecha y hora (${timeZone}): ${todayStr}. Úsala para "mañana", "el viernes", etc.
-Negocio: ${businessInfo?.name || persona.company}${businessInfo?.address ? ` · ${businessInfo.address}` : ''}${businessInfo?.phone ? ` · Tel ${businessInfo.phone}` : ''}${businessInfo?.email ? ` · ${businessInfo.email}` : ''}
+Negocio: ${businessInfo?.name || persona.company}${variasSedes ? ` · ${sedesConfiguradas.length} sedes (consulta cual le sirve al cliente)` : ''}${!variasSedes && businessInfo?.address ? ` · ${businessInfo.address}` : ''}${!variasSedes && businessInfo?.phone ? ` · Tel ${businessInfo.phone}` : ''}${businessInfo?.email ? ` · ${businessInfo.email}` : ''}
 ${businessInfo?.cancellation_policy ? `Política de cancelación: ${businessInfo.cancellation_policy}` : ''}
 Cliente: ${contactInfo}${customerProfile ? `\nPerfil guardado: ${customerProfile}` : ''}
 Tono: ${config.tone}

@@ -355,6 +355,18 @@ determinista, no gasta embeddings y se actualiza en cuanto se guarda el panel.
 > **antes 12/17, después 17/17**. Destapó tres campos más que también se
 > perdían — garantía, teléfonos en plural y la propia dirección—, y esos no se
 > habían reportado: nadie sabía que faltaban.
+> **Ampliado el 03-ago-2026 — de un local a todos los que haga falta.** El
+> panel tenía **un** campo de dirección y **uno** de teléfono, y ZOOM tiene más
+> de cinco sedes: el bot solo podía dar una, siempre la misma. Ahora
+> `business_info.sedes` es una lista sin límite, y dentro de cada sede otra
+> lista de teléfonos marcados **llamadas y WhatsApp**, **solo llamadas** o
+> **solo WhatsApp** — sin esa marca, a «¿a qué número llamo?» el bot podía dar
+> uno que solo recibe mensajes. La dirección y el teléfono viejos se convierten
+> en la primera sede al abrir el panel, y `address`/`phone` se derivan de ella
+> al guardar: una sola verdad. **Con dos o más sedes el encabezado del prompt
+> deja de nombrar una dirección** —queda más corto— porque un dato suelto
+> arriba pesaba más que la lista recuperada y hacía que el bot contestara con
+> una sola sede. Baterías: 22/22 de sedes y 17/17 del buscador.
 
 #### Lo que estaba escrito en el código y ahora vive en el panel
 

@@ -15,6 +15,51 @@ interface FichaNegocio {
 }
 
 /**
+ * Arma en una línea lo que el bot puede decir de una sede: dónde queda y a qué
+ * número se llama o se escribe.
+ *
+ * Cada teléfono lleva su tipo porque no es lo mismo un fijo que un WhatsApp: si
+ * el cliente pregunta «¿a qué número llamo?» y el bot le da un número que solo
+ * recibe mensajes, lo manda a un teléfono que nunca va a timbrar.
+ *
+ * Los grupos se nombran «solo llamadas» y «solo WhatsApp», y no se mezclan.
+ * La primera versión decía «para llamar X, por WhatsApp Y» y el modelo lo leyó
+ * como una sola bolsa: medido el 03-ago-2026, remató con «también puedes
+ * escribirnos por WhatsApp a esos mismos números» incluyendo el fijo. El dato
+ * estaba bien; la redacción admitía esa lectura. Si una frase se puede leer de
+ * dos maneras, el modelo va a elegir una de las dos, y no siempre la correcta.
+ *
+ * Lo que falta se OMITE, nunca se rellena: una sede sin teléfono se dice sin
+ * teléfono. Es la misma regla de DEFAULT_PERSONA — un dato de ejemplo puesto
+ * para que no quede vacío se convierte en una mentira dicha con seguridad.
+ */
+function detalleDeSede(sede: any): string {
+  const partes: string[] = [];
+
+  const direccion = String(sede?.direccion || '').trim();
+  if (direccion) partes.push(direccion);
+
+  const telefonos = Array.isArray(sede?.telefonos) ? sede.telefonos : [];
+  const numerosDeTipo = (tipoBuscado: string) =>
+    telefonos
+      .filter((t: any) => String(t?.tipo || '').trim().toLowerCase() === tipoBuscado)
+      .map((t: any) => String(t?.numero || '').trim())
+      .filter(Boolean);
+
+  const agrupar = (etiqueta: string, numeros: string[]) => {
+    if (numeros.length) partes.push(`${etiqueta}: ${numeros.join(' o ')}`);
+  };
+
+  agrupar('llamadas y WhatsApp', numerosDeTipo('ambos'));
+  agrupar('solo llamadas, NO recibe WhatsApp', numerosDeTipo('llamada'));
+  agrupar('solo WhatsApp, NO recibe llamadas', numerosDeTipo('whatsapp'));
+  // Sin tipo declarado no se descarta el número: se ofrece a secas, sin
+  // afirmar para qué sirve, que es lo honesto cuando no se sabe.
+  agrupar('teléfono', numerosDeTipo(''));
+
+  return partes.join(' | ');
+}
+/**
  * Convierte lo que el dueño configuró en el panel en fichas consultables.
  *
  * Los nombres de los campos son genéricos a propósito (`garantía`, `entrega`,
@@ -37,8 +82,53 @@ async function fichasDelNegocio(supabase: any, orgId: string): Promise<FichaNego
     if (texto) fichas.push({ id, title, content: texto });
   };
 
-  agregar('direccion', 'Dirección', info.address);
-  agregar('telefono', 'Teléfono de contacto', info.phone);
+  /**
+   * Sedes. Un negocio con varios locales no cabe en un solo campo de dirección
+   * y un solo teléfono, que es lo único que había hasta el 03-ago-2026.
+   *
+   * Cuando hay sedes cargadas, ellas son la única verdad y NO se emiten las
+   * fichas sueltas de dirección y teléfono: si no, el bot tendría dos fuentes
+   * para lo mismo y a «¿dónde quedan?» podría contestar con una sola. Sin
+   * sedes cargadas se mantienen las fichas de siempre, para no dejar mudo a
+   * ningún negocio que todavía no las haya llenado.
+   */
+  const sedes = (Array.isArray(info.sedes) ? info.sedes : []).filter(
+    (s: any) => String(s?.direccion || '').trim() || (Array.isArray(s?.telefonos) && s.telefonos.length)
+  );
+
+  if (sedes.length > 0) {
+    for (const s of sedes) {
+      const nombre = String(s?.nombre || '').trim();
+      const detalle = detalleDeSede(s);
+      if (detalle) agregar(`sede:${nombre || detalle}`, nombre ? `Sede ${nombre}` : 'Sede', detalle);
+    }
+
+    /**
+     * Ficha de resumen. El título nombra a propósito todas las palabras con
+     * las que un cliente pregunta esto —sede, sucursal, dirección, ubicación, local,
+     * sucursal, teléfono—, porque el buscador puntúa el título por encima del
+     * contenido y así una pregunta suelta («¿dónde quedan?») cae aquí y se
+     * lleva TODAS las sedes, no una.
+     */
+    const resumen = sedes
+      .map((s: any) => {
+        const nombre = String(s?.nombre || '').trim();
+        const detalle = detalleDeSede(s);
+        return nombre ? `${nombre}: ${detalle}` : detalle;
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    agregar(
+      'sedes',
+      'Sedes, sucursales, direcciones, ubicación, locales y teléfonos de contacto',
+      `El negocio atiende en ${sedes.length} sede(s):\n${resumen}`
+    );
+  } else {
+    agregar('direccion', 'Dirección', info.address);
+    agregar('telefono', 'Teléfono de contacto', info.phone);
+  }
+
   agregar('email', 'Correo de contacto', info.email);
   agregar('web', 'Sitio web', info.website);
   agregar('garantia', 'Garantía', info.warranty);
@@ -126,7 +216,12 @@ function buscarEnFichas(fichas: FichaNegocio[], consulta: string): FichaNegocio[
   const casan = (palabraDelTitulo: string, término: string): boolean =>
     palabraDelTitulo === término ||
     (término.length >= 4 && palabraDelTitulo.includes(término)) ||
-    (palabraDelTitulo.length >= 4 && término.includes(palabraDelTitulo));
+    (palabraDelTitulo.length >= 4 && término.includes(palabraDelTitulo)) ||
+    // Misma familia de palabra: «ubicados» y «ubicación» comparten «ubica».
+    // Sin esto, a «¿dónde quedan ubicados?» el buscador no encontraba nada.
+    (palabraDelTitulo.length >= 5 &&
+      término.length >= 5 &&
+      palabraDelTitulo.slice(0, 5) === término.slice(0, 5));
 
   return fichas
     .map(f => {
