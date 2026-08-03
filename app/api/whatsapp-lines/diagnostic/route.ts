@@ -93,6 +93,13 @@ export async function GET() {
         keepAliveErrors: bd.keepAliveErrors || 0,
         sessionOnDisk,
         isZombie,
+        /**
+         * La línea se cae a intervalos regulares. El puente lo detecta con tres
+         * cortes seguidos separados por un hueco parecido; suele ser la sesión
+         * de ese número y se arregla re-vinculándolo. Ver `anotarCorte` en
+         * wa-server-baileys/server.js.
+         */
+        cicloDeCortes: bd.cicloDeCortes || null,
         // Qué puente atiende esta línea, para que el panel no tenga que
         // adivinarlo mientras coexisten el puente viejo y Baileys.
         bridge: bd.bridge || 'whatsapp-web.js',

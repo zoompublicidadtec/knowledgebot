@@ -913,6 +913,17 @@ function blankState() {
         sock: null,
         status: 'initializing',
         connectedAt: null,
+        /**
+         * Momentos de los ultimos cortes, para reconocer un CICLO.
+         *
+         * Una caida suelta no dice nada: la red se cae, WhatsApp reinicia. Lo
+         * que delata un problema de fondo es que se repita SIEMPRE cada tanto
+         * (medido el 02-ago: cada 50m04s en una linea, mientras las otras dos
+         * llevaban horas intactas). Un humano solo lo ve leyendo registros;
+         * esto lo pone en el panel.
+         */
+        cortes: [],
+        cicloDeCortes: null,
         phoneNumber: null,
         keepAliveErrors: 0,
         lastError: null,
@@ -1146,6 +1157,61 @@ async function startSession(line, motivo = 'inicial') {
             // timeout en cuentas con mucho historial (probado el 23-jul-2026).
             syncHistory: false,
             markOnlineOnConnect: false,
+
+            /**
+             * LA BASURA SE RECHAZA EN LA PUERTA, NO SE TIRA DESPUÉS.
+             *
+             * EL FALLO QUE ESTO CIERRA (medido el 02-ago-2026)
+             * -----------------------------------------------
+             * El bot recibía los ESTADOS que publican los contactos del número
+             * (`status@broadcast`) y los mensajes de grupo. No puede abrirlos
+             * —no tiene la llave de esa persona y nunca la va a tener—, así que
+             * hacía lo único que sabe: **pedirle a WhatsApp que se los reenvíe**.
+             * WhatsApp los reenvía, vuelve a fallar, los pide otra vez. Para
+             * siempre.
+             *
+             * En el registro, en tres horas:
+             *   linea_3 → 7 fallos desde `status@broadcast` + 1 de grupo,
+             *             cada uno con su «sent retry receipt». Ninguno llegó
+             *             nunca. Y es la línea que se cae cada 50m04s.
+             *   linea_1 → 26 fallos, todos de UNA persona real (`@lid`). Esos
+             *             SÍ se resuelven: falla, pide reenvío, y al segundo
+             *             intento «Mensaje recibido». Y esa línea NO se cae.
+             *
+             * Esa es la diferencia: lo de una persona se cura solo; **un estado
+             * no se cura nunca**, se queda pendiente del lado de WhatsApp, y
+             * cada ~50 minutos WhatsApp termina el flujo.
+             *
+             * LO ABSURDO: el sistema YA tira esos chats. `/diagnostic` cuenta
+             * 178 descartados (85 difusiones y estados, 84 grupos, 9 canales).
+             * Pero el filtro estaba en `handleIncoming`, que corre DESPUÉS de
+             * que la librería intentó abrirlos y pidió el reenvío. La regla
+             * correcta, en el lugar equivocado — el mismo error que con los
+             * stickers.
+             *
+             * Aquí la librería, al ignorar un chat, **le acusa recibo a
+             * WhatsApp y no lo abre** (`Socket/messages-recv.js:610`, y lo
+             * mismo para avisos y acuses en :578 y :500). Ese acuse es lo que
+             * hace que WhatsApp lo dé por entregado y **deje de reenviarlo**.
+             *
+             * SE USA LA MISMA REGLA DE SIEMPRE, `esChatDePersona`: no hay una
+             * segunda lista que pueda quedar desincronizada de la primera.
+             *
+             * ANTE LA DUDA, PASA. Sin `jid` no se ignora nada: dejar entrar de
+             * más solo ensucia un poco; dejar fuera de más pierde un cliente en
+             * silencio, que es el error que este proyecto ya cometió enumerando
+             * las líneas una por una.
+             *
+             * Y el descarte SIGUE SIN SER MUDO: cada chat rechazado se cuenta
+             * por dominio en `/diagnostic` y se anota una vez en el registro,
+             * con qué hacer si resultara ser un cliente real.
+             */
+            shouldIgnoreJid: (jid) => {
+                if (!jid) return false;
+                if (esChatDePersona(jid)) return false;
+                registrarChatNoPersona(line, jid);
+                return true;
+            },
         });
 
         st.sock = sock;
@@ -1275,6 +1341,7 @@ async function startSession(line, motivo = 'inicial') {
                 st.starting = false;
                 st.lastError = lastDisconnect?.error?.message || 'conexión cerrada';
                 st.lastErrorAt = new Date().toISOString();
+                anotarCorte(st, line);
                 // El socket ya esta muerto: se desmonta para que no siga
                 // emitiendo eventos que provoquen mas reconexiones.
                 teardownSocket(st, line);
@@ -1521,6 +1588,58 @@ function registrarChatNoPersona(line, jid) {
     );
 }
 
+/**
+ * ¿ESTA LINEA SE CAE EN CICLO?
+ *
+ * Con tres cortes seguidos separados por un intervalo parecido (entre 40 y 70
+ * minutos), no es mala suerte: es un reloj. Se anota para que el panel lo diga
+ * con su causa probable y su reparacion, en vez de que alguien tenga que
+ * sospecharlo y ponerse a leer registros.
+ *
+ * NO se apaga ni se desvincula nada solo: desvincular obliga a que una persona
+ * escanee un QR, y hacerlo por su cuenta dejaria un local mudo sin que nadie se
+ * entere. Detecta y avisa; decidir es del dueño.
+ */
+function anotarCorte(st, line) {
+    const ahora = Date.now();
+    // Solo interesan las ultimas horas: un corte de ayer no forma ciclo con
+    // uno de hoy.
+    st.cortes = (st.cortes || []).filter((t) => ahora - t < 4 * 3600 * 1000);
+    st.cortes.push(ahora);
+    if (st.cortes.length < 3) return;
+
+    const [a, b, c] = st.cortes.slice(-3);
+    const hueco1 = (b - a) / 60000;
+    const hueco2 = (c - b) / 60000;
+    const enCiclo =
+        hueco1 >= 40 && hueco1 <= 70 &&
+        hueco2 >= 40 && hueco2 <= 70;
+    if (!enCiclo) return;
+
+    st.cicloDeCortes = {
+        veces: st.cortes.length,
+        cadaMinutos: Math.round((hueco1 + hueco2) / 2),
+        ultimoISO: new Date(ahora).toISOString(),
+    };
+    logger.error(
+        { line, ...st.cicloDeCortes },
+        'LINEA EN CICLO DE CORTES: se desconecta a intervalos regulares. Suele ser la sesion de ese numero, no el sistema: re-vincular la linea (desvincular y escanear el QR) le da una sesion nueva.'
+    );
+}
+
+/** El ciclo se olvida solo si la linea aguanta mas de una vuelta entera. */
+function cicloVigente(st) {
+    if (!st?.cicloDeCortes) return null;
+    const ultimo = new Date(st.cicloDeCortes.ultimoISO).getTime();
+    const margen = (st.cicloDeCortes.cadaMinutos + 20) * 60000;
+    if (Date.now() - ultimo > margen) {
+        st.cicloDeCortes = null;
+        st.cortes = [];
+        return null;
+    }
+    return st.cicloDeCortes;
+}
+
 async function handleIncoming(line, msg, sock) {
     const jid = msg.key.remoteJid;
     if (!jid) return;
@@ -1750,6 +1869,9 @@ function describeSessions() {
             rechazosSeguidos: st.rechazosSeguidos || 0,
             // Restriccion declarada por WhatsApp sobre la cuenta, si la hay.
             restriccionWhatsApp: restriccionVigente(st, line),
+            // Cortes a intervalos regulares: el panel lo muestra con su causa
+            // probable y su reparacion. Se olvida solo si la linea aguanta.
+            cicloDeCortes: cicloVigente(st),
         };
     }
     return out;

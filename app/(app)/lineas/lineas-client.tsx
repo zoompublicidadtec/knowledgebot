@@ -30,6 +30,11 @@ interface LineDiagnostic {
   keepAliveErrors: number;
   sessionOnDisk: boolean;
   isZombie: boolean;
+  /**
+   * La línea se desconecta a intervalos regulares (no una vez suelta: un
+   * reloj). Trae cada cuántos minutos y cuándo fue el último.
+   */
+  cicloDeCortes: { veces: number; cadaMinutos: number; ultimoISO: string } | null;
 }
 
 interface DiagnosticResponse {
@@ -389,6 +394,36 @@ function LineCard({ line, onRenombrada }: { line: LineDiagnostic; onRenombrada?:
         </div>
         <StatusBadge isConnected={isConnected} isZombie={isZombie} loaded={line.loaded} />
       </div>
+
+      {/*
+        LÍNEA QUE SE CAE EN CICLO.
+
+        Va ARRIBA de todo y con la reparación escrita, porque este fallo es
+        invisible: la línea se cae unos segundos y vuelve sola, así que en el
+        panel siempre se ve «conectada». El 02-ago-2026 una línea llevaba horas
+        cayéndose cada 50m04s y solo se descubrió leyendo registros a mano. Con
+        8 puntos de venta eso no puede depender de que alguien sospeche.
+      */}
+      {line.cicloDeCortes && (
+        <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
+          <Warning size={16} className="text-amber-400 mt-0.5 shrink-0" weight="fill" />
+          <div className="text-[11px] leading-relaxed">
+            <p className="text-amber-200 font-semibold">
+              Esta línea se desconecta sola cada {line.cicloDeCortes.cadaMinutos} minutos
+              {' '}({line.cicloDeCortes.veces} veces).
+            </p>
+            <p className="text-slate-300 mt-1">
+              Vuelve sola en unos segundos, así que casi no se nota, pero no es
+              normal. Suele ser algo trabado en la sesión de este número —no en
+              el sistema: las otras líneas siguen igual.
+            </p>
+            <p className="text-amber-100 mt-1">
+              <span className="font-semibold">Qué hacer:</span> desvincular este
+              número y volver a escanear el QR. Le da una sesión nueva y limpia.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Grilla de diagnóstico */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">

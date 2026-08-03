@@ -455,21 +455,43 @@ de captura en el Excel de origen.
 Ambas líneas responden (`keepAliveErrors: 0`). Se deja anotado porque el estado
 de las líneas cambia solo: comprobar siempre en el Centro de Control.
 
-### 🔴 Una línea se cae cada 50 minutos, y NO es del código
-**Es de la sesión de esa línea, no del sistema.** Medido el 02-ago sobre 2h15m:
-`linea_1` y `linea_2` llevaron **cero caídas**, y `linea_3` se cayó dos veces —
-22:57:48 y 23:47:52, **50m04s exactos**— siempre con el mismo mensaje atascado
-(`3A0DF74A8F30B473DED8`, un adjunto que ni siquiera está en nuestra base).
+### ⚠️ La caída cada 50 minutos: causa encontrada, arreglo en observación
+**Lo que se trababa eran los ESTADOS**, las historias que publican los contactos
+del número. WhatsApp se los manda a todos los dispositivos vinculados, incluido
+el bot. El bot no puede abrirlos —no tiene la llave de esa persona y nunca la va
+a tener— así que **le pide a WhatsApp que se los reenvíe**. WhatsApp los
+reenvía, falla otra vez, los pide otra vez. Para siempre.
 
-Cada 50m04s WhatsApp reenvía el acuse de ese mensaje dentro de un `stream:error`
-y **acto seguido cierra el socket él mismo** (428, `ws.on('close')`). Se probó
-quitar el corte proactivo de Baileys: **no evita la caída**, porque el que corta
-es WhatsApp. La línea reconecta sola en **4 segundos**.
+El contraste que lo prueba, medido el 02-ago sobre 3 h:
 
-> **Qué hacer:** re-vincular esa línea desde el panel (desvincular y escanear el
-> QR de nuevo). Le da una sesión nueva y vacía la cola de WhatsApp.
-> **Qué NO hacer:** buscar el fallo en el puente. Las otras dos líneas corren el
-> mismo código sin una sola caída.
+| Línea | Qué no pudo descifrar | ¿Se resolvió? | ¿Se cae? |
+|---|---|---|---|
+| `linea_1` | 26 mensajes de **una persona real** (`@lid`) | ✅ sí, al 2.º reintento | **no** |
+| `linea_3` | **7 estados** + 1 de grupo | ❌ nunca | **sí, cada 50m04s** |
+
+Lo de una persona se cura solo. **Un estado no se cura nunca**: queda pendiente
+del lado de WhatsApp y cada ~50 min WhatsApp termina el flujo (428, cierra él
+mismo el socket). La línea reconecta sola en 4 segundos, y por eso el fallo es
+casi invisible: el panel siempre dice «conectada».
+
+**El arreglo (03-ago):** el filtro de «solo personas» que ya existía se movió a
+la **puerta** (`shouldIgnoreJid` de Baileys). Al ignorar un chat, la librería le
+**acusa recibo a WhatsApp y no lo abre**, y ese acuse es lo que hace que deje de
+reenviarlo. Antes el filtro estaba en `handleIncoming`, **después** de que la
+librería ya había fallado y pedido el reenvío: la regla correcta en el lugar
+equivocado, el mismo error que con los stickers.
+
+> **Sirve para las 8 líneas**, no para una: cualquier número recibe los estados
+> de sus contactos.
+> **La prueba de fondo es el tiempo:** ver a `linea_3` pasar 2 h sin caerse.
+> Si aun así cayera, entonces sí toca re-vincular ese número.
+
+### ✅ El panel avisa si una línea se cae en ciclo (03-ago-2026)
+El puente detecta tres cortes seguidos con huecos parecidos (40-70 min) y lo
+publica en `/diagnostic` como `cicloDeCortes`; el panel de Líneas lo muestra
+arriba de la tarjeta con la causa probable y la reparación. **Nunca desvincula
+solo:** desvincular obliga a que una persona escanee un QR, y hacerlo por su
+cuenta dejaría un local mudo sin que nadie se entere.
 
 ### 🔴 El total combinado: nadie verifica la suma
 El bot cotiza **un concepto por vez** y los lista por separado. Un aviso de 3×1 m
