@@ -130,13 +130,56 @@ const MARCADORES_DE_MAQUINA = [
   // "pedido" quedan FUERA a propósito: "estamos procesando tu pedido" es
   // lenguaje normal de un vendedor.
   'proces(?:ar|ando|o|amos)\\s+(?:la|tu|su)\\s+(?:consulta|petición|peticion)',
-  // Con verbo de máquina detrás, para no tapar "el sistema de impresión DTF".
-  '(?:el|mi|nuestro) sistema (?:no me |no permite|no tiene|me (?:indica|dice|arroja|muestra|devuelve)|arroj|devuel|report|registr)',
+  /**
+   * «El sistema» a secas es lenguaje de máquina y no lo dice ningún vendedor.
+   * Con «de» detrás es lenguaje de producto —«el sistema de impresión DTF»,
+   * «sistema de cierre hermético»— y ESO no se toca.
+   *
+   * Antes esto era una lista de verbos («el sistema no me deja…»), y se le
+   * escapó la frase que vio el dueño el 03-ago: «El sistema se encarga de
+   * enviarlas automáticamente». Enumerar los verbos era jugar al gato y al
+   * ratón; la marca real es la palabra sin el «de».
+   */
+  '\\b(?:el|mi|nuestro) sistemas?\\b(?!\\s+de\\b)',
   'consultar (?:el|mi|nuestro) sistema',
 ];
 
+/**
+ * Familia 3 — LA FONTANERÍA. El bot contando cómo se entregan los mensajes.
+ *
+ * EL FALLO QUE ESTO CIERRA (captura del dueño, 03-ago-2026)
+ * --------------------------------------------------------
+ * El bot le escribió a un cliente:
+ *   «Disculpa, parece que hubo un problema y no se adjuntó la foto.
+ *    El sistema se encarga de enviarlas automáticamente.»
+ *
+ * Dos cosas mal en dos renglones. Suena a máquina, y además —palabras del
+ * dueño— **si la foto se envió, decirlo sobra**: es información que al cliente
+ * no le sirve de nada y gasta tokens en cada mensaje.
+ *
+ * La marca de esta familia es la voz impersonal sobre el mecanismo: «se
+ * adjuntó», «se envían solas», «el sistema se encarga». Un vendedor de verdad
+ * habla en primera persona —«te la mando», «te adjunto el diseño»— y eso pasa
+ * entero: es exactamente el discriminante que se usa aquí.
+ *
+ * OJO CON LA TILDE: «envían» y «envío» llevan í; «enviarlas» y «envió» no.
+ * `env[íi]` cubre las cuatro. Sin eso, «se envían solas» se colaba.
+ */
+const MARCADORES_DE_FONTANERIA = [
+  'no se (?:adjunt|env[íi]|carg|pud|compart)',
+  '\\bse (?:encarga|encargan) de (?:env[íi]|adjunt|mand|compart)',
+  '\\b(?:env[íi]|mand|adjunt|carg)\\w*\\s+(?:de (?:forma|manera) )?autom',
+  '\\bse (?:adjunt|env[íi]|carg)\\w*\\s+(?:de (?:forma|manera) )?autom',
+  'hubo un (?:problema|error) (?:al|con la|con el|y no se)\\s*(?:adjunt|env[íi]|carg|mostr|proces)',
+];
+
 const IDENTITY_MARKERS = new RegExp(
-  '(' + MARCADORES_DE_IDENTIDAD.concat(MARCADORES_DE_MAQUINA).join('|') + ')',
+  '(' +
+    MARCADORES_DE_IDENTIDAD
+      .concat(MARCADORES_DE_MAQUINA)
+      .concat(MARCADORES_DE_FONTANERIA)
+      .join('|') +
+    ')',
   'i'
 );
 
@@ -207,6 +250,48 @@ function assembleText(finalText: string, steps: any[]): string {
     return completos.reduce((a, b) => (b.length > a.length ? b : a));
   }
   return candidatos.reduce((a, b) => (b.length > a.length ? b : a), tail);
+}
+
+/**
+ * «4 insertos y 2 insertos» → «6 insertos».
+ *
+ * EL FALLO QUE ESTO CIERRA (captura del dueño, 03-ago-2026)
+ * --------------------------------------------------------
+ * El catálogo NO tiene un producto de 6 insertos: el precio se arma sumando
+ * 4 + 2, y por eso el prompt manda desglosar. Pero **ese desglose es cuenta
+ * NUESTRA**: el cliente pidió 6 y tiene que leer 6. Palabras del dueño:
+ * «dividió los insertos para el cliente y eso no es lo correcto».
+ *
+ * SE HACE AQUÍ, EN CÓDIGO, Y NO PIDIÉNDOSELO AL MODELO. Se intentó primero
+ * por el prompt —se le añadió «el desglose es para calcular, no para contar»,
+ * se desplegó, y siguió partiéndolos igual—. Es la regla del proyecto
+ * demostrada sobre sí misma: lo que obliga son los guardrails deterministas,
+ * no las instrucciones.
+ *
+ * Va DESPUÉS del candado, junto al formato de las cifras: para entonces las
+ * referencias ya se verificaron, así que quitar las de los componentes no
+ * debilita ninguna comprobación.
+ *
+ * Solo une lo que está en la MISMA línea (`[ \t]`, nunca `\s`): una lista de
+ * opciones en renglones distintos —«- 4 insertos» / «- 2 insertos»— son dos
+ * opciones, no una suma.
+ */
+const PAR_DE_INSERTOS =
+  /(\d+)[ \t]+insertos?(?:[ \t]*\([ \t]*Ref[^)]*\))?[ \t]*(?:,|y)[ \t]+(\d+)[ \t]+insertos?(?:[ \t]*\([ \t]*Ref[^)]*\))?/gi;
+
+function unificarInsertos(text: string): string {
+  if (!text) return text;
+  let antes = text;
+  // Se repite para juntar tres piezas o más (8+1, 4+3, …).
+  for (let i = 0; i < 3; i++) {
+    const despues = antes.replace(
+      PAR_DE_INSERTOS,
+      (_m, a: string, b: string) => `${Number(a) + Number(b)} insertos`
+    );
+    if (despues === antes) break;
+    antes = despues;
+  }
+  return antes;
 }
 
 /** "$77900" -> "$77.900". El modelo escribe la cifra cruda de la calculadora. */
@@ -1128,7 +1213,7 @@ ${lineas}`;
 
       if (!guardrailResult.blocked) {
         // Pasó → entregar al cliente
-        finalResponse = formatPricesForColombia(cleanedResponse);
+        finalResponse = unificarInsertos(formatPricesForColombia(cleanedResponse));
         logger.info('CANDADO v4: Respuesta APROBADA en el intento', { attempt: attempt + 1, reason: guardrailResult.reason });
         break;
       }

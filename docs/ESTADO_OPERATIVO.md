@@ -493,12 +493,21 @@ arriba de la tarjeta con la causa probable y la reparación. **Nunca desvincula
 solo:** desvincular obliga a que una persona escanee un QR, y hacerlo por su
 cuenta dejaría un local mudo sin que nadie se entere.
 
-### 🔴 El total combinado: nadie verifica la suma
-El bot cotiza **un concepto por vez** y los lista por separado. Un aviso de 3×1 m
-con LED, instalado y con diseño sale como tres renglones sueltos y **la suma no
-la verifica nadie**, porque el candado antialucinación comprueba de dónde salió
-cada precio, no el total. Hace falta una «cotización armada» que junte conceptos
-y pase el total por la calculadora. Resuelve también «bolígrafo con DTF UV».
+### 🔴 El total combinado: nadie verifica la suma — MEDIDO el 03-ago
+El bot cotiza **un concepto por vez** y suma él mismo. El candado comprueba **de
+dónde salió cada precio**, no si la suma está bien ni si la tarifa era la del
+pedido. Y no es teórico:
+
+> Misma frase («20 cuadernos argollados 120 hojas 1/2 octavo, con 6 insertos»),
+> contacto nuevo, **tres corridas**: **$487.000, $487.000 y $415.000**.
+> La correcta es $487.000 (base $16.000 + 4 insertos $5.350 + 2 insertos $3.000
+> = $24.350 × 20). En la mala, el modelo usó tarifas equivocadas de los
+> adicionales y **nadie lo detectó**: el cliente habría recibido una cotización
+> **$72.000 por debajo, un 15 %**.
+
+Hace falta una «cotización armada» que junte los conceptos y **pase el total por
+la calculadora**, en vez de dejar la aritmética al modelo. Resuelve también
+«bolígrafo con DTF UV» y «aviso de 3×1 m con LED, instalado y con diseño».
 
 ### 🔴 El bot cotiza lo más parecido en vez de decir que no lo tiene
 A «¿venden llantas para camión?» contestó «eso puntual no lo manejamos» y acto
