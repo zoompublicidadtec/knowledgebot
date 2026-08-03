@@ -455,7 +455,16 @@ de captura en el Excel de origen.
 Ambas líneas responden (`keepAliveErrors: 0`). Se deja anotado porque el estado
 de las líneas cambia solo: comprobar siempre en el Centro de Control.
 
-### ⚠️ La caída cada 50 minutos: causa encontrada, arreglo en observación
+### ✅ La caída cada 50 minutos: RESUELTA (medida el 03-ago-2026)
+**La prueba pasó.** Tras mover el filtro a la puerta (reinicio 02:23:50 UTC),
+`linea_3` cruzó la marca de los 50 minutos **sin cortarse**: a los 53 min y a
+los 58 min seguía conectada con su `connectedAt` original, y las tres líneas
+sumaron **cero cortes, cero fallos de descifrado y cero pedidos de reenvío**.
+Antes se caía a los **50m04s**, sin fallar una sola vez. En esos mismos 53
+minutos la puerta rechazó **12 estados, 5 grupos y 3 canales**: justo el tráfico
+que causaba el bucle.
+
+
 **Lo que se trababa eran los ESTADOS**, las historias que publican los contactos
 del número. WhatsApp se los manda a todos los dispositivos vinculados, incluido
 el bot. El bot no puede abrirlos —no tiene la llave de esa persona y nunca la va

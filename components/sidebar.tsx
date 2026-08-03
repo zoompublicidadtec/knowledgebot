@@ -15,6 +15,8 @@ import {
   Kanban,
   Pulse,
   Cpu,
+  BookOpen,
+  Graph,
 } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { logoutAction } from '@/lib/auth/actions';
@@ -26,6 +28,12 @@ const navItems = [
   { href: '/kanban', label: 'Pipeline / Kanban', icon: Kanban },
   { href: '/personalizacion', label: 'Personalización', icon: SlidersHorizontal },
   { href: '/integraciones', label: 'Integraciones', icon: Plugs },
+  /**
+   * El manual va en el menú principal, con su nombre y todo: es para quien usa
+   * la plataforma y tiene que encontrarlo sin preguntar. Se abre en otra
+   * pestaña porque es un documento, no una pantalla del panel.
+   */
+  { href: '/api/documentos/manual', label: 'Manual', icon: BookOpen, externo: true },
 ];
 
 // /lineas es una herramienta de administración sutil: no aparece como sección
@@ -94,6 +102,8 @@ export function Sidebar({ orgName }: { orgName?: string }) {
               <Link
                 key={item.href}
                 href={item.href}
+                target={(item as any).externo ? '_blank' : undefined}
+                rel={(item as any).externo ? 'noreferrer' : undefined}
                 className={`sidebar-link ${isActive ? 'active' : ''}`}
                 onClick={() => setMobileOpen(false)}
               >
@@ -141,6 +151,26 @@ export function Sidebar({ orgName }: { orgName?: string }) {
               >
                 <Cpu size={18} weight={pathname === '/control-room' || pathname.startsWith('/control-room/') ? 'fill' : 'regular'} />
               </Link>
+
+              {/*
+                Grafo del código. Va con el MISMO tono casi invisible que el
+                Centro de Control: está para quien sabe que está, no para quien
+                pasa por ahí. Y del otro lado la ruta solo responde al `owner`;
+                a cualquier otro le contesta 404, así que ni siquiera se entera
+                de que existe.
+              */}
+              <a
+                href="/api/documentos/grafo"
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMobileOpen(false)}
+                title="Grafo del código"
+                aria-label="Grafo del código"
+                className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors
+                           text-slate-600/30 hover:text-slate-300 hover:bg-white/5"
+              >
+                <Graph size={18} />
+              </a>
             </div>
 
             {/* Cerrar sesión como ícono minimalista al extremo derecho */}

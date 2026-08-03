@@ -345,6 +345,57 @@ function extractCitedReferences(text: string): string[] {
 }
 
 /**
+ * NO SE LE PIDEN AL CLIENTE DATOS DE ALGO QUE NO SABEMOS COTIZAR.
+ *
+ * EL FALLO QUE ESTO CIERRA (captura del dueño, 03-ago-2026)
+ * --------------------------------------------------------
+ * El cliente preguntó «¿y ya vienen marcados?» y el bot abrió un camino sin
+ * salida: le pidió el tamaño del logo, luego la técnica, luego el número de
+ * colores —tres turnos— y terminó en «Disculpa, parece que hubo un error al
+ * intentar cotizar la tampografía». Cinco mensajes gastados y cero venta.
+ *
+ * La causa está en los DATOS, no en el modelo: el catálogo **no tiene ninguna
+ * marcación para cuadernos**. Los únicos servicios de marcación que existen son
+ * bordado y dos tampografías atadas a otro producto («sobre manilla lisa»,
+ * «sobre llavero»). El modelo se inventó el camino con su conocimiento general
+ * de la industria, porque en publicidad «cuaderno + logo» suena a serigrafía.
+ *
+ * Lo que sí existe y sí tiene tarifa para un cuaderno son los adicionales:
+ * insertos, filtro UV, guardas, cosido y diseño. **Eso es lo que hay que
+ * ofrecer.**
+ *
+ * LA REGLA: si la respuesta le pide al cliente un dato de marcación —técnica,
+ * tintas, tamaño del logo— y `searchCatalog` NO devolvió en este turno ningún
+ * servicio de marcación, se bloquea. Si el catálogo SÍ devolvió uno (una
+ * tampografía sobre llavero, un DTF, un bordado), preguntar está bien y pasa.
+ *
+ * Es el mismo principio que ya rige en `DEFAULT_PERSONA`: si el dato no está,
+ * no se inventa; se dice que se consulta con el equipo.
+ */
+const PIDE_DATOS_DE_MARCACION =
+  /(?:cuántos|cuantos|qué|que)\s+(?:colores|tintas)\b|(?:qué|que)\s+técnica|técnica\s+de\s+(?:marcaci|impresi|marcad)|(?:tamaño|medidas)\s+(?:de|del)\s+(?:tu\s+)?logo|serigrafía\s+o\s+tampografía|tampografía\s+o\s+serigrafía|te\s+cotice?\s+la\s+marcaci/i;
+
+/** Nombres de servicio que SÍ respaldan una pregunta sobre marcación. */
+const SERVICIO_DE_MARCACION = /tampograf|serigraf|bordad|marcaci|grabad|sublimac|screen|dtf|vinilo|l[áa]ser|estampad/i;
+
+/** Nombres de producto que searchCatalog devolvió en este turno. */
+function nombresDeCatalogo(steps: any[]): string[] {
+  const out: string[] = [];
+  for (const step of steps || []) {
+    for (const tr of step.toolResults || []) {
+      if (tr.toolName !== 'searchCatalog') continue;
+      const raw = (tr as any).output ?? (tr as any).result;
+      if (!raw) continue;
+      try {
+        const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        for (const m of r?.matches || []) if (m?.name) out.push(String(m.name));
+      } catch { /* resultado no parseable: se ignora */ }
+    }
+  }
+  return out;
+}
+
+/**
  * Detecta el patrón "pregunta y pregunta sin vender": el bot responde sin haber
  * ejecutado searchCatalog y sin dar un solo precio, mientras el cliente ya
  * expresó una necesidad. Es el fallo que agota tokens sin llegar a la venta.
@@ -414,6 +465,20 @@ async function applyOutputGuardrail(
           consultas, pidio: [...palabrasPedidas].join(','),
         });
         return { blocked: true, reason: 'search-off-topic' };
+      }
+    }
+
+    // 0.1 NO PIDAS DATOS DE UNA MARCACIÓN QUE NO SABEMOS COTIZAR. Va junto a
+    //     los demás candados de causa, antes de mirar precios: el mal ya está
+    //     hecho en el momento en que se le pregunta al cliente por la técnica.
+    if (PIDE_DATOS_DE_MARCACION.test(responseText)) {
+      const nombres = nombresDeCatalogo(steps);
+      const respaldada = nombres.some((n) => SERVICIO_DE_MARCACION.test(n));
+      if (!respaldada) {
+        logger.error('GUARDRAIL: pide datos de una marcación que el catálogo no cotiza', {
+          devolvio: nombres.slice(0, 6),
+        });
+        return { blocked: true, reason: 'servicio-sin-tarifa' };
       }
     }
 
@@ -1062,6 +1127,11 @@ ${lineas}`;
         'BLOQUEADO DE NUEVO. No preguntes nada. Busca, cotiza y muestra 3 opciones con precios reales ahora mismo.',
         'ÚLTIMO INTENTO. Ejecuta searchCatalog + getProductPrice y entrega 3 opciones con precio, sin una sola pregunta previa.',
       ],
+      'servicio-sin-tarifa': [
+        'ALTO. Le estás pidiendo al cliente datos de una marcación (técnica, tintas, tamaño del logo) que NO sabemos cotizar: searchCatalog no devolvió ningún servicio de marcación para este producto. No le pidas ni uno de esos datos. Dile en UNA línea que la marcación se cotiza aparte y que se la confirmas, y ofrécele los adicionales que SÍ existen para este producto —búscalos con searchCatalog y cotízalos con getProductPrice— con su precio.',
+        'BLOQUEADO DE NUEVO. Nada de técnicas, tintas ni tamaños de logo. Ofrece únicamente los adicionales que devuelva searchCatalog para este producto, con su precio, y una sola línea diciendo que la marcación la confirmas aparte.',
+        'ÚLTIMO INTENTO. Responde sin pedir un solo dato de marcación: los adicionales que existen con su precio, y una línea diciendo que la marcación la confirmas con el equipo.',
+      ],
       'search-off-topic': [
         'ALTO. Buscaste en el catálogo con {BUSCADO}, pero el cliente acaba de pedir: {PEDIDO}. Le estás ofreciendo lo de antes. Ejecuta searchCatalog con las palabras EXACTAS que él escribió. Si no aparece nada que sirva, NO repitas lo que ya ofreciste: dile con naturalidad que quieres entenderle bien y hazle 1 o 2 preguntas cortas sobre lo que necesita.',
         'BLOQUEADO DE NUEVO. Olvida los productos de los mensajes anteriores. El cliente pidió: {PEDIDO}. Búscalo con esas palabras, y si no hay resultados pregúntale a qué se refiere. PROHIBIDO volver a listar lo ya ofrecido.',
@@ -1089,6 +1159,18 @@ ${lineas}`;
     // justo lo que le estamos pidiendo. Sin esto, el candado del interrogatorio
     // volvería a empujarlo a cotizar lo primero que tenga a mano.
     let permitirPreguntar = false;
+    /**
+     * Tras bloquear por pedir datos de una marcación que no sabemos cotizar, la
+     * orden que se le da al modelo es «ofrece los adicionales que SÍ existen».
+     * Buscar «inserto» o «filtro uv» cuando el cliente escribió «¿vienen
+     * marcados?» dispararía el candado de «buscó otra cosa» — y se vio pasar:
+     * los dos candados se peleaban, se agotaban los tres intentos y el cliente
+     * recibía la respuesta de respaldo en vez de los adicionales con su precio.
+     *
+     * Con esta bandera, después de ese bloqueo el candado de tema se calla: lo
+     * que el modelo está buscando es exactamente lo que se le mandó buscar.
+     */
+    let buscandoAdicionales = false;
 
     for (let attempt = 0; attempt < MAX_RECALC_ATTEMPTS; attempt++) {
       const result = await generateText({
@@ -1145,7 +1227,8 @@ ${lineas}`;
       // Revisar con el guardrail
       const guardrailResult = await applyOutputGuardrail(
         cleanedResponse, result.steps || [], permitirPreguntar ? 0 : questionStreak,
-        approvedPrices, catalogProbe.relevant, fraseOfftopic, palabrasPedidas
+        approvedPrices, catalogProbe.relevant, fraseOfftopic,
+        buscandoAdicionales ? new Set<string>() : palabrasPedidas
       );
 
       // === REPARTIDOR DE FOTOS: capturar fotos+precios del rastro del bot ===
@@ -1228,6 +1311,7 @@ ${lineas}`;
 
       // Añadir la respuesta bloqueada del bot + la orden de recalcular al historial
       if (guardrailResult.reason === 'search-off-topic') permitirPreguntar = true;
+      if (guardrailResult.reason === 'servicio-sin-tarifa') buscandoAdicionales = true;
 
       const orders = RECALC_ORDERS[guardrailResult.reason] || RECALC_ORDERS['no-calculator'];
       const orderText = (orders[attempt] || orders[orders.length - 1])

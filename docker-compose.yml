@@ -26,6 +26,12 @@ services:
     volumes:
       - ./attachments:/data/attachments
       - ./catalogo_catalogospromocionales/imagenes_productos:/data/imagenes_productos
+      # El manual y el grafo del codigo, servidos por /api/documentos/... con
+      # sesion. Van montados (solo lectura) y no copiados a la imagen porque el
+      # grafo se regenera con cada `graphify update`: asi el panel siempre
+      # muestra el ultimo sin reconstruir nada.
+      - ./MANUAL_KNOWLEDGEBOT.html:/data/documentos/MANUAL_KNOWLEDGEBOT.html:ro
+      - ./graphify-out:/data/documentos/graphify-out:ro
     logging:
       driver: "json-file"
       options:
