@@ -70,7 +70,10 @@ output.json
 /sync_handoff.js
 
 # Graphify generated output
-graphify-out/
+# El grafo se regenera y no se versiona... salvo la plantilla del diseño,
+# que es trabajo a mano y graphify la sobreescribiria sin dejar rastro.
+graphify-out/*
+!graphify-out/graph.plantilla.html
 
 # wa-server (WhatsApp bridge) — exclude session data and dependencies
 wa-server/node_modules
