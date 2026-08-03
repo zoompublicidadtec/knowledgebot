@@ -526,21 +526,38 @@ arriba de la tarjeta con la causa probable y la reparación. **Nunca desvincula
 solo:** desvincular obliga a que una persona escanee un QR, y hacerlo por su
 cuenta dejaría un local mudo sin que nadie se entere.
 
-### 🔴 El total combinado: nadie verifica la suma — MEDIDO el 03-ago
-El bot cotiza **un concepto por vez** y suma él mismo. El candado comprueba **de
-dónde salió cada precio**, no si la suma está bien ni si la tarifa era la del
-pedido. Y no es teórico:
+### ✅ El total combinado: RESUELTO el 03-ago-2026
+El bot cotizaba **un concepto por vez y sumaba él mismo**. El candado comprobaba
+**de dónde salió cada precio** y, una vez usada la calculadora, dejaba pasar
+cualquier cifra — incluido un total mal sumado.
 
-> Misma frase («20 cuadernos argollados 120 hojas 1/2 octavo, con 6 insertos»),
-> contacto nuevo, **tres corridas**: **$487.000, $487.000 y $415.000**.
-> La correcta es $487.000 (base $16.000 + 4 insertos $5.350 + 2 insertos $3.000
-> = $24.350 × 20). En la mala, el modelo usó tarifas equivocadas de los
-> adicionales y **nadie lo detectó**: el cliente habría recibido una cotización
-> **$72.000 por debajo, un 15 %**.
+> Reproducido el 03-ago con cinco corridas de la misma frase («20 cuadernos
+> argollados 120 hojas 1/2 octavo, con 6 insertos»), contacto nuevo cada vez:
+> **$487.000, $487.000, $427.000, $584.000** y una que no cotizó.
+> · $427.000 = `(16.000 + 5.350) × 20` → se le olvidaron 2 de los 6 insertos.
+> · $584.000 = `(16.000 + 10.200 + 3.000) × 20` → partió el 6 como **8+2**, o
+>   sea diez insertos, y lo escribió: «con 10 insertos».
+> **$157.000 de diferencia en el mismo pedido.**
 
-Hace falta una «cotización armada» que junte los conceptos y **pase el total por
-la calculadora**, en vez de dejar la aritmética al modelo. Resuelve también
-«bolígrafo con DTF UV» y «aviso de 3×1 m con LED, instalado y con diseño».
+**El prompt YA decía «desglosa de MAYOR a MENOR: 6 = 4+2».** Estaba escrito y
+usó 8+2 igual: una instrucción escrita no obliga, obliga el código.
+
+**Arreglo.** `buildQuote` (`lib/agent/tools/build-quote.ts`): el modelo dice QUÉ
+lleva el pedido, **sin una sola cifra**; el código lee del catálogo qué
+presentaciones existen, resuelve el desglose, busca cada tarifa, suma y
+multiplica. No adivina: si el tamaño es ambiguo devuelve las opciones para
+preguntarle al cliente. Y el candado se amplió: **la cifra más alta de la
+respuesta** —siempre el total— tiene que ser una que alguna herramienta produjo
+en el turno, o una ya aprobada, o un monto del panel.
+
+**Medido tras el arreglo:** cuaderno con 6 insertos **5/5 = $487.000** (antes
+2/5); con 7 insertos **3/3 = $512.000**; banner laminado 200×100 **3/3 =
+$60.000**; y sin bloqueos de más — 6 mugs, 1.000 llaveros y 500 llaveros manilla
+a 2 tintas ($1.050.000) aprobados todos en el primer intento.
+
+**Sigue pendiente lo que esto NO resuelve:** cargar las rejillas de precio que
+faltan (solo 12 productos tienen cantidad × variante como el Excel de llaveros)
+y los «costo adicional» sin cifra (troquel especial, llavero de más de 6×4 cm).
 
 ### 🔴 El bot cotiza lo más parecido en vez de decir que no lo tiene
 A «¿venden llantas para camión?» contestó «eso puntual no lo manejamos» y acto

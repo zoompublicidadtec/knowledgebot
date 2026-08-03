@@ -21,6 +21,7 @@ import {
   RESPALDO_ERROR,
 } from './tools/request-human-handoff';
 import { calculateCustomPriceTool } from './tools/calculate-custom-price';
+import { buildQuoteTool } from './tools/build-quote';
 import { updatePipelineStageTool } from './tools/update-pipeline-stage';
 import { etapaPorHechos, moverEtapaSiAvanza } from './pipeline-automatico';
 import { logger } from '../logger';
@@ -552,37 +553,42 @@ async function applyOutputGuardrail(
     // calculateCustomPrice es la calculadora válida para lo que se cobra por
     // área o metro lineal (DTF UV, DTF Textil, vinilos, screen). Sin incluirla
     // aquí, toda cotización de esos servicios se bloqueaba aunque fuera correcta.
-    const PRICE_TOOLS = new Set(['getProductPrice', 'calculateCustomPrice']);
+    const PRICE_TOOLS = new Set(['getProductPrice', 'calculateCustomPrice', 'buildQuote']);
     const priceToolCalled = (steps || []).some(step =>
       (step.toolResults || []).some((t: any) => PRICE_TOOLS.has(t.toolName))
     );
 
-    if (!priceToolCalled) {
-      /**
-       * Cifras que vienen de lo que el DUENO configuro en el panel.
-       *
-       * Una politica puede llevar un monto ("envio gratis sobre $200.000",
-       * "anticipo minimo de $50.000"). Ese numero no sale de la calculadora de
-       * productos, y el candado lo bloqueaba: el bot no podia responder algo
-       * que el propio dueno habia escrito.
-       *
-       * No es un agujero. Solo se aceptan las cifras que aparecen en el texto
-       * devuelto por queryKnowledgeBase EN ESTE MISMO TURNO, es decir las que
-       * el dueno escribio en el panel. Un precio de producto sigue exigiendo
-       * la calculadora.
-       */
-      const desdeElPanel = new Set<number>();
-      for (const step of steps || []) {
-        for (const t of (step.toolResults || []) as any[]) {
-          if (t.toolName !== 'queryKnowledgeBase') continue;
-          const texto = JSON.stringify(t.result ?? t.output ?? '');
-          for (const monto of texto.match(/\$\s?[\d.,]+/g) || []) {
-            const n = parseCOP(monto);
-            if (n > 0) desdeElPanel.add(n);
-          }
+    /**
+     * Cifras que vienen de lo que el DUENO configuro en el panel.
+     *
+     * Una politica puede llevar un monto ("envio gratis sobre $200.000",
+     * "anticipo minimo de $50.000"). Ese numero no sale de la calculadora de
+     * productos, y el candado lo bloqueaba: el bot no podia responder algo
+     * que el propio dueno habia escrito.
+     *
+     * No es un agujero. Solo se aceptan las cifras que aparecen en el texto
+     * devuelto por queryKnowledgeBase EN ESTE MISMO TURNO, es decir las que
+     * el dueno escribio en el panel. Un precio de producto sigue exigiendo
+     * la calculadora.
+     *
+     * Se calcula ANTES de la bifurcacion porque ahora hace falta en los dos
+     * caminos: sin calculadora (para no bloquear una politica del panel) y
+     * con calculadora (para no bloquear un total que en realidad es un monto
+     * del panel, como un envio gratis mas caro que la cotizacion).
+     */
+    const desdeElPanel = new Set<number>();
+    for (const step of steps || []) {
+      for (const t of (step.toolResults || []) as any[]) {
+        if (t.toolName !== 'queryKnowledgeBase') continue;
+        const texto = JSON.stringify(t.result ?? t.output ?? '');
+        for (const monto of texto.match(/\$\s?[\d.,]+/g) || []) {
+          const n = parseCOP(monto);
+          if (n > 0) desdeElPanel.add(n);
         }
       }
+    }
 
+    if (!priceToolCalled) {
       // Si todas las cifras ya se le dieron al cliente antes en esta misma
       // conversación, es el bot confirmando lo cotizado (típico del cierre),
       // no inventando precios.
@@ -597,6 +603,57 @@ async function applyOutputGuardrail(
       }
       logger.error('CANDADO v4: Precios sin calculadora en el turno', { mentionedPrices });
       return { blocked: true, reason: 'no-calculator' };
+    }
+
+    /**
+     * EL TOTAL TAMBIÉN TIENE QUE HABER SALIDO DE LA CALCULADORA.
+     *
+     * Hasta el 03-ago-2026 este candado comprobaba DE DÓNDE salía cada precio
+     * —que se hubiera llamado a la calculadora— y a partir de ahí dejaba pasar
+     * CUALQUIER cifra. El agujero estaba en las cotizaciones armadas: en un
+     * cuaderno con 6 insertos, cada pieza venía bien de la calculadora, pero
+     * la SUMA y la MULTIPLICACIÓN las escribía el modelo de cabeza.
+     *
+     * Medido ese día, cinco corridas de la misma frase, contacto nuevo cada
+     * vez: $487.000 ✔, $487.000 ✔, $427.000 ✘, $584.000 ✘, y una sin cotizar.
+     * El candado aprobó las cinco.
+     *   · $427.000 = se le olvidaron 2 de los 6 insertos.
+     *   · $584.000 = partió el 6 como 8+2, o sea DIEZ insertos.
+     * $157.000 de diferencia en el mismo pedido.
+     *
+     * Ahora la cifra MÁS ALTA de la respuesta —que es siempre el total, y la
+     * única que decide lo que paga el cliente— tiene que ser una que alguna
+     * herramienta de precio haya producido de verdad en este turno, o una ya
+     * aprobada antes en la conversación, o un monto del panel.
+     *
+     * SOLO la más alta, a propósito. Las cifras de abajo (el unitario, el
+     * anticipo, el saldo) son derivadas legítimas de una división, y exigirlas
+     * todas bloquearía respuestas correctas. El total es lo que hay que blindar.
+     */
+    const cifrasDeHerramientas = new Set<number>();
+    for (const step of steps || []) {
+      for (const t of (step.toolResults || []) as any[]) {
+        if (!PRICE_TOOLS.has(t.toolName)) continue;
+        const texto = JSON.stringify(t.output ?? t.result ?? '');
+        for (const trozo of texto.match(/\d[\d.,]*/g) || []) {
+          const n = parseCOP(trozo);
+          if (n > 0) cifrasDeHerramientas.add(n);
+        }
+      }
+    }
+
+    const totalDicho = mentionedPrices.reduce((mayor, p) => Math.max(mayor, parseCOP(p)), 0);
+    if (
+      totalDicho > 0 &&
+      !cifrasDeHerramientas.has(totalDicho) &&
+      !approvedPrices.has(totalDicho) &&
+      !desdeElPanel.has(totalDicho)
+    ) {
+      logger.error('GUARDRAIL: el total no salió de la calculadora, lo sumó el modelo', {
+        totalDicho,
+        mentionedPrices,
+      });
+      return { blocked: true, reason: 'total-sin-calculadora' };
     }
 
     return { blocked: false, reason: 'calculator-used' };
@@ -1102,6 +1159,11 @@ ${lineas}`;
     // una orden de recalcular → repite hasta 3 intentos. Escala en severidad.
     const MAX_RECALC_ATTEMPTS = 3;
     const RECALC_ORDERS: Record<string, string[]> = {
+      'total-sin-calculadora': [
+        'ALTO. El TOTAL que diste no lo calculó ninguna herramienta: lo sumaste tú, y por eso el mismo pedido da cifras distintas. Cuando el precio final es la SUMA de varias piezas (un producto base más sus adicionales), ejecuta buildQuote enviando SOLO qué lleva el pedido, sin una sola cifra, y responde con el total que devuelva.',
+        'BLOQUEADO DE NUEVO. No sumes ni multipliques tú. Ejecuta buildQuote con la cantidad, la variante que eligió el cliente y la lista de piezas, y copia su total tal cual, sin recalcular.',
+        'ÚLTIMO INTENTO. Ejecuta buildQuote AHORA y responde únicamente con el total que devuelva. Si buildQuote te pide un dato que falta, pregúntaselo al cliente en vez de inventarlo.',
+      ],
       'no-calculator': [
         'ALTO. Tu respuesta fue BLOQUEADA porque diste precios sin usar la calculadora. Está PROHIBIDO dar precios de memoria. Ejecuta searchCatalog para encontrar el producto y luego getProductPrice (o calculateCustomPrice si se cobra por área o metro, como DTF, vinilos o screen) antes de responder. No repitas precios del historial.',
         'BLOQUEADO DE NUEVO. No respondas de memoria. Para CADA producto que menciones con precio ejecuta getProductPrice, o calculateCustomPrice si va por medidas. Solo entonces responde con las cifras que devolvió la herramienta.',
@@ -1188,6 +1250,7 @@ ${lineas}`;
           queryKnowledgeBase: queryKnowledgeBaseTool(toolContext),
           requestHumanHandoff: requestHumanHandoffTool(toolContext),
           calculateCustomPrice: calculateCustomPriceTool(),
+          buildQuote: buildQuoteTool(),
           updatePipelineStage: updatePipelineStageTool(toolContext),
         },
         stopWhen: stepCountIs(50),

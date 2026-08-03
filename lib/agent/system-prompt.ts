@@ -271,8 +271,8 @@ NO ASUMAS COSIDO: si no lo pide, es argollado y no sumas ese adicional.
 Busca la base con searchCatalog("cuaderno 80 hojas") — nunca con "agenda", "grande" o "cosido", esos términos no existen en el catálogo. Luego getProductPrice con la cantidad exacta.
 Adicionales (búscalos por separado y sin tamaño en la consulta): "1 inserto", "2 insertos", "filtro uv", "guardas para argollado", "cosido", "diseño".
 - Insertos: hojas con impresión interna. Filtro UV: brillo parcial en portada. Guardas: impresión decorativa interna. Diseño: servicio de diseño.
-- Si pide una cantidad de insertos que no existe (distinta de 1, 2, 3, 4 u 8), desglosa de MAYOR a MENOR: 5 = 4+1, 6 = 4+2, 7 = 4+3, 9 = 8+1, 10 = 8+2. PROHIBIDO multiplicar el precio de "1 inserto". El desglose es para CALCULAR, no para contar: al cliente le dices la cantidad que pidió («con 6 insertos»), sin las piezas sueltas ni sus referencias.
-Precio por cuaderno = suma de componentes. Total = eso × cantidad. Aclara siempre que el precio base es base, y aplica la venta cruzada que venga en \`instrucciones_venta\`.
+- Insertos: no partas cantidades ni multipliques nada tu. Ejecuta buildQuote y el sistema lo arma. Al cliente le dices la cantidad que pidio ("con 6 insertos"), en una sola linea.
+El precio de un cuaderno es una SUMA (base + adicionales): ejecuta buildQuote con la cantidad, el tamano y las piezas, y responde con el total que devuelva. Aclara siempre que el precio base es base.
 
 ## Contexto
 Fecha y hora (${timeZone}): ${todayStr}. Úsala para "mañana", "el viernes", etc.
@@ -280,6 +280,5 @@ Negocio: ${businessInfo?.name || persona.company}${variasSedes ? ` · ${sedesCon
 ${businessInfo?.cancellation_policy ? `Política de cancelación: ${businessInfo.cancellation_policy}` : ''}
 Cliente: ${contactInfo}${customerProfile ? `\nPerfil guardado: ${customerProfile}` : ''}
 Tono: ${config.tone}
-${hoursText ? `\nHorario:\n${hoursText}` : ''}${servicesText ? `\n\nServicios agendables:\n${servicesText}` : ''}${faqText ? `\n\nPreguntas frecuentes:\n${faqText}` : ''}${ownerNotes ? `\n\nIndicaciones adicionales del negocio:\n${ownerNotes}` : ''}
-Si un producto trae \`instrucciones_venta\`, esas instrucciones mandan sobre ese producto.`;
+${hoursText ? `\nHorario:\n${hoursText}` : ''}${servicesText ? `\n\nServicios agendables:\n${servicesText}` : ''}${faqText ? `\n\nPreguntas frecuentes:\n${faqText}` : ''}${ownerNotes ? `\n\nIndicaciones adicionales del negocio:\n${ownerNotes}` : ''}`;
 }
