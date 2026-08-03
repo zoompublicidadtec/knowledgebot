@@ -144,7 +144,7 @@ const IDIOMA_POR_UNIDAD: Record<string, IdiomaDePrecio> = {
     titulo: 'Precio por metro cuadrado',
     ayuda: 'Define cuánto cuesta cada m² según el material o el acabado.',
     boton: 'Agregar tramo',
-    pista: 'Escribe 1 en «desde» y deja «hasta» vacío para un precio único por m². Solo agrega más tramos si el m² cambia de precio según el tamaño.',
+    pista: 'Para un precio único por m²: escribe 1 en «desde», deja «hasta» vacío, y pon el valor del metro cuadrado en la casilla con el signo $. Agrega más tramos solo si el m² cambia de precio según el tamaño.',
     ejemploVariante: 'Material o acabado (ej: Sin iluminación, Con LED interior, Backlight, Acrílico 5 mm)',
     varianteInicial: 'Precio por m²',
     desdeCorto: 'Desde',
@@ -157,7 +157,7 @@ const IDIOMA_POR_UNIDAD: Record<string, IdiomaDePrecio> = {
     titulo: 'Precio por metro lineal',
     ayuda: 'Define cuánto cuesta cada metro según el material o el acabado.',
     boton: 'Agregar tramo',
-    pista: 'Escribe 1 en «desde» y deja «hasta» vacío para un precio único por metro. Solo agrega más tramos si el metro cambia de precio según el largo.',
+    pista: 'Para un precio único por metro: escribe 1 en «desde», deja «hasta» vacío, y pon el valor del metro en la casilla con el signo $. Agrega más tramos solo si el metro cambia de precio según el largo.',
     ejemploVariante: 'Material o acabado (ej: Vinilo blanco, Reflectivo, Con instalación)',
     varianteInicial: 'Precio por metro',
     desdeCorto: 'Desde',
@@ -170,7 +170,7 @@ const IDIOMA_POR_UNIDAD: Record<string, IdiomaDePrecio> = {
     titulo: 'Precio por millar',
     ayuda: 'Define cuánto cuesta cada millar (1.000 unidades) según la técnica.',
     boton: 'Agregar tramo',
-    pista: 'Escribe 1 en «desde» y deja «hasta» vacío para un precio único por millar. Los tramos van en millares, no en unidades.',
+    pista: 'Para un precio único por millar: escribe 1 en «desde», deja «hasta» vacío, y pon el valor del millar en la casilla con el signo $. Los tramos van en millares, no en unidades.',
     ejemploVariante: 'Variante (ej: Tiro, Tiro y retiro, Full color)',
     varianteInicial: 'Precio por millar',
     desdeCorto: 'Desde',
@@ -546,6 +546,19 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     for (const tier of priceTiers) {
       if (!tier.variant.trim()) return setFormError('La variante de precio es requerida.');
       if (tier.min_qty < 1) return setFormError('La cantidad mínima debe ser al menos 1.');
+      /**
+       * SIN PRECIO NO SE GUARDA.
+       *
+       * Antes solo se rechazaba un precio negativo, asi que un producto se
+       * podia guardar con precio 0 y el bot lo habria cotizado en $0. Se
+       * comprobo el 03-ago-2026: no hay NI UNA tarifa en 0 en todo el catalogo,
+       * asi que exigirlo no deja fuera nada de lo que ya existe.
+       */
+      if (!tier.price || tier.price <= 0) {
+        return setFormError(
+          `Falta el precio de «${tier.variant || 'la primera fila'}». Va en la casilla con el signo $, no en «hasta».`
+        );
+      }
       if (tier.price < 0) return setFormError('El precio no puede ser negativo.');
     }
 
@@ -1483,12 +1496,25 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                       {/* Price Input */}
                       <div className="flex items-center gap-1.5 w-full sm:w-auto">
                         <span className="text-slate-500 text-xs font-semibold">$</span>
+                        {/*
+                          EL CERO QUE ESCONDIA LA CASILLA.
+
+                          Aqui iba `value={tier.price}` con el precio en 0, asi
+                          que la casilla mostraba «0» —parecia llena— mientras
+                          «hasta» estaba vacia y parecia la que faltaba. El 03-
+                          ago-2026 el dueño escribio los $95.000 del metro
+                          cuadrado en «hasta» y el precio quedo en 0. No fue
+                          distraccion suya: fue este cero.
+
+                          Con `|| ''` la casilla se ve vacia y muestra su
+                          etiqueta «Precio», igual que ya hacia «hasta».
+                        */}
                         <input
                           type="number"
                           required
-                          min={0}
+                          min={1}
                           placeholder="Precio"
-                          value={tier.price}
+                          value={tier.price || ''}
                           onChange={(e) => updatePriceTierRow(idx, 'price', Number(e.target.value))}
                           className="w-24 px-2 py-1.5 rounded-lg bg-slate-950 border border-white/10 text-white text-xs focus:outline-none focus:border-primary-500 font-mono text-right"
                         />
