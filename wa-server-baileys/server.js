@@ -1153,45 +1153,59 @@ async function startSession(line, motivo = 'inicial') {
         sock.ev.on('creds.update', saveCreds);
 
         /**
-         * UN ACUSE DE RECIBO NO ES UN ERROR: NO SE CORTA LA CONEXIÓN POR ÉL.
+         * UN ACUSE DE RECIBO NO ES UN ERROR — PERO ESTO **NO** EVITA LA CAÍDA.
          *
-         * Aquí estaba la causa de que las líneas se cayeran cada ~50 minutos.
-         * Medido el 02-ago-2026 sobre 5 horas de registro: linea_3 se cayó a
-         * las 14:22:48, 15:12:52, 16:02:56, 16:53:02 y 17:43:06 UTC. Entre una
-         * y otra: 50m04s, 50m04s, 50m06s, 50m04s. Es un reloj, no una
-         * casualidad. Y el reloj NO estaba aquí: no hay ningún temporizador de
-         * 50 minutos en el puente, ni cron, ni systemd. Lo manda WhatsApp.
+         * LÉASE ENTERO ANTES DE CONFIAR EN ESTE BLOQUE. Se escribió creyendo
+         * que aquí estaba la causa de que las líneas se cayeran cada ~50
+         * minutos. **Se desplegó, se midió, y la caída siguió igual.** Queda
+         * escrito lo que de verdad pasa, porque dejar una causa falsa dentro
+         * del código es el error que este proyecto ya pagó una vez con una
+         * arquitectura entera (ver AGENTS.md §2.6).
          *
-         * Lo que llegaba, textual:
+         * LO QUE SÍ ES CIERTO Y ESTÁ MEDIDO:
+         * Cada 50m04s exactos WhatsApp manda a esa línea, textual:
          *   {"tag":"stream:error","attrs":{},
          *    "content":[{"tag":"ack","attrs":{"class":"message","type":"media",
          *                "id":"3A0DF74A8F30B473DED8"}}]}
+         * Siempre el MISMO id, un mensaje con adjunto que quedó a medias y que
+         * ni siquiera está en nuestra base. Y Baileys 6.7.24 corta ante
+         * CUALQUIER `stream:error` (`lib/Socket/socket.js:507`) llamando a
+         * `getErrorCodeFromStreamError` (`lib/Utils/generics.js:276`), que sin
+         * `code` en el nodo y sin `ack` en su tabla asume `badSession` (500):
+         * «tu sesión está corrupta». **Eso es mentira y por eso se quitó.**
          *
-         * Es WhatsApp reenviando el acuse de un mensaje que quedó a medias —el
-         * mismo id se repetía en TODAS las caídas de esa línea—, no un error de
-         * sesión. Pero Baileys 6.7.24 corta ante CUALQUIER `stream:error`
-         * (`lib/Socket/socket.js:507`), y para decidir por qué corta llama a
-         * `getErrorCodeFromStreamError` (`lib/Utils/generics.js:276`):
-         *      node.attrs.code    -> este nodo no trae `code`
-         *   || CODE_MAP['ack']    -> 'ack' no está en la tabla
-         *   || badSession (500)   -> asume «sesión corrupta»
-         * Por eso el registro decía `statusCode: 500`. Al reconectar, el acuse
-         * seguía pendiente del otro lado y a los ~50 minutos volvía a llegar.
+         * LO QUE ERA FALSO: que ese corte de Baileys fuera la causa. Medido el
+         * 02-ago a las 22:57:48 y a las 23:47:52, con este código ya corriendo:
+         *      22:57:48  Acuse ignorado          <- este manejador NO cortó
+         *      22:57:48  connection errored      <- WhatsApp cerró el socket
+         *      22:57:48  Conexión cerrada (428)  <- `ws.on('close')`, socket.js:445
+         *      22:57:52  Baileys CONECTADO       <- 4 segundos después
+         * El `stream:error` no era Baileys siendo paranoico: **era WhatsApp
+         * avisando que iba a terminar el flujo, y lo termina igual.** Baileys
+         * solo llegaba primero.
+         *
+         * ENTONCES ¿PARA QUÉ SE DEJA?
+         *   1. El motivo del corte ahora es VERDAD: 428 «el otro lado cerró»,
+         *      en vez de un 500 «sesión corrupta» que manda a quien lo lea a
+         *      buscar el fallo donde no está.
+         *   2. Este registro es lo que permitió encontrar la causa real: nombra
+         *      el id atascado en el instante exacto en que llega.
+         *   3. No hace daño: linea_1 y linea_2 llevaron 2h15m sin una sola
+         *      caída con este código puesto, y la que cae reconecta en 4 s.
+         *
+         * LA CAUSA REAL, Y DÓNDE SE ARREGLA: el mensaje atascado vive en la
+         * cola de WhatsApp **para esa sesión concreta**, no en nuestro código —
+         * las otras dos líneas, mismo código, cero caídas. Se arregla
+         * **re-vinculando esa línea** (desvincular y escanear el QR de nuevo),
+         * que le da una sesión nueva y vacía la cola. No hay nada que tocar
+         * aquí.
          *
          * LA REGLA AÑADIDA: si el nodo NO trae `code` y todos sus hijos son
          * `ack`, se anota y se sigue. Cualquier otro `stream:error` se trata
          * exactamente igual que antes, con el mismo texto y el mismo Boom.
-         *
-         * POR QUÉ ES SEGURO. Solo se quita el corte proactivo ante un paquete
-         * que ni siquiera trae código de error. Si la conexión muriera de
-         * verdad, las dos redes de seguridad de Baileys siguen intactas y no se
-         * tocan:
-         *   - el latido, que la da por perdida a los ~35 s (socket.js:294)
-         *   - el cierre del socket (socket.js:445) y `xmlstreamend` (:447)
-         *
-         * NO ES DE UNA LÍNEA. No existe una sola línea de código propia de
-         * linea_1, linea_2 ni linea_3: las tres pasan por aquí. El fallo estaba
-         * latente en todas, y la línea de la empresa lo tendría también.
+         * Las dos redes de seguridad de Baileys NO se tocan: el latido
+         * (socket.js:294) y el cierre de socket (socket.js:445, que es
+         * justamente el que acaba actuando aquí).
          */
         sock.ws.removeAllListeners('CB:stream:error');
         sock.ws.on('CB:stream:error', (node) => {

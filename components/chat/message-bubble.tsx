@@ -109,34 +109,51 @@ export function MessageBubble({
   // El texto de un audio ES su transcripcion.
   const transcription = esAudio ? displayText : '';
 
+  /**
+   * LA FLECHA DE RESPONDER VA FUERA DE LA BURBUJA, NUNCA ENCIMA DEL TEXTO.
+   *
+   * Primero se puso DENTRO, arriba a la derecha, apareciendo al pasar el raton
+   * por encima. En el computador se veia bien; en el telefono no existe «pasar
+   * por encima», asi que ahi tenia que verse siempre — y siempre significaba
+   * **tapando el primer renglon de cada mensaje**. Lo reporto el dueño con una
+   * captura el 02-ago-2026.
+   *
+   * Ahora va en el hueco que queda al costado: a la izquierda si el mensaje es
+   * nuestro, a la derecha si es del cliente. Siempre por el lado libre. Ocupa
+   * su sitio desde el principio (se atenua, no se esconde), asi que al pasar el
+   * raton por encima nada se mueve de lugar.
+   */
+  const botonResponder = onResponder ? (
+    <button
+      type="button"
+      onClick={onResponder}
+      aria-label="Responder citando este mensaje"
+      title="Responder citando este mensaje"
+      className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full
+                 text-slate-400 opacity-0 transition-opacity hover:bg-white/10
+                 hover:text-white focus-visible:opacity-100
+                 group-hover/fila:opacity-100 max-lg:opacity-40"
+    >
+      <ArrowBendUpLeft size={15} />
+    </button>
+  ) : null;
+
   return (
-    <div className={`flex w-full ${isOutbound ? 'justify-end' : 'justify-start'}`}>
+    <div
+      className={`group/fila flex w-full items-end gap-0.5 ${
+        isOutbound ? 'justify-end' : 'justify-start'
+      }`}
+    >
+      {isOutbound && botonResponder}
       <div
         className={`
           ${isOutbound ? 'bubble-outbound' : 'bubble-inbound'}
           ${isBot ? 'bubble-bot' : ''}
           ${isHuman ? 'bubble-human' : ''}
           ${agrupado ? 'burbuja-agrupada' : ''}
-          group/burbuja relative shadow-sm max-w-[85%] sm:max-w-md md:max-w-lg
+          relative shadow-sm max-w-[85%] sm:max-w-md md:max-w-lg
         `}
       >
-        {/* La flecha de responder aparece al pasar el raton por encima. En
-            pantalla tactil no hay «pasar por encima», asi que ahi se ve
-            siempre: si no, en el telefono no habria forma de citar. */}
-        {onResponder && (
-          <button
-            type="button"
-            onClick={onResponder}
-            aria-label="Responder citando este mensaje"
-            title="Responder citando este mensaje"
-            className="absolute -top-2 right-1 z-10 hidden h-7 w-7 items-center justify-center
-                       rounded-full bg-slate-800/95 text-slate-300 shadow ring-1 ring-white/10
-                       transition-colors hover:bg-slate-700 hover:text-white
-                       group-hover/burbuja:flex max-lg:flex"
-          >
-            <ArrowBendUpLeft size={14} />
-          </button>
-        )}
         {/* Cita del mensaje citado (reply) - solo se muestra si hay cita */}
         {media.citado && (
           <div className="mb-1 px-2 py-1 border-l-2 border-slate-500 bg-slate-800/40 rounded text-[11px] text-slate-300 italic line-clamp-2">
@@ -305,6 +322,7 @@ export function MessageBubble({
           <span>{time}</span>
         </div>
       </div>
+      {!isOutbound && botonResponder}
     </div>
   );
 }

@@ -46,7 +46,7 @@ clientes ni quemar números.
 | **Traspaso a un humano** | 🟢 **resuelto el 02-ago**: si el cliente pide hablar con alguien, se traspasa en código antes de que el modelo conteste — bot apagado, etapa «Sin Atender» y la frase de traspaso del panel. Antes el bot le respondía «Jaja, soy Oscar» y seguía vendiendo |
 | **Campana de notificaciones** | 🟢 **funciona**: vigila molestos, listos para pagar y quien pidió ayuda. Estaba vacía porque las columnas estaban vacías, no por un fallo suyo |
 | **Campana vs. Kanban** | 🟢 **resuelto el 02-ago**: eran dos fuentes distintas para la misma pregunta y no cuadraban. Apagar el bot a mano ahora manda la tarjeta a «Sin Atender», y encenderlo la devuelve a «Entrada» |
-| **Adjuntos en el panel** | 🟢 **ver: resuelto el 02-ago**. Se ven foto, nota de voz, sticker (en pequeño), video y GIF. 🟢 **enviar foto o archivo: resuelto el 02-ago** — el clip del cuadro de escritura, con pie de foto y tope de 20 MB. 🔴 **enviar nota de voz: pendiente** — necesita `ffmpeg` en la imagen del puente y la marca `ptt` en `send-media`; sin eso llegaría como archivo de audio, no como nota de voz. Sin selector de emojis, por decisión del dueño |
+| **Adjuntos en el panel** | 🟢 **ver: resuelto el 02-ago**. Se ven foto, nota de voz, sticker (en pequeño), video y GIF. 🟢 **enviar foto o archivo: resuelto el 02-ago** — el clip del cuadro de escritura, con pie de foto y tope de 20 MB. **Ojo:** por el dominio no funcionó hasta corregir el tope de **nginx**, que rechazaba con `413` todo lo que pasara de 1 MB (una foto de celular pesa 3-8 MB) antes de que llegara al sistema. 🟢 **enviar nota de voz: resuelto el 02-ago** — micrófono en el cuadro de escribir, con el cambio micrófono ↔ flecha de WhatsApp; `ffmpeg` convierte en la **app** (no en el puente) y el `send-media` acepta la marca `ptt`. **Solo funciona entrando por `https://zoompublicidad.tech`**: los navegadores no dan micrófono en direcciones sin candado. 🟢 **responder citando: resuelto el 02-ago** — flecha al costado de cada burbuja. Sin selector de emojis, por decisión del dueño |
 | **El bot trabado** | 🟢 **resuelto el 02-ago**: si no avanza dos turnos seguidos —entregó una frase de respaldo o repitió lo que ya había dicho— la conversación pasa sola a «Sin Atender», el bot se apaga y suena la campana. Se deduce de los mensajes anteriores del bot, sin contadores en la base |
 | **El cliente sabe que habla con un bot** | 🟢 **auditado el 02-ago**: era una sola frase («Te paso con un humano en un momento»), dormida detrás de un campo vacío del panel. Eliminada. Ningún otro texto fijo que llegue al cliente lo delata |
 | **Datos de ZOOM escritos en el código** | 🟡 **abierto**: `DEFAULT_PERSONA` todavía trae `agent_name`, `company`, `greeting`, `scope` y `offtopic_redirect` de ZOOM. Mismo problema que se corrigió con los medios de pago el 01-ago, pero aquí vaciarlos dejaría al bot sin nombre con el que hablar: hay que decidir qué hace el sistema cuando el panel está vacío antes de tocarlo |
@@ -312,6 +312,8 @@ sepa el nombre.
 - ✅ Idempotencia real: un mensaje reentregado ya no dispara el agente dos veces.
 - ✅ Cerrojo por conversación contra ejecuciones simultáneas.
 - ✅ Fotos de producto: se envían **solo cuando el cliente las pide**.
+- ✅ **Los stickers se ven en el panel y no despiertan al bot** (02-ago).
+- ✅ **Nota de voz y respuesta citada desde el panel** (02-ago).
 
 ### Infraestructura
 - ✅ Motor RAG bajo `systemd` (`knowledgebot-rag`), con reinicio automático.
@@ -452,6 +454,37 @@ de captura en el Excel de origen.
 ### ✅ `linea_2` reconectada (2026-07-29 18:05 UTC)
 Ambas líneas responden (`keepAliveErrors: 0`). Se deja anotado porque el estado
 de las líneas cambia solo: comprobar siempre en el Centro de Control.
+
+### 🔴 Una línea se cae cada 50 minutos, y NO es del código
+**Es de la sesión de esa línea, no del sistema.** Medido el 02-ago sobre 2h15m:
+`linea_1` y `linea_2` llevaron **cero caídas**, y `linea_3` se cayó dos veces —
+22:57:48 y 23:47:52, **50m04s exactos**— siempre con el mismo mensaje atascado
+(`3A0DF74A8F30B473DED8`, un adjunto que ni siquiera está en nuestra base).
+
+Cada 50m04s WhatsApp reenvía el acuse de ese mensaje dentro de un `stream:error`
+y **acto seguido cierra el socket él mismo** (428, `ws.on('close')`). Se probó
+quitar el corte proactivo de Baileys: **no evita la caída**, porque el que corta
+es WhatsApp. La línea reconecta sola en **4 segundos**.
+
+> **Qué hacer:** re-vincular esa línea desde el panel (desvincular y escanear el
+> QR de nuevo). Le da una sesión nueva y vacía la cola de WhatsApp.
+> **Qué NO hacer:** buscar el fallo en el puente. Las otras dos líneas corren el
+> mismo código sin una sola caída.
+
+### 🔴 El total combinado: nadie verifica la suma
+El bot cotiza **un concepto por vez** y los lista por separado. Un aviso de 3×1 m
+con LED, instalado y con diseño sale como tres renglones sueltos y **la suma no
+la verifica nadie**, porque el candado antialucinación comprueba de dónde salió
+cada precio, no el total. Hace falta una «cotización armada» que junte conceptos
+y pase el total por la calculadora. Resuelve también «bolígrafo con DTF UV».
+
+### 🔴 El bot cotiza lo más parecido en vez de decir que no lo tiene
+A «¿venden llantas para camión?» contestó «eso puntual no lo manejamos» y acto
+seguido cotizó «Adicional: Guardas para Cosido». Traza real: el candado bloqueó
+**dos** intentos (búsqueda fuera de tema, y luego precios inventados sin
+calculadora) y al **tercero** el modelo usó la calculadora sobre un producto
+cualquiera — y eso bastó para aprobar. **El candado verifica de dónde salió el
+precio, no si el producto tiene que ver con lo que preguntaron.**
 
 ### 🟡 Meta: 8 líneas
 Hoy hay 2 líneas de prueba configuradas.

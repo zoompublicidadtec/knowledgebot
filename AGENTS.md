@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # KnowledgeBot — punto de entrada obligatorio
 
-> Verificado contra el VPS de producción el **2026-08-01**.
+> Verificado contra el VPS de producción el **2026-08-02**.
 > `CLAUDE.md` solo contiene `@AGENTS.md`: este archivo es la puerta de entrada.
 
 ## 0. Knowledge Graph del código (LEER PRIMERO)
@@ -17,7 +17,7 @@ ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
 `EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
 
 El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`a1fe280`**. **Si el código cambió desde
+Está generado contra el commit **`f907bd5`**. **Si el código cambió desde
 entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
 
 ### Cómo consultarlo (por SSH al VPS)
@@ -29,7 +29,7 @@ cd /root/knowledgebot
 
 # 1) ¿El grafo sigue vigente? Lo que lo invalida es que cambie el CODIGO, no
 #    que avance el HEAD: un commit de documentacion no lo desactualiza.
-git diff --stat a1fe280..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
+git diff --stat f907bd5..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
 #    Sin salida = el grafo esta al dia. Con salida = regenerar (paso 4).
 
 # 2) Entender un símbolo / concepto / archivo:
@@ -50,7 +50,7 @@ graphify diagnose multigraph
 
 ### Qué contiene el grafo
 
-- `graph.json` — grafo consultable. Al 01-ago-2026: **1.361 nodos y 2.298
+- `graph.json` — grafo consultable. Al 02-ago-2026: **1.359 nodos y 2.378
   aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
   contradictorias.
 - `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
@@ -233,7 +233,19 @@ curl -s http://localhost:8001/stats           # catálogo y cobertura vectorial
 curl -s http://localhost:3005/diagnostic      # puente de WhatsApp (Baileys)
 docker ps ; systemctl status knowledgebot-rag
 docker logs --tail 80 knowledgebot-app | grep -iE 'guardrail|candado|rail'
+
+# El PORTERO. Se olvida siempre y no está en ningún contenedor: el panel se
+# sirve por https://zoompublicidad.tech a través de nginx, y un fallo suyo NO
+# aparece en los registros de la app. Si el panel responde un número pelado
+# (413, 502, 504), mirar aquí ANTES que el código:
+systemctl status nginx ; nginx -t
+tail -30 /var/log/nginx/error.log
 ```
+
+> **413 = el portero, no el sistema.** nginx aplica 1 MB por defecto si no se
+> le declara tope, y rechaza **antes** de que la petición llegue a la app: el
+> panel no puede ni explicarlo. Corregido el 02-ago-2026 a 25 MB. Los mensajes
+> ENTRANTES no pasan por aquí: el puente le habla a la app por `localhost:3003`.
 
 El **Centro de Control** del panel (`/control-room`, alimentado por
 `/api/health`) muestra lo mismo con causa y acción de reparación por cada punto.
