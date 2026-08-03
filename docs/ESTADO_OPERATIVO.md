@@ -650,6 +650,117 @@ ls /root/knowledgebot/backups/products_*.json
 
 ---
 
+## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
+
+> **Por qué existe esta sección.** El dueño lo pidió el 03-ago-2026 con estas
+> palabras: «no tener que acudir al código para saber que hay una memoria que
+> existe y que sirve para X cosa». Tenía razón, y la causa está medida:
+> **el grafo tiene la estructura del código pero casi nada del porqué.** De sus
+> 102 nodos de razonamiento, **93 salen de Python y solo 4 de TypeScript** —
+> y este sistema es TypeScript en un 95 %. `lib/agent/index.ts`, con 1.400
+> líneas y comentarios enormes, aporta **solo nombres**: el grafo sabe que
+> `photosByConversation` existe, no sabe para qué sirve.
+>
+> **Cada título de este archivo SÍ se vuelve un nodo del grafo** (47 nodos
+> salen de aquí). Por eso los mecanismos se listan abajo con título propio:
+> es la forma de que `graphify explain` los encuentre sin abrir el código.
+
+### La memoria de fotos por conversación — `photosByConversation`
+`lib/agent/index.ts`. Un mapa con la llave de la conversación y un plazo de
+**10 minutos**. Guarda las fotos y precios de lo que el bot acaba de cotizar,
+para que el repartidor las mande sin volver a consultar el catálogo. **Es el
+precedente exacto** de la memoria del asesor que está en diseño: una por chat,
+se reescribe, se borra sola, nunca se cruzan dos chats.
+
+### El historial que el bot recuerda — 10 mensajes, no 10 turnos
+`lib/agent/index.ts`, en `runAgentForMessage`. Lee los **últimos 10 mensajes**
+de la base. Como cada turno son dos mensajes, **el bot recuerda unos 5 turnos**.
+El número se bajó a propósito: el comentario dice que historiales largos
+disparan el riesgo de que se trabe en bucle — y eso coincide con el fallo
+reportado por el dueño, «el bot repite respuestas guardadas». **Los mensajes sí
+se guardan para siempre en la base**: lo corto es lo que se lee, no lo que se
+conserva.
+
+### El repartidor de fotos — falla en silencio
+`lib/whatsapp/webhook-processor.ts`, `dispatchRequestedPhotos`. Manda la foto
+solo si el cliente la pide y **solo de lo que el agente ya cotizó en ese turno**.
+Si el producto no tiene foto cargada, la descarta y **se va sin avisar a nadie**.
+Medido el 03-ago con una conversación del dueño: el cliente pidió cuatro veces
+la foto del Mug Mágico 11oz, que **no tenía foto**; el bot prometió tres veces
+«te la mando ahora mismo» y a la cuarta se inventó que no podía enviar fotos.
+**El bot nunca se entera de que el repartidor falló.**
+
+### El filtro de identidad — tres familias, y lo que se le escapa
+`lib/agent/index.ts`, `sanitizeIdentity` sobre `IDENTITY_MARKERS`. Tapa lo que
+el bot ES («soy un bot»), lo que HACE («la base de datos») y **la fontanería**
+(«se adjuntó», «el sistema se encarga»). 26 casos de prueba, 15 de ellos falsos
+positivos que NO se deben tapar. **Agujero medido el 03-ago:** no agarra
+«no tengo la capacidad de enviar fotos» — sí agarra «no puedo mostrar» y «no
+puedo enviar imágenes», pero esa redacción se le escapó.
+
+### Nada comprueba que la respuesta diga algo
+`respuestaSirve()` existe y funciona: le das «¡Claro!» y responde que **no
+sirve**. Pero **solo se usa dentro del filtro de identidad**. Si la respuesta no
+menciona ser un bot, sale tal cual aunque sea una palabra. Por eso, en la
+conversación del 03-ago, el cliente tuvo que escribir «?» dos veces para
+despertar al bot: estaba haciendo el trabajo que le falta al sistema.
+
+### El buscador de los datos del negocio — `buscarEnFichas`
+`lib/agent/tools/query-knowledge-base.ts`. Busca por palabras en lo que el dueño
+escribió en el panel (dirección, teléfonos, web, garantía, sedes, temas libres).
+**No usa `knowledge_chunks`**, que está vacía. Corregido el 03-ago: descartaba
+toda palabra de 3 letras o menos —y la palabra era «web»—, y comparaba en un
+solo sentido, así que «direcciones» no encontraba «Dirección». Batería: 12/17
+antes, **17/17** después.
+
+### Las sedes y sus teléfonos — `detalleDeSede`
+`lib/agent/tools/query-knowledge-base.ts`. `business_info.sedes` es una lista sin
+límite; cada sede lleva sus teléfonos marcados **solo llamadas**, **solo
+WhatsApp** o **las dos**. Sin esa marca, a «¿a qué número llamo?» el bot podía
+dar uno que solo recibe mensajes. Con dos o más sedes, **el encabezado del prompt
+deja de nombrar una dirección**: un dato suelto arriba pesaba más que la lista
+recuperada y hacía que contestara con una sola sede.
+
+### La cotización armada — `buildQuote`
+`lib/agent/tools/build-quote.ts`, creada el 03-ago. El modelo dice **qué** lleva
+el pedido, sin una sola cifra; el código resuelve el desglose leyendo del
+catálogo qué presentaciones existen, busca cada tarifa, suma y multiplica.
+**No adivina:** si el tamaño es ambiguo devuelve las opciones para preguntarle al
+cliente. Cerró el fallo del total (§ El total combinado).
+
+### El candado de salida y sus motivos — `applyOutputGuardrail`
+`lib/agent/index.ts`. Revisa la respuesta antes de que salga y, si la bloquea,
+`RECALC_ORDERS` le da una orden de corrección distinta por intento (tres). Los
+motivos vigentes: `search-off-topic`, `no-calculator`, `denied-with-catalog-hits`,
+`invented-reference`, `offer-without-price`, `interrogation-no-offer`,
+`servicio-sin-tarifa` y **`total-sin-calculadora`** (nuevo el 03-ago).
+**Los candados se pelean entre sí**: ya pasó el 02-ago, la corrección de uno
+disparaba el otro y se agotaban los tres intentos. Antes de agregar uno nuevo,
+comprobar cómo interactúa con `search-off-topic`.
+
+### `instrucciones_venta` — la orden de obedecer un papel que no existe
+Hasta el 03-ago el prompt le decía **dos veces** al bot que obedeciera las
+`instrucciones_venta` de cada producto. **No es columna de `products` ni la
+devuelve el buscador**: siempre llegaba vacía. Se le mandaba obedecer algo que
+nunca llegaba, que es justo el escenario que lo hace inventar. **Se quitaron las
+dos frases.** El hueco sigue ahí, y es el sitio natural de la «hoja por
+categoría» que está en diseño.
+
+### El diccionario de jerga — está escrito y no se cumple
+El prompt trae «esfero/lapicero → boligrafo · cachucha → gorra · botilito →
+termo». Medido el 03-ago: buscar «boligrafo» puntúa **1.15**; buscar «esfero»
+puntúa **0.65** y encima trae una *Alcancía Esfera*. **Está escrito como consejo
+al modelo, no como regla del sistema**, y a los consejos los sigue cuando quiere.
+Es la prueba repetida de la regla del proyecto: obliga el código, no el texto.
+
+### Las rejillas de precio — solo 12 productos las tienen
+`price_tiers` soporta precio por **cantidad × variante** (la rejilla del Excel de
+llaveros: 10 rangos × 4 tintas = 40 precios). Medido el 03-ago sobre 10.025
+renglones de precio: **12 productos** tienen la rejilla completa —los dos
+llaveros propios, cuatro manillas, el carnet rígido y seis cintas portacarnet—,
+265 tienen variantes sin volumen, 161 volumen sin variantes y **1.683 un precio
+fijo y nada más**. La maquinaria funciona; lo que falta son datos.
+
 ## 10. Historial de este documento
 
 | Fecha | Cambio |

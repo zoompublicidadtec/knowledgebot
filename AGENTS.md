@@ -17,7 +17,7 @@ ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
 `EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
 
 El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`8dc39c3`**. **Si el código cambió desde
+Está generado contra el commit **`PENDIENTE`**. **Si el código cambió desde
 entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
 
 ### Cómo consultarlo (por SSH al VPS)
@@ -29,7 +29,7 @@ cd /root/knowledgebot
 
 # 1) ¿El grafo sigue vigente? Lo que lo invalida es que cambie el CODIGO, no
 #    que avance el HEAD: un commit de documentacion no lo desactualiza.
-git diff --stat 8dc39c3..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
+git diff --stat PENDIENTE..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
 #    Sin salida = el grafo esta al dia. Con salida = regenerar (paso 4).
 
 # 2) Entender un símbolo / concepto / archivo:
@@ -55,7 +55,7 @@ graphify diagnose multigraph
 
 ### Qué contiene el grafo
 
-- `graph.json` — grafo consultable. Al 03-ago-2026: **1.391 nodos y 2.441
+- `graph.json` — grafo consultable. Al 03-ago-2026: **1.405 nodos y 2.455
   aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
   contradictorias.
 - `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
@@ -64,6 +64,29 @@ graphify diagnose multigraph
 **Regla:** para entender arquitectura, dependencias o "qué rompe si cambio X",
 consultá el grafo antes de leer código suelto. Para datos vivos (estado real de
 servicios, catálogo, logs), el VPS sigue siendo la fuente de verdad (ver §4).
+
+### Lo que el grafo NO tiene, y dónde está
+
+**El grafo tiene la estructura del código, no el porqué.** Medido el
+03-ago-2026: de sus 102 nodos de razonamiento, **93 salen de Python y solo 4 de
+TypeScript**, y este sistema es TypeScript en un 95 %. `lib/agent/index.ts`
+—1.400 líneas, con los comentarios más importantes del proyecto— aporta al grafo
+**solo nombres**: sabe que `photosByConversation` existe, no sabe para qué sirve.
+
+El motivo es que el extractor convierte los *docstrings* de Python en nodos de
+razonamiento, pero no hace lo mismo con los comentarios de bloque de TypeScript.
+La capa semántica (la que sí lo haría, con LLM) **nunca se ha corrido aquí**: el
+grafo es 100 % extracción de estructura.
+
+**Dónde está entonces el porqué:** en `docs/ESTADO_OPERATIVO.md` §12, «Índice de
+mecanismos». Cada título de ese archivo **sí** se vuelve un nodo del grafo (47
+nodos salen de ahí), así que `graphify explain "el repartidor de fotos"` o
+`graphify explain "la cotización armada"` los encuentran.
+
+**Regla para quien trabaje aquí:** cuando descubras cómo funciona algo por
+dentro, no lo dejes solo en un comentario del código — **añade su título en §12
+de ESTADO_OPERATIVO**, o el siguiente que llegue va a tener que releer 1.400
+líneas para saber lo mismo.
 
 ## 1. Mapa de la documentación, y quién gana cuando se contradicen
 
