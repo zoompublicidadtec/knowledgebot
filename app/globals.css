@@ -137,6 +137,49 @@ body {
   transform: none;
 }
 
+/*
+ * El boton de "agregar uno mas": sedes, telefonos, cuentas de pago, hojas.
+ *
+ * Esta clase se usaba en CINCO botones de dos pantallas y NUNCA EXISTIO. Sin
+ * ella el navegador no aplica nada: el boton pierde el fondo, el borde y hasta
+ * la fila -el icono se va arriba del texto- y queda pareciendo un titulo
+ * suelto. El dueño lo reporto el 04-ago-2026: "no parece un boton sino mas
+ * bien un texto escrito", y ademas creyo que no funcionaba.
+ *
+ * Es mas discreto que btn-primary (que es la accion principal de la pantalla,
+ * como Guardar) y mas solido que btn-ghost, para que se lea como boton.
+ */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-surface-100);
+  background: rgba(51, 65, 85, 0.6);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-secondary:hover {
+  background: rgba(71, 85, 105, 0.8);
+  border-color: rgba(99, 102, 241, 0.5);
+  color: white;
+  transform: translateY(-1px);
+}
+.btn-secondary:active {
+  transform: translateY(0);
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .btn-ghost {
   display: inline-flex;
   align-items: center;

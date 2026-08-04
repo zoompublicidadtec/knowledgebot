@@ -1235,8 +1235,10 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                 <button
                   type="button"
                   onClick={() =>
+                    // La hoja nueva va PRIMERA, no al final. Antes se agregaba abajo del
+                    // todo y, con una hoja larga ya en pantalla, el dueño hacia clic y no
+                    // veia nada: creyo que el boton no funcionaba.
                     setHojas([
-                      ...hojas,
                       {
                         id: 'hoja_' + Date.now(),
                         nombre: '',
@@ -1252,6 +1254,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                         marcacion_nota: '',
                         notas: '',
                       },
+                      ...hojas,
                     ])
                   }
                   className="btn-secondary text-xs"
