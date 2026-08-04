@@ -144,12 +144,28 @@ export async function GET() {
         };
       });
 
-      const down = lines.filter((l: any) => l.level !== 'ok').length;
+      /**
+       * El rotulo decia «7/8 lineas activas» contando como activas las que solo
+       * estaban sin marcar. Activa significa CONECTADA y nada mas: si el dueno
+       * ve un 7 cuando tiene una sola linea funcionando, el Centro de Control
+       * deja de servir para lo unico que sirve.
+       */
+      const conectadas = lines.filter((l: any) => l.state === 'Conectada').length;
+      const apagadasPorUsted = lines.filter((l: any) => l.state === 'Apagada por usted').length;
+      const requierenAtencion = lines.filter((l: any) => l.level !== 'ok').length;
+
+      const partes: string[] = [];
+      if (requierenAtencion > 0) partes.push(`${requierenAtencion} requiere(n) atencion`);
+      if (apagadasPorUsted > 0) partes.push(`${apagadasPorUsted} apagada(s) por usted`);
+
       checks.push({
-        id: 'bridge', label: 'Puente de WhatsApp', level: down === 0 ? 'ok' : 'warn',
-        value: `${lines.length - down}/${lines.length} líneas activas`,
-        detail: down === 0 ? 'Todas las líneas responden.' : `${down} línea(s) requieren atención.`,
-        fix: down === 0 ? undefined : 'Revisar el detalle de cada línea más abajo.',
+        id: 'bridge', label: 'Puente de WhatsApp',
+        level: requierenAtencion === 0 ? 'ok' : 'warn',
+        value: `${conectadas}/${lines.length} conectadas`,
+        detail: partes.length === 0
+          ? 'Todas las lineas responden.'
+          : partes.join(' · ') + '.',
+        fix: requierenAtencion === 0 ? undefined : 'Revisar el detalle de cada linea mas abajo.',
       });
 
       (checks as any).__lines = lines;

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Phone, QrCode, Plus, Trash, Plug, SpinnerGap, Warning, ArrowCounterClockwise, PencilSimple } from '@phosphor-icons/react';
+import { Phone, QrCode, Plus, Trash, Plug, SpinnerGap, Warning, ArrowCounterClockwise, PencilSimple, X } from '@phosphor-icons/react';
 
 interface WhatsAppLine {
   id: string;
@@ -168,7 +168,7 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
 
   const apagarQrVencido = async (lineKey: string) => {
     try {
-      await fetch(`/api/whatsapp-lines/${lineKey}`, { method: 'DELETE' });
+      await fetch(`/api/whatsapp-lines/${lineKey}?intencional=0`, { method: 'DELETE' });
       delete awaitingQrSince.current[lineKey];
       await fetchLines();
     } catch {
@@ -231,6 +231,29 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
       // Small delay then reconnect
       await new Promise(r => setTimeout(r, 1000));
       await handleConnect(lineKey);
+    } finally {
+      setLineLoading(lineKey, false);
+    }
+  };
+
+  /**
+   * Borra la ranura entera. Lo pidio el dueño el 04-ago-2026: «poner una X para
+   * eliminar o cerrar las lineas... y que no aparezcan mas en el Centro de
+   * Control». Una ranura creada por error no se apaga: se borra.
+   *
+   * Las conversaciones NO se pierden: viven en su propia tabla.
+   */
+  const handleEliminarLinea = async (lineKey: string, nombre: string) => {
+    const ok = window.confirm(
+      `Se va a eliminar la ranura "${nombre}".\n\n` +
+      'Desaparece del panel y del Centro de Control. Las conversaciones que ya ' +
+      'existen NO se borran.\n\nPuede volver a crearla cuando quiera.'
+    );
+    if (!ok) return;
+    setLineLoading(lineKey, true);
+    try {
+      await fetch(`/api/whatsapp-lines/${lineKey}?eliminar=1`, { method: 'DELETE' });
+      await fetchLines();
     } finally {
       setLineLoading(lineKey, false);
     }
@@ -388,6 +411,17 @@ Revise el estado en Líneas de WhatsApp.`);
                       className="p-1 rounded-md text-slate-500 hover:text-white hover:bg-white/10 transition-all disabled:opacity-40"
                     >
                       <PencilSimple size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEliminarLinea(line.line_key, line.display_name)}
+                      disabled={isLoading || line.status === 'connected'}
+                      title={line.status === 'connected'
+                        ? 'Desvincule el número antes de eliminar la ranura'
+                        : 'Eliminar esta ranura del panel'}
+                      className="p-1 rounded-md text-slate-600 hover:text-rose-300 hover:bg-rose-500/10 transition-all disabled:opacity-30 disabled:hover:text-slate-600 disabled:hover:bg-transparent"
+                    >
+                      <X size={13} />
                     </button>
                   </div>
                   <p className={`text-xs mt-1 ${line.phone_number ? 'text-emerald-400' : 'text-slate-400'}`}>
