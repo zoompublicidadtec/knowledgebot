@@ -1,6 +1,7 @@
 import { Sidebar } from '@/components/sidebar';
 import { NotificationBell } from '@/components/notification-bell';
 import { MobileNav } from '@/components/mobile-nav';
+import { VolverArriba } from '@/components/volver-arriba';
 import { getCurrentUser } from '@/lib/auth/actions';
 import { redirect } from 'next/navigation';
 
@@ -14,6 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen">
+      <VolverArriba />
       <Sidebar orgName={orgName} />
       <div className="flex-1 flex flex-col min-h-screen">
         {/* Top bar with notification bell — renders above all content, no overflow clip */}
