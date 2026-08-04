@@ -71,11 +71,16 @@ export function NotificationBell() {
   const [animate, setAnimate] = useState(false);
   const prevCount = useRef(0);
   const panelRef = useRef<HTMLDivElement>(null);
+  // --- Blindaje HTTP/2: evita que una peticion colgada congele el panel ---
+  const inFlightRef = useRef(false);
+  const delayRef = useRef(30_000);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const fetchAlerts = async () => {
+  const fetchAlerts = async (signal?: AbortSignal) => {
     try {
       setLoading(true);
-      const res = await fetch('/api/agent/handoff-alerts', { cache: 'no-store' });
+      const res = await fetch('/api/agent/handoff-alerts', { cache: 'no-store', ...(signal ? { signal } : {}) });
       if (!res.ok) return;
       const data = await res.json();
       const newCount = data.count ?? 0;
@@ -133,11 +138,58 @@ export function NotificationBell() {
     }
   };
 
+  // Poll blindado: AbortController (8s), backoff (30s->60s->120s),
+  // pausa en pestana oculta y sin disparar dos veces.
+  // Sin esto, una sola peticion colgada sobre el cable HTTP/2 compartido
+  // congela todo el panel (ERR_HTTP2_PROTOCOL_ERROR / 499).
   useEffect(() => {
-    fetchAlerts();
-    // Poll every 30 seconds
-    const interval = setInterval(fetchAlerts, 30_000);
-    return () => clearInterval(interval);
+    const BASE = 30_000;
+    const MAX = 120_000;
+    let aborted = false;
+
+    const schedule = () => {
+      if (aborted) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(tick, delayRef.current);
+    };
+
+    const tick = async () => {
+      if (aborted || inFlightRef.current) { schedule(); return; }
+      if (typeof document !== 'undefined' && document.hidden) return;
+      inFlightRef.current = true;
+      const ac = new AbortController();
+      abortRef.current = ac;
+      const killTimer = setTimeout(() => ac.abort(), 8_000);
+      try {
+        await fetchAlerts(ac.signal);
+        delayRef.current = BASE;
+      } catch {
+        delayRef.current = Math.min(delayRef.current * 2, MAX);
+      } finally {
+        clearTimeout(killTimer);
+        inFlightRef.current = false;
+        if (!aborted) schedule();
+      }
+    };
+
+    const onVisible = () => {
+      if (!document.hidden && !aborted && !inFlightRef.current) schedule();
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisible);
+    }
+
+    tick();
+    return () => {
+      aborted = true;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (abortRef.current) abortRef.current.abort();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisible);
+      }
+    };
   }, []);
 
   // Close on click outside
