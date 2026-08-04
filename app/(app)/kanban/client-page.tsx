@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { updateContactStageAction } from '@/lib/conversations/actions';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { ChatCircleDots, Robot, User, Clock, Info, X, ArrowsLeftRight } from '@phosphor-icons/react';
+import { ChatCircleDots, Robot, User, Clock, Info, X, ArrowsLeftRight, DotsSixVertical } from '@phosphor-icons/react';
 
 const LINE_COLORS = [
   'bg-pink-500', 'bg-violet-500', 'bg-indigo-500', 
@@ -429,22 +429,32 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
                 </div>
               )}
               {col.items.map(conv => (
+                /*
+                 * La tarjeta NO es arrastrable: se arrastra desde el asa de la
+                 * izquierda. Cuando la tarjeta entera lo era, el navegador
+                 * convertia el clic en arrastre en cuanto el raton se movia un
+                 * pixel, y abrir el chat fallaba de forma intermitente.
+                 */
                 <div
                   key={conv.id}
-                  draggable={!isMobile}
-                  onDragStart={(e) => {
-                    if (isMobile) return;
-                    handleDragStart(e, conv.contact_id);
-                  }}
-                  onDragEnd={() => setScrollDirection(null)}
-                  className={`bg-slate-900 border border-slate-700/50 p-3 rounded-xl hover:border-primary-500/40 transition-all shadow-md group relative flex flex-col gap-2 ${
-                    isMobile ? '' : 'cursor-grab active:cursor-grabbing'
-                  }`}
+                  onClick={() => router.push(`/conversaciones/${conv.id}`)}
+                  className="bg-slate-900 border border-slate-700/50 p-3 rounded-xl hover:border-primary-500/40 transition-all shadow-md group relative flex flex-col gap-2 cursor-pointer"
                 >
                   {/* Name + line dot */}
                   <div className="flex items-start justify-between gap-1">
-                    <h4 className="font-semibold text-white text-sm truncate flex-1 cursor-pointer hover:text-primary-450"
-                      onClick={() => router.push(`/conversaciones/${conv.id}`)}>
+                    {!isMobile && (
+                      <span
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, conv.contact_id)}
+                        onDragEnd={() => setScrollDirection(null)}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Arrastre desde aqui para mover la tarjeta de columna"
+                        className="shrink-0 -ml-1 p-0.5 rounded text-slate-600 hover:text-primary-300 hover:bg-white/5 cursor-grab active:cursor-grabbing transition-colors"
+                      >
+                        <DotsSixVertical size={16} weight="bold" />
+                      </span>
+                    )}
+                    <h4 className="font-semibold text-white text-sm truncate flex-1 hover:text-primary-450">
                       {conv.contacts?.full_name || conv.contacts?.wa_phone}
                     </h4>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -456,7 +466,7 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
                       )}
                       {/* Mobile move button */}
                       <button
-                        className={`${isMobile ? 'block' : 'hidden sm:hidden'} p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-all`}
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-all"
                         onClick={(e) => { e.stopPropagation(); setMoveTarget(conv); }}
                         title="Mover a otra columna"
                       >
@@ -485,12 +495,9 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
                         <User size={9} weight="fill" /> Control Humano
                       </span>
                     )}
-                    <button
-                      className="hidden sm:block text-[9px] text-slate-500 hover:text-primary-400 transition-colors"
-                      onClick={() => router.push(`/conversaciones/${conv.id}`)}
-                    >
+                    <span className="text-[9px] text-slate-500 group-hover:text-primary-400 transition-colors">
                       Ver chat →
-                    </button>
+                    </span>
                   </div>
                 </div>
               ))}
