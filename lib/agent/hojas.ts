@@ -147,15 +147,17 @@ export function textoDeHoja(hoja: HojaDeCategoria | null): string {
 
   if (hoja.marcacion === 'incluida') {
     lineas.push(
-      '- La marcación del logo YA ESTÁ INCLUIDA en el precio de este producto: ' +
-        'NO preguntes técnica, ni número de tintas, ni tamaño del logo. Confírmalo y sigue.'
+      '- INCLUIDO EN EL PRECIO: lo que se imprima en el producto (logo, diseño, foto, ' +
+        'personaje). Si el cliente pregunta, confírmaselo CON TUS PROPIAS PALABRAS y sigue ' +
+        'cotizando. NO preguntes técnica, ni número de tintas, ni tamaño. NUNCA le leas ' +
+        'esta línea al cliente.'
     );
   } else if (hoja.marcacion === 'aparte') {
-    lineas.push('- La marcación del logo se cotiza APARTE de este producto.');
+    lineas.push('- SE COTIZA APARTE lo que se imprima en el producto (logo, diseño, foto). Díselo con tus palabras.');
   } else if (hoja.marcacion === 'no_aplica') {
-    lineas.push('- Este producto NO lleva marcación.');
+    lineas.push('- NO SE IMPRIME NADA en este producto: no se marca ni se personaliza. Díselo con tus palabras.');
   }
-  agregar('Sobre la marcación', hoja.marcacion_nota);
+  agregar('Sobre lo que se imprime', hoja.marcacion_nota);
   agregar('Ten en cuenta', hoja.notas);
 
   if (lineas.length === 0) return '';

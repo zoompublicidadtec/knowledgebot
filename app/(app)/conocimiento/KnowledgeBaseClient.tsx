@@ -1491,7 +1491,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                       value={h.como_preguntar || ''}
                       onChange={e => set('como_preguntar', e.target.value)}
                       className="input text-sm"
-                      placeholder="¿Tu logo es de un solo color o tiene varios? Si podés, pasámelo y lo miro yo."
+                      placeholder="¿El diseño que querés poner es de un solo color o tiene varios? Si podés, pasámelo y lo miro yo."
                     />
                     <p className="text-[10px] text-slate-500 mt-1">
                       Escríbalo tal como se lo diría por WhatsApp. El cliente no sabe qué es una
@@ -1570,7 +1570,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                      El logo del cliente, ¿ya va en el precio?
+                      Lo que se imprime en el producto, ¿ya va en el precio?
                     </label>
                     <select
                       value={h.marcacion || ''}
@@ -1580,26 +1580,26 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                       <option value="">No sé / depende — el bot lo consulta</option>
                       <option value="incluida">Sí, ya está incluido</option>
                       <option value="aparte">No, se cobra aparte</option>
-                      <option value="no_aplica">Estos productos no se marcan</option>
+                      <option value="no_aplica">A estos productos no se les imprime nada</option>
                     </select>
                   </div>
                   <div className="lg:col-span-2">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                      ¿Algo más sobre el logo?
+                      ¿Algo más sobre lo que se imprime?
                     </label>
                     <input
                       type="text"
                       value={h.marcacion_nota || ''}
                       onChange={e => set('marcacion_nota', e.target.value)}
                       className="input text-sm"
-                      placeholder="El diseño ya está en la lista de extras: no hay que preguntar nada más"
+                      placeholder="El diseño ya está en la lista de extras: no hay que preguntar técnica ni tintas"
                     />
                   </div>
                 </div>
 
                 {h.marcacion === 'incluida' && (
                   <p className="text-[11px] text-emerald-300/80">
-                    Con esto, si el cliente pregunta «¿viene marcado?», el bot{' '}
+                    Con esto, si el cliente pregunta si le pueden poner su diseño, el bot{' '}
                     <strong>le responde que sí y sigue</strong>, sin ponerse a preguntar.
                   </p>
                 )}
