@@ -12,8 +12,10 @@ import {
 // NOTE: Pipeline (Kanban) is intentionally NOT in the mobile nav.
 // It is a desktop-only feature (designed for wide screens, used in the office).
 const mobileNavItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: SquaresFour },
+  // Los chats van PRIMEROS: en el telefono se entra a responderle a alguien,
+  // no a mirar numeros. Pedido del dueno el 04-ago-2026.
   { href: '/conversaciones', label: 'Chats', icon: ChatCircleDots },
+  { href: '/dashboard', label: 'Dashboard', icon: SquaresFour },
   { href: '/personalizacion', label: 'Config', icon: SlidersHorizontal },
   { href: '/integraciones', label: 'Integrar', icon: Plugs },
 ];

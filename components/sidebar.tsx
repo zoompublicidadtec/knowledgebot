@@ -22,10 +22,13 @@ import { useState } from 'react';
 import { logoutAction } from '@/lib/auth/actions';
 
 const navItems = [
+  // Orden pedido por el dueno el 04-ago-2026: sigue el camino real de una
+  // venta -llega un chat, se atiende, se mueve por el tablero- y deja la
+  // configuracion al final, que es lo que se toca de vez en cuando.
   { href: '/dashboard', label: 'Dashboard', icon: SquaresFour },
-  { href: '/conocimiento', label: 'Base de Conocimiento', icon: BookBookmark },
   { href: '/conversaciones', label: 'Conversaciones', icon: ChatCircleDots },
   { href: '/kanban', label: 'Pipeline / Kanban', icon: Kanban },
+  { href: '/conocimiento', label: 'Base de Conocimiento', icon: BookBookmark },
   { href: '/personalizacion', label: 'Personalización', icon: SlidersHorizontal },
   { href: '/integraciones', label: 'Integraciones', icon: Plugs },
   /**

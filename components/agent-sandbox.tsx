@@ -14,11 +14,31 @@ export function AgentSandbox({ orgId, conversationId, initialMessages }: AgentSa
   const [messages, setMessages] = useState<any[]>(initialMessages);
   const [text, setText] = useState('');
   const [isPending, startTransition] = useTransition();
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const cajaRef = useRef<HTMLDivElement>(null);
+  const esLaPrimeraVez = useRef(true);
   const supabase = createClient();
 
+  /**
+   * Se mueve la caja de mensajes A MANO, nunca con `scrollIntoView`.
+   *
+   * `scrollIntoView` no mueve solo su caja: arrastra a todos los ancestros
+   * que puedan desplazarse. Como el `<main>` del panel es uno de ellos,
+   * esta ventanita empujaba la pantalla de Personalizacion hasta donde ella
+   * esta — o sea, a la mitad — cada vez que se abria. Es el mismo tropiezo
+   * que ya habia tenido la pantalla de chat, resuelto alli de esta forma.
+   *
+   * La primera vez sin animacion: al abrir, el desfile de mensajes viejos no
+   * aporta nada. Con un mensaje NUEVO si se anima, porque ahi el movimiento
+   * es la senal de que llego algo.
+   */
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const caja = cajaRef.current;
+    if (!caja) return;
+    caja.scrollTo({
+      top: caja.scrollHeight,
+      behavior: esLaPrimeraVez.current ? 'auto' : 'smooth',
+    });
+    esLaPrimeraVez.current = false;
   }, [messages]);
 
   // Listen to new messages in the sandbox conversation
@@ -89,7 +109,7 @@ export function AgentSandbox({ orgId, conversationId, initialMessages }: AgentSa
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={cajaRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length > 0 ? (
           messages.map((msg) => {
             const isOutbound = msg.direction === 'outbound';
@@ -112,7 +132,7 @@ export function AgentSandbox({ orgId, conversationId, initialMessages }: AgentSa
             <p className="text-xs">¡Escribe un mensaje para iniciar la conversación simulada con tu bot!</p>
           </div>
         )}
-        <div ref={scrollRef} />
+
       </div>
 
       {/* Input */}
