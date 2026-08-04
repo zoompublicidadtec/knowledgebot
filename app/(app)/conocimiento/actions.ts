@@ -1410,3 +1410,51 @@ export async function saveHojas(hojas: any[]) {
     return { success: false, error: error.message };
   }
 }
+
+/**
+ * Cuántos productos activos tiene cada categoría.
+ *
+ * Sirve para que cada hoja muestre a cuántos productos está llegando de verdad.
+ * Una hoja en CERO es una hoja muerta —le borraron la categoría, o nunca le
+ * marcaron ninguna— y hoy se ve exactamente igual que una viva.
+ *
+ * El dueño lo planteó el 04-ago-2026 preguntando cuántas hojas habría en diez
+ * años. El número no es el problema (se agrupan por cómo se cotiza, así que son
+ * diez o quince). El problema es no poder distinguir, dentro de tres años, cuál
+ * sigue sirviendo y cuál quedó apuntando al vacío.
+ */
+export async function contarProductosPorCategoria(): Promise<Record<string, number>> {
+  try {
+    const supabase = await createClient();
+
+    // Se piden solo los identificadores y se cuenta acá: traer los productos
+    // enteros arrastraría la columna del buscador, que pesa 19 KB POR PRODUCTO.
+    const conteo: Record<string, number> = {};
+    let desde = 0;
+    for (;;) {
+      const { data, error } = await (supabase as any)
+        .from('products')
+        .select('category_id')
+        .eq('active', true)
+        .range(desde, desde + 999);
+
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      for (const fila of data) {
+        const id = String(fila.category_id || '');
+        if (id) conteo[id] = (conteo[id] || 0) + 1;
+      }
+
+      // La base NUNCA devuelve más de 1000 filas por petición, y pedir un
+      // límite mayor no lo cambia: devuelve 1000 y se queda callada.
+      if (data.length < 1000) break;
+      desde += 1000;
+    }
+
+    return conteo;
+  } catch (error: any) {
+    logger.error('contarProductosPorCategoria', { error: error.message });
+    return {};
+  }
+}

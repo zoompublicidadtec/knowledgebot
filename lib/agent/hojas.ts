@@ -87,7 +87,13 @@ async function cargar(orgId: string): Promise<Cache> {
       }
       for (const id of hoja?.categorias || []) {
         const nombre = nombrePorId.get(String(id));
-        if (nombre) porNombre.set(normalizar(nombre), hoja);
+        // MANDA LA MAS NUEVA. Las hojas nuevas se agregan al principio de la
+        // lista, asi que la primera que reclame una categoria se queda con ella.
+        // Antes ganaba la ultima del recorrido -o sea la mas VIEJA-, y el dueño
+        // podia escribir una hoja entera, guardarla y no ver ningun efecto.
+        if (!nombre) continue;
+        const clave = normalizar(nombre);
+        if (!porNombre.has(clave)) porNombre.set(clave, hoja);
       }
     }
 
