@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { fetchMergedBridgeState } from '@/lib/whatsapp/bridge';
 import { logger } from '@/lib/logger';
+import { lineasApagadas } from '@/lib/whatsapp/lineas-apagadas';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,22 +115,29 @@ export async function GET() {
           });
         }
       }
+      // Las que el dueño apagó a propósito no son un problema: son una
+      // decisión. Se muestran, pero no cuentan como alarma.
+      const apagadas = new Set(await lineasApagadas(orgId));
+
       const lines = (dbLines || []).map((l: any) => {
         const s = sessions[l.line_key] || {};
         const connected = s.loaded === true && s.status === 'connected';
+        const apagada = apagadas.has(l.line_key) && !connected;
         const zombie = l.status === 'connected' && !connected;
         return {
           line_key: l.line_key,
           display_name: l.display_name,
           phone_number: s.phoneNumber || l.phone_number,
-          level: (connected ? 'ok' : zombie ? 'error' : 'warn') as Level,
-          state: connected ? 'Conectada' : zombie ? 'Caída silenciosa' : 'Desconectada',
-          detail: connected
+          level: (connected ? 'ok' : apagada ? 'ok' : zombie ? 'error' : 'warn') as Level,
+          state: connected ? 'Conectada' : apagada ? 'Apagada por usted' : zombie ? 'Caída silenciosa' : 'Desconectada',
+          detail: apagada
+            ? 'La desvinculó usted. No cuenta como problema; pídale el QR cuando quiera usarla.'
+            : connected
             ? `Activa desde ${s.connectedAt ? new Date(s.connectedAt).toLocaleString('es-CO') : 'hace un momento'}.`
             : zombie
               ? 'El sistema la da por conectada pero el puente no la tiene cargada: los mensajes no llegan.'
               : (s.lastError || 'La sesión no está iniciada.'),
-          fix: connected ? undefined
+          fix: connected || apagada ? undefined
             : zombie ? 'Volver a escanear el QR desde Integraciones para restablecer la sesión.'
               : 'Iniciar la línea y escanear el código QR desde Integraciones.',
           keepAliveErrors: s.keepAliveErrors || 0,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getBridgeUrl, bridgeHeaders } from '@/lib/whatsapp/bridge';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { marcarLineaApagada } from '@/lib/whatsapp/lineas-apagadas';
 
 export async function GET(request: NextRequest) {
   try {
@@ -68,6 +69,11 @@ export async function POST(request: NextRequest) {
       }, { onConflict: 'line_key' })
       .select()
       .single();
+
+    // Pedir el QR es la señal contraria a desvincular: el dueño SI quiere
+    // esta línea. Deja de estar apagada a propósito y el Centro de Control
+    // vuelve a vigilarla.
+    await marcarLineaApagada(profile.organization_id, line_key, false);
 
     if (error) {
        console.error('API Error:', error.message);

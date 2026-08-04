@@ -136,6 +136,45 @@ export default function ClientPage({ initialLines }: { initialLines: WhatsAppLin
     if (!since) return false;
     return Date.now() - since > QR_TIMEOUT_MS;
   };
+  /**
+   * EL QR SE APAGA SOLO.
+   *
+   * El panel preguntaba por el QR cada 3 segundos mientras la línea estuviera
+   * en `awaiting_qr`, y CADA pregunta despierta la sesión en el puente
+   * («QR solicitado desde el panel: se despierta la línea»). Como nada sacaba
+   * nunca a la línea de ese estado, el puente seguía generando códigos para
+   * siempre. Lo reportó el dueño el 04-ago-2026: «no es bueno que se quede
+   * generando QR toda la vida».
+   *
+   * El vencimiento ya se calculaba, pero solo cambiaba lo que se ve en
+   * pantalla. Ahora, al vencer, se desvincula de verdad: se cierra la sesión en
+   * el puente y la línea queda en reposo hasta que alguien vuelva a pedir el QR.
+   */
+  const yaApagadas = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const line of lines) {
+      if (line.status !== 'awaiting_qr') {
+        yaApagadas.current.delete(line.line_key);
+        continue;
+      }
+      if (!isQrTimedOut(line.line_key)) continue;
+      if (yaApagadas.current.has(line.line_key)) continue;
+
+      yaApagadas.current.add(line.line_key);
+      apagarQrVencido(line.line_key);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines]);
+
+  const apagarQrVencido = async (lineKey: string) => {
+    try {
+      await fetch(`/api/whatsapp-lines/${lineKey}`, { method: 'DELETE' });
+      delete awaitingQrSince.current[lineKey];
+      await fetchLines();
+    } catch {
+      /* si falla, el proximo vencimiento lo vuelve a intentar */
+    }
+  };
 
   const setLineLoading = (lineKey: string, loading: boolean) => {
     setLoadingLines(prev => {

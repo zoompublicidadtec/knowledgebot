@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getBridgeUrl, bridgeHeaders } from '@/lib/whatsapp/bridge';
+import { marcarLineaApagada } from '@/lib/whatsapp/lineas-apagadas';
 
 /**
  * PATCH /api/whatsapp-lines/[line_key]
@@ -92,6 +93,11 @@ export async function DELETE(
       .from('whatsapp_lines')
       .update({ status: 'disconnected', qr_code: null })
       .eq('line_key', line_key);
+
+    // Desvincular ES la señal de que el dueño no quiere esta línea conectada.
+    // Sin esto, cada ranura apagada quedaba como alarma permanente en el
+    // Centro de Control: con 8 líneas, 7 alarmas por decisión propia.
+    await marcarLineaApagada((line as any).organization_id, line_key, true);
 
     // El puente depende de la línea: durante la migración a Baileys cada
     // línea puede vivir en un puerto distinto (WHATSAPP_BRIDGE_ROUTES).
