@@ -184,7 +184,22 @@ export async function getCatalog(params: {
     // we only READ these tables, never alter them here.
     let queryBuilder = (supabase as any)
       .from('products')
-      .select('*, categories(name), price_tiers(id, variant, min_qty, max_qty, price, price_basis)', { count: 'exact' });
+      // Se piden las columnas UNA POR UNA en vez de '*'.
+      //
+      // La tabla tiene una columna llamada embedding con los numeros que usa el
+      // buscador: 19.272 caracteres POR PRODUCTO. El panel no la muestra
+      // nunca, pero con '*' la pedia igual: 675 KB por pagina en vez de 72 KB,
+      // y 0,83 s de espera. Medido el 04-ago-2026.
+      //
+      // No es solo lentitud: el menu precarga sus paginas al pasar el raton, y
+      // una peticion tan pesada ocupaba una de las pocas conexiones que el
+      // navegador permite a la vez. Con varias asi, el panel se congelaba.
+      .select(
+        'id, name, reference, active, unit, image_url, description, notes, ' +
+          'min_order_qty, price_includes_iva, category_id, search_text, ' +
+          'categories(name), price_tiers(id, variant, min_qty, max_qty, price, price_basis)',
+        { count: 'exact' }
+      );
 
     // Filter by Category or Subcategory
     if (params.categoryId && params.categoryId !== 'all') {

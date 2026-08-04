@@ -38,6 +38,36 @@ async function timed<T>(p: Promise<T>, ms: number): Promise<T | null> {
  * la acción concreta para repararlo. Sustituye a los datos inventados que
  * mostraba el Centro de Control.
  */
+/**
+ * Trae TODAS las filas de una tabla pidiendo las paginas EN PARALELO.
+ *
+ * La base nunca devuelve mas de 1.000 filas por peticion. El Centro de Control
+ * recorria dos tablas enteras pidiendo pagina, esperando, pidiendo la
+ * siguiente: 14 idas y vueltas en fila solo para eso, sobre un total de unas
+ * 25. Medido el 04-ago-2026: 3,7 s solo en consultas, y la pantalla se
+ * refresca sola cada minuto.
+ *
+ * Ahora se pregunta cuantas paginas hay y se piden todas a la vez. El tiempo
+ * pasa de ser la SUMA de todas a ser la de la mas lenta. Los datos son
+ * exactamente los mismos: cambia como se piden, no que se pide.
+ */
+async function traerTodasLasPaginas(
+  nuevaConsulta: () => any,
+  totalDeFilas: number
+): Promise<any[]> {
+  const TAMANO = 1000;
+  const paginas = Math.max(1, Math.ceil((totalDeFilas || 0) / TAMANO));
+  const lotes = await Promise.all(
+    Array.from({ length: paginas }, (_, i) =>
+      nuevaConsulta()
+        .range(i * TAMANO, i * TAMANO + TAMANO - 1)
+        .then((r: any) => r?.data || [])
+        .catch(() => [])
+    )
+  );
+  return lotes.flat();
+}
+
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -213,16 +243,13 @@ export async function GET() {
     // Referencias duplicadas (la causa de que el bot repitiera el mismo
     // producto). Se pagina porque PostgREST corta en 1000 filas por consulta.
     const seen = new Map<string, number>();
-    for (let from = 0; from < 20000; from += 1000) {
-      const { data: page } = await (admin as any)
-        .from('products').select('reference').eq('active', true)
-        .range(from, from + 999);
-      if (!page || page.length === 0) break;
-      for (const r of page) {
-        const k = (r.reference || '').trim();
-        if (k) seen.set(k, (seen.get(k) || 0) + 1);
-      }
-      if (page.length < 1000) break;
+    const todasLasReferencias = await traerTodasLasPaginas(
+      () => (admin as any).from('products').select('reference').eq('active', true),
+      activos || 0
+    );
+    for (const r of todasLasReferencias) {
+      const k = (r.reference || '').trim();
+      if (k) seen.set(k, (seen.get(k) || 0) + 1);
     }
     const dupes = [...seen.values()].filter(v => v > 1).length;
     checks.push({
@@ -243,16 +270,15 @@ export async function GET() {
     const suspects: Array<{ reference: string; name: string; issue: string }> = [];
     try {
       const tiersByProd = new Map<string, any[]>();
-      for (let from = 0; from < 30000; from += 1000) {
-        const { data: page } = await (admin as any)
-          .from('price_tiers').select('product_id, variant, min_qty, price')
-          .range(from, from + 999);
-        if (!page?.length) break;
-        for (const t of page) {
-          if (!tiersByProd.has(t.product_id)) tiersByProd.set(t.product_id, []);
-          tiersByProd.get(t.product_id)!.push(t);
-        }
-        if (page.length < 1000) break;
+      const { count: totalTramos } = await (admin as any)
+        .from('price_tiers').select('product_id', { count: 'exact', head: true });
+      const todosLosTramos = await traerTodasLasPaginas(
+        () => (admin as any).from('price_tiers').select('product_id, variant, min_qty, price'),
+        totalTramos || 0
+      );
+      for (const t of todosLosTramos) {
+        if (!tiersByProd.has(t.product_id)) tiersByProd.set(t.product_id, []);
+        tiersByProd.get(t.product_id)!.push(t);
       }
 
       const { data: prodMeta } = await (admin as any)
