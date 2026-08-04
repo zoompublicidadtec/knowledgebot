@@ -721,6 +721,26 @@ dar uno que solo recibe mensajes. Con dos o más sedes, **el encabezado del prom
 deja de nombrar una dirección**: un dato suelto arriba pesaba más que la lista
 recuperada y hacía que contestara con una sola sede.
 
+### Las hojas de categoría — la chuleta del asesor
+`lib/agent/hojas.ts` y la pestaña «Hojas de categoría» del panel de Conocimiento.
+El dueño escribe, por familia de productos, **qué necesita saber el asesor** para
+cotizar y **cómo pedírselo al cliente** sin interrogarlo — son dos campos
+distintos a propósito: el asesor necesita las tintas, el cliente no tiene por qué
+oír esa palabra. Una hoja puede cubrir **varias categorías** (se agrupa por qué
+hay que preguntar, no por lo que el producto es) y hay una **hoja general** para
+lo que no tenga la suya.
+
+Viven en `agent_configs.metadata.hojas`, igual que las cuentas de pago y las
+sedes. `searchCatalog` le adjunta a cada producto la guía de su categoría en
+`guia_de_venta`: **dato de recuperación, no instrucción del prompt**. Con eso se
+llenó el hueco de `instrucciones_venta`, que el prompt mandaba obedecer dos veces
+y nunca existió. Caché de 60 segundos, así que un cambio en el panel se ve al
+minuto. **Sin hojas cargadas el bot se comporta exactamente como antes.**
+
+Medido el 04-ago: con la hoja de Cuadernos puesta, a «¿y ya vienen marcados?» el
+bot responde «la marcación ya está incluida» y hace **una** pregunta. El 03-ago,
+sin hoja, hacía tres y terminaba en «hubo un error al cotizar».
+
 ### La cotización armada — `buildQuote`
 `lib/agent/tools/build-quote.ts`, creada el 03-ago. El modelo dice **qué** lleva
 el pedido, sin una sola cifra; el código resuelve el desglose leyendo del

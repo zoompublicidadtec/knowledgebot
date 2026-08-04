@@ -1244,7 +1244,7 @@ ${lineas}`;
           bookAppointment: bookAppointmentTool(toolContext),
           cancelAppointment: cancelAppointmentTool(toolContext),
           rescheduleAppointment: rescheduleAppointmentTool(toolContext),
-          searchCatalog: searchCatalogTool(),
+          searchCatalog: searchCatalogTool(toolContext),
           getProductPrice: getProductPriceTool(),
           saveContactInfo: saveContactInfoTool(toolContext),
           queryKnowledgeBase: queryKnowledgeBaseTool(toolContext),

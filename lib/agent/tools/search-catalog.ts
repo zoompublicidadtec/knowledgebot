@@ -1,6 +1,7 @@
 import { tool, jsonSchema } from 'ai';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
+import { hojaDeCategoria, textoDeHoja } from '../hojas';
 
 function removeAccentsSimple(t: string): string {
   return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -162,7 +163,33 @@ function marcarSugeridos(matches: any[]): void {
   top3.forEach((m: any, i: number) => { m.sugerido = i + 1; });
 }
 
-export function searchCatalogTool() {
+
+/**
+ * Le pega a cada producto la GUIA DE VENTA de su categoria, que el dueño
+ * escribio en el panel. Es dato de recuperacion, no una instruccion metida en
+ * el prompt: llena el hueco de `instrucciones_venta`, que el prompt mandaba
+ * obedecer dos veces y NUNCA existio.
+ *
+ * Sin hojas cargadas no toca nada y el bot se comporta exactamente como antes.
+ */
+async function adjuntarGuiaDeVenta(matches: any[], orgId?: string): Promise<any[]> {
+  if (!orgId || !Array.isArray(matches) || matches.length === 0) return matches;
+  try {
+    const cache = new Map<string, string>();
+    for (const m of matches) {
+      const cat = String(m?.category || '');
+      if (!cache.has(cat)) {
+        cache.set(cat, textoDeHoja(await hojaDeCategoria(orgId, cat)));
+      }
+      const guia = cache.get(cat) || '';
+      if (guia) m.guia_de_venta = guia;
+    }
+  } catch (err) {
+    logger.warn('No se pudo adjuntar la guia de venta', { error: String(err) });
+  }
+  return matches;
+}
+export function searchCatalogTool(ctx?: { orgId?: string }) {
   return tool({
     description:
       'Busca productos en el catalogo por nombre, categoria o descripcion. Devuelve el ID del producto (product_id), nombre y unidad de medida. Usalo SIEMPRE para identificar de que producto habla el cliente antes de pedir el precio.',
@@ -176,7 +203,7 @@ export function searchCatalogTool() {
       },
       required: ['query'],
     }),
-    execute: async (args: any) => runCatalogSearch(String(args.query || '')),
+    execute: async (args: any) => runCatalogSearch(String(args.query || ''), ctx?.orgId),
   } as any);
 }
 
@@ -186,7 +213,7 @@ export function searchCatalogTool() {
  * que el modelo decida llamar a la herramienta: en produccion no la llamaba y
  * respondia "eso no lo manejamos" sobre productos que si existen.
  */
-export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
+export async function runCatalogSearch(rawQueryInput: string, orgId?: string): Promise<any> {
       const rawQuery = String(rawQueryInput || '').trim();
 
       if (!rawQuery) {
@@ -228,6 +255,7 @@ export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
           }));
 
           matches = await annotateMatchesWithPricing(supabase, matches);
+          matches = await adjuntarGuiaDeVenta(matches, orgId);
 
           // REDIRECCIÓN AUTOMÁTICA: si la categoría trae <2 productos con precio válido
           const pricedCount = matches.filter((m: any) => m.has_pricing).length;
@@ -265,6 +293,7 @@ export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
                   if (sisterMatches.length > 0) {
                     matches = [...matches, ...sisterMatches];
                     matches = await annotateMatchesWithPricing(supabase, matches);
+                    matches = await adjuntarGuiaDeVenta(matches, orgId);
                     logger.info('Auto-redirect to sister category', { from: rawQuery, to: sister, added: sisterMatches.length });
                   }
                 }
@@ -291,6 +320,7 @@ export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
             // El Premium se recalcula dentro del conjunto entregado.
             for (const m of matches) m.is_most_expensive = false;
             matches = await annotateMatchesWithPricing(supabase, matches);
+            matches = await adjuntarGuiaDeVenta(matches, orgId);
             matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)) || ((b.score || 0) - (a.score || 0)));
           }
 
@@ -355,6 +385,7 @@ export async function runCatalogSearch(rawQueryInput: string): Promise<any> {
         }));
 
         matches = await annotateMatchesWithPricing(supabase, matches);
+        matches = await adjuntarGuiaDeVenta(matches, orgId);
 
         // Reordenar
         matches.sort((a: any, b: any) => (Number(b.has_pricing) - Number(a.has_pricing)));

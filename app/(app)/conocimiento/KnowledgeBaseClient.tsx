@@ -30,6 +30,8 @@ import {
   hardDeleteProduct,
   updateTierPrice,
   getServiciosYMarcaciones,
+  getHojas,
+  saveHojas,
 } from './actions';
 import { CatalogTable, type CatalogProduct, type SortField, type SortDir } from './components/CatalogTable';
 import { BulkActionsBar } from './components/BulkActionsBar';
@@ -187,9 +189,16 @@ function idiomaDePrecio(unit: string): IdiomaDePrecio {
 
 export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBaseClientProps) {
   // Tabs State
-  const [activeTab, setActiveTab] = useState<'catalog' | 'glossary' | 'marking'>('catalog');
+  const [activeTab, setActiveTab] = useState<'catalog' | 'glossary' | 'marking' | 'hojas'>('catalog');
   const [services, setServices] = useState<any[]>([]);
   const [loadingServices, setLoadingServices] = useState(false);
+
+  // Hojas de categoria: la chuleta del asesor. Viven en
+  // agent_configs.metadata.hojas, el mismo sitio que las cuentas de pago.
+  const [hojas, setHojas] = useState<any[]>([]);
+  const [loadingHojas, setLoadingHojas] = useState(false);
+  const [guardandoHojas, setGuardandoHojas] = useState(false);
+  const [msgHojas, setMsgHojas] = useState<string>('');
 
   // Categories State
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -312,6 +321,24 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     if (activeTab === 'glossary') {
       loadGlossaryList();
     }
+  }, [activeTab]);
+
+  const loadHojas = async () => {
+    setLoadingHojas(true);
+    try {
+      setHojas((await getHojas()) as any[]);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingHojas(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'hojas' && hojas.length === 0) {
+      loadHojas();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   // Servicios y marcaciones (tarifas reales de la base, no escritas en el código)
@@ -813,6 +840,17 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
           <Sliders size={18} />
           Precios de Marcación
         </button>
+        <button
+          onClick={() => setActiveTab('hojas')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+            activeTab === 'hojas'
+              ? 'border-primary-400 text-primary-400 bg-primary-950/20'
+              : 'border-transparent text-slate-400 hover:text-white hover:border-white/10'
+          }`}
+        >
+          <BookBookmark size={18} />
+          Hojas de categoría
+        </button>
       </div>
 
       {/* ─── TAB 1: CATALOG ─── */}
@@ -1164,6 +1202,318 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
               Si un servicio aparece en ámbar es porque no tiene tarifas y el bot no podrá ofrecerlo.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* ─── TAB 4: HOJAS DE CATEGORÍA ───
+          La hoja es la CHULETA DEL ASESOR, no un cuestionario para el cliente.
+          Esa distinción es todo: el asesor necesita saber cuántas tintas lleva
+          un llavero, pero el cliente no tiene por qué oír nunca la palabra
+          «tinta». Por eso hay un campo para lo que el asesor necesita y otro,
+          aparte, para cómo pedírselo al cliente. */}
+      {activeTab === 'hojas' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="card space-y-3">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="max-w-2xl">
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <BookBookmark size={20} className="text-primary-400" />
+                  Hojas de categoría
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                  Una hoja es la <strong>chuleta del asesor</strong>: qué necesita saber para
+                  cotizar y cómo preguntárselo al cliente sin marearlo. Una misma hoja puede
+                  cubrir varias categorías que se cotizan igual.
+                  <br />
+                  <strong className="text-amber-300/90">
+                    Lo que deje vacío no se inventa:
+                  </strong>{' '}
+                  el bot simplemente no dirá nada de eso y ofrecerá consultarlo.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setHojas([
+                      ...hojas,
+                      {
+                        id: 'hoja_' + Date.now(),
+                        nombre: '',
+                        categorias: [],
+                        general: false,
+                        preguntar: '',
+                        no_preguntar: '',
+                        como_preguntar: '',
+                        buscar_como: '',
+                        nunca_buscar: '',
+                        adicionales: '',
+                        marcacion: '',
+                        marcacion_nota: '',
+                        notas: '',
+                      },
+                    ])
+                  }
+                  className="btn-secondary text-xs"
+                >
+                  <Plus size={14} /> Agregar hoja
+                </button>
+                <button
+                  type="button"
+                  disabled={guardandoHojas}
+                  onClick={async () => {
+                    setGuardandoHojas(true);
+                    setMsgHojas('');
+                    const r: any = await saveHojas(hojas);
+                    setMsgHojas(
+                      r?.success
+                        ? `Guardado. ${r.guardadas} hoja(s).`
+                        : `No se pudo guardar: ${r?.error || 'error desconocido'}`
+                    );
+                    setGuardandoHojas(false);
+                  }}
+                  className="btn-primary text-xs"
+                >
+                  {guardandoHojas ? 'Guardando…' : 'Guardar hojas'}
+                </button>
+              </div>
+            </div>
+            {msgHojas && (
+              <p className="text-xs text-primary-300 bg-primary-950/30 border border-primary-500/30 rounded-lg px-3 py-2">
+                {msgHojas}
+              </p>
+            )}
+          </div>
+
+          {loadingHojas && <p className="text-sm text-slate-400">Cargando hojas…</p>}
+
+          {!loadingHojas && hojas.length === 0 && (
+            <div className="card">
+              <p className="text-sm text-slate-400">
+                Todavía no hay ninguna hoja. Con «Agregar hoja» crea la primera.
+              </p>
+            </div>
+          )}
+
+          {hojas.map((h: any, i: number) => {
+            const set = (campo: string, valor: any) => {
+              const copia = [...hojas];
+              copia[i] = { ...copia[i], [campo]: valor };
+              setHojas(copia);
+            };
+            const catsElegidas: string[] = Array.isArray(h.categorias) ? h.categorias : [];
+            const alternarCategoria = (id: string) =>
+              set(
+                'categorias',
+                catsElegidas.includes(id)
+                  ? catsElegidas.filter(x => x !== id)
+                  : [...catsElegidas, id]
+              );
+
+            return (
+              <div key={h.id || i} className="card space-y-4">
+                <div className="flex flex-col md:flex-row md:items-end gap-3">
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Nombre de la hoja
+                    </label>
+                    <input
+                      type="text"
+                      value={h.nombre || ''}
+                      onChange={e => set('nombre', e.target.value)}
+                      className="input text-sm"
+                      placeholder="Cuadernos · Llaveros · Bebida (mugs y termos)…"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-slate-300 shrink-0 pb-2">
+                    <input
+                      type="checkbox"
+                      checked={h.general === true}
+                      onChange={e => set('general', e.target.checked)}
+                    />
+                    Hoja general
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setHojas(hojas.filter((_: any, j: number) => j !== i))}
+                    className="text-xs text-red-400 hover:text-red-300 px-2 py-2 shrink-0"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+
+                {h.general && (
+                  <p className="text-[11px] text-amber-300/80">
+                    Esta hoja se usa para <strong>todas las categorías que no tengan hoja propia</strong>.
+                    Solo puede haber una.
+                  </p>
+                )}
+
+                {!h.general && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Categorías que usan esta hoja ({catsElegidas.length})
+                    </label>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Marque todas las que se coticen igual. Un mug y un termo se preguntan
+                      igual: van en la misma hoja.
+                    </p>
+                    <div className="max-h-44 overflow-y-auto rounded-lg border border-white/10 bg-slate-950/50 p-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                      {categories.map((c: any) => (
+                        <label
+                          key={c.id}
+                          className="flex items-center gap-2 text-xs text-slate-300 hover:text-white cursor-pointer px-1 py-0.5 rounded hover:bg-white/5"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={catsElegidas.includes(c.id)}
+                            onChange={() => alternarCategoria(c.id)}
+                          />
+                          <span className="truncate">{c.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Qué necesita saber el asesor para cotizar
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={h.preguntar || ''}
+                      onChange={e => set('preguntar', e.target.value)}
+                      className="input text-sm"
+                      placeholder="tamaño · cuántas hojas · cantidad · argollado o cosido"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Esto es para el asesor, <strong>no</strong> es lo que se le pregunta al cliente.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Cómo pedírselo al cliente
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={h.como_preguntar || ''}
+                      onChange={e => set('como_preguntar', e.target.value)}
+                      className="input text-sm"
+                      placeholder="En una frase normal, nunca en lista. En vez de «¿cuántas tintas?», preguntar «¿tu logo es de un solo color o tiene varios?»"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Palabras que el cliente entienda. Nada de jerga del oficio.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Qué NO hay que preguntar (y por qué)
+                  </label>
+                  <input
+                    type="text"
+                    value={h.no_preguntar || ''}
+                    onChange={e => set('no_preguntar', e.target.value)}
+                    className="input text-sm"
+                    placeholder="Cosido: si no lo pide, es argollado y no se suma"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Con qué palabras se busca en el catálogo
+                    </label>
+                    <input
+                      type="text"
+                      value={h.buscar_como || ''}
+                      onChange={e => set('buscar_como', e.target.value)}
+                      className="input text-sm"
+                      placeholder="cuaderno 80 hojas"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Palabras que NO existen en el catálogo
+                    </label>
+                    <input
+                      type="text"
+                      value={h.nunca_buscar || ''}
+                      onChange={e => set('nunca_buscar', e.target.value)}
+                      className="input text-sm"
+                      placeholder="agenda · grande · cosido"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Qué se le puede sumar al producto
+                  </label>
+                  <input
+                    type="text"
+                    value={h.adicionales || ''}
+                    onChange={e => set('adicionales', e.target.value)}
+                    className="input text-sm"
+                    placeholder="insertos · filtro uv · guardas · cosido · diseño"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      La marcación del logo
+                    </label>
+                    <select
+                      value={h.marcacion || ''}
+                      onChange={e => set('marcacion', e.target.value)}
+                      className="input text-sm"
+                    >
+                      <option value="">Sin definir — el bot lo consulta</option>
+                      <option value="incluida">Ya está incluida en la tabla</option>
+                      <option value="aparte">Se cotiza aparte</option>
+                      <option value="no_aplica">No aplica</option>
+                    </select>
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Aclaración de la marcación
+                    </label>
+                    <input
+                      type="text"
+                      value={h.marcacion_nota || ''}
+                      onChange={e => set('marcacion_nota', e.target.value)}
+                      className="input text-sm"
+                      placeholder="El Diseño ya es un renglón de la tabla: no preguntar técnica ni tintas"
+                    />
+                  </div>
+                </div>
+
+                {h.marcacion === 'incluida' && (
+                  <p className="text-[11px] text-emerald-300/80">
+                    Con esto, si el cliente pregunta «¿viene marcado?», el bot{' '}
+                    <strong>no le pregunta nada</strong>: lo confirma y sigue.
+                  </p>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Otras notas para el asesor
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={h.notas || ''}
+                    onChange={e => set('notas', e.target.value)}
+                    className="input text-sm"
+                    placeholder="Mínimo 20 unidades. Si se pasa de 6x4 cm hay un costo adicional que se confirma con producción."
+                  />
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

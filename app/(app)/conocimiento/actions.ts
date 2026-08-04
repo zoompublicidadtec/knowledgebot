@@ -1259,3 +1259,154 @@ export async function getServiciosYMarcaciones(): Promise<ServiceGroup[]> {
     return [];
   }
 }
+
+// ─── HOJAS DE CATEGORÍA ────────────────────────────────────────────────────
+/**
+ * La HOJA es la chuleta del asesor, no un cuestionario para el cliente.
+ *
+ * POR QUÉ EXISTE. Hasta el 04-ago-2026 el sistema tenía UNA sola hoja, la de
+ * cuadernos, escrita a mano DENTRO del prompt («REGLA ESPECIAL: Cuadernos —
+ * necesitas 4 datos: tamaño, hojas, cantidad, argollado o cosido»). Funcionaba,
+ * pero era una de 82 categorías y el dueño no podía verla ni cambiarla.
+ * Resultado medido el 03-ago: a «¿y ya vienen marcados?» sobre cuadernos, el
+ * bot —sin hoja que le dijera que el Diseño ya está en la tabla— se inventó un
+ * interrogatorio de tres turnos (tamaño del logo, técnica, número de tintas) y
+ * terminó en «hubo un error al cotizar». Cinco mensajes, cero venta.
+ *
+ * DÓNDE VIVE. En `agent_configs.metadata.hojas`, igual que las cuentas de pago,
+ * los temas libres y las sedes. Sin tabla nueva y sin migración: el mismo patrón
+ * que ya funciona en este panel.
+ *
+ * UNA HOJA PUEDE CUBRIR VARIAS CATEGORÍAS. Es la respuesta a «¿qué más se puede
+ * combinar?»: el dueño agrupa por **qué hay que preguntar para cotizar**, no por
+ * lo que el producto es. Un mug, un termo y un vaso se preguntan igual; un
+ * martillo y una sombrilla también. Una hoja, varias categorías enganchadas.
+ *
+ * LO QUE FALTA SE OMITE. Un campo vacío no se rellena con un ejemplo: la hoja
+ * simplemente no dice nada de eso y el bot consulta con el equipo. Es la misma
+ * regla de DEFAULT_PERSONA, y el motivo es el mismo — un ejemplo puesto «para
+ * que no quede vacío» se convierte en una mentira dicha con total seguridad.
+ */
+export interface HojaDeCategoria {
+  id: string;
+  nombre: string;
+  /** Categorías que usan esta hoja. Vacío + general = cubre todo lo demás. */
+  categorias: string[];
+  /** Si es la hoja de respaldo para las categorías sin hoja propia. */
+  general?: boolean;
+  /** Lo que el ASESOR necesita saber para cotizar. No es lo que se le pregunta al cliente. */
+  preguntar: string;
+  /** Lo que NO hay que preguntar, y por qué. */
+  no_preguntar: string;
+  /** Cómo pedir esos datos en palabras que el cliente entienda. */
+  como_preguntar: string;
+  /** Con qué palabras se busca en el catálogo. */
+  buscar_como: string;
+  /** Palabras que NO existen en el catálogo y no hay que usar al buscar. */
+  nunca_buscar: string;
+  /** Qué se le puede sumar al producto. */
+  adicionales: string;
+  /** incluida | aparte | no_aplica | '' (sin definir) */
+  marcacion: string;
+  /** Aclaración de la marcación, en una línea. */
+  marcacion_nota: string;
+  /** Cualquier otra cosa que el asesor deba tener presente. */
+  notas: string;
+}
+
+function limpiarHoja(h: any, indice: number): HojaDeCategoria {
+  const texto = (v: any) => String(v ?? '').trim();
+  const MARCACIONES = ['incluida', 'aparte', 'no_aplica'];
+  const marcacion = texto(h?.marcacion).toLowerCase();
+  return {
+    id: texto(h?.id) || `hoja_${indice + 1}`,
+    nombre: texto(h?.nombre),
+    categorias: Array.isArray(h?.categorias) ? h.categorias.map(texto).filter(Boolean) : [],
+    general: h?.general === true,
+    preguntar: texto(h?.preguntar),
+    no_preguntar: texto(h?.no_preguntar),
+    como_preguntar: texto(h?.como_preguntar),
+    buscar_como: texto(h?.buscar_como),
+    nunca_buscar: texto(h?.nunca_buscar),
+    adicionales: texto(h?.adicionales),
+    // Un valor raro NO se corrige a uno que suene bien: se deja vacío, y con el
+    // campo vacío el bot dice que lo confirma en vez de afirmar de más.
+    marcacion: MARCACIONES.includes(marcacion) ? marcacion : '',
+    marcacion_nota: texto(h?.marcacion_nota),
+    notas: texto(h?.notas),
+  };
+}
+
+/** Lee las hojas que el dueño escribió en el panel. */
+export async function getHojas(): Promise<HojaDeCategoria[]> {
+  try {
+    const supabase = await createClient();
+    const orgId = await getOrgId();
+    const { data } = await (supabase as any)
+      .from('agent_configs')
+      .select('metadata')
+      .eq('organization_id', orgId)
+      .single();
+
+    const crudas = (data?.metadata as any)?.hojas;
+    if (!Array.isArray(crudas)) return [];
+    return crudas.map(limpiarHoja);
+  } catch (error: any) {
+    logger.error('getHojas', { error: error.message });
+    return [];
+  }
+}
+
+/**
+ * Guarda la lista COMPLETA de hojas.
+ *
+ * Se lee el resto de `metadata` y se conserva: escribir solo `{ hojas }`
+ * borraría `persona` —el nombre del agente, su saludo, las cuentas de pago— y
+ * eso ya pasó antes en este proyecto con las FAQ.
+ */
+export async function saveHojas(hojas: any[]) {
+  try {
+    const supabase = await createClient();
+    const orgId = await getOrgId();
+
+    const limpias = (Array.isArray(hojas) ? hojas : [])
+      .map(limpiarHoja)
+      // Una hoja sin nombre no se puede ni nombrar: no se guarda a medias.
+      .filter(h => h.nombre);
+
+    // Solo puede haber UNA hoja general: si hubiera dos, ninguna de las dos
+    // sabría cuál manda para una categoría sin hoja propia.
+    let yaHayGeneral = false;
+    for (const h of limpias) {
+      if (h.general && yaHayGeneral) h.general = false;
+      if (h.general) yaHayGeneral = true;
+    }
+
+    const { data: existente } = await (supabase as any)
+      .from('agent_configs')
+      .select('metadata')
+      .eq('organization_id', orgId)
+      .single();
+
+    const metadata = { ...((existente as any)?.metadata || {}), hojas: limpias };
+
+    const { error } = await (supabase as any)
+      .from('agent_configs')
+      .update({ metadata, updated_at: new Date().toISOString() })
+      .eq('organization_id', orgId);
+
+    if (error) throw error;
+
+    logger.info('Hojas de categoria guardadas', {
+      orgId,
+      cuantas: limpias.length,
+      categoriasCubiertas: limpias.reduce((n, h) => n + h.categorias.length, 0),
+    });
+
+    revalidatePath('/conocimiento');
+    return { success: true, guardadas: limpias.length };
+  } catch (error: any) {
+    logger.error('saveHojas', { error: error.message });
+    return { success: false, error: error.message };
+  }
+}
