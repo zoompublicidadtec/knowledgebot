@@ -55,7 +55,7 @@ graphify diagnose multigraph
 
 ### Qué contiene el grafo
 
-- `graph.json` — grafo consultable. Al 03-ago-2026: **1.423 nodos y 2.515
+- `graph.json` — grafo consultable. Al 04-ago-2026: **1.423 nodos y 2.515
   aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
   contradictorias.
 - `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
