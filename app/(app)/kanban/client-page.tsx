@@ -159,6 +159,42 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
 
   // Desktop drag state
   const [isDragging, setIsDragging] = useState(false);
+  // --- Barra de scroll espejo (arriba, visible) ---
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const mirrorRef = useRef({ thumb: 100, left: 0 });
+  const mirrorDragging = useRef(false);
+  const dragOffset = useRef(0);
+  const [mirror, setMirror] = useState({ thumb: 100, left: 0 });
+  const updateMirror = () => {
+    const b = boardRef.current; if (!b) return;
+    const max = b.scrollWidth - b.clientWidth;
+    if (max <= 0) { mirrorRef.current = { thumb: 100, left: 0 }; setMirror({ thumb: 100, left: 0 }); return; }
+    const thumb = Math.max(22, (b.clientWidth / b.scrollWidth) * 100);
+    const left = (b.scrollLeft / max) * (100 - thumb);
+    mirrorRef.current = { thumb, left }; setMirror({ thumb, left });
+  };
+  const onThumbDown = (e: React.MouseEvent) => {
+    const track = trackRef.current; const b = boardRef.current;
+    if (!track || !b) return;
+    const tr = track.getBoundingClientRect();
+    const thumbPx = (tr.width * mirrorRef.current.thumb) / 100;
+    const leftPx = (tr.width * mirrorRef.current.left) / 100;
+    dragOffset.current = e.clientX - (tr.left + leftPx);
+    mirrorDragging.current = true;
+    e.preventDefault(); e.stopPropagation();
+  };
+  const onTrackClick = (e: React.MouseEvent) => {
+    if (mirrorDragging.current) return;
+    const track = trackRef.current; const b = boardRef.current;
+    if (!track || !b) return;
+    const tr = track.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - tr.left) / tr.width));
+    const max = b.scrollWidth - b.clientWidth;
+    const thumbPx = (tr.width * mirrorRef.current.thumb) / 100;
+    const target = ratio * max - thumbPx / 2;
+    b.scrollTo({ left: Math.max(0, Math.min(max, target)), behavior: 'smooth' });
+  };
   const [startX, setStartX] = useState(0);
   const [scrollLeftVal, setScrollLeftVal] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
@@ -253,6 +289,27 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
   };
 
   // Desktop mouse pan handlers
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!mirrorDragging.current || !boardRef.current || !trackRef.current) return;
+      const track = trackRef.current; const b = boardRef.current;
+      const tr = track.getBoundingClientRect();
+      const thumbPx = (tr.width * mirrorRef.current.thumb) / 100;
+      const desired = e.clientX - tr.left - dragOffset.current;
+      const maxLeft = tr.width - thumbPx;
+      const clamped = Math.max(0, Math.min(maxLeft, desired));
+      const maxScroll = b.scrollWidth - b.clientWidth;
+      b.scrollLeft = maxLeft > 0 ? (clamped / maxLeft) * maxScroll : 0;
+    };
+    const onUp = () => { mirrorDragging.current = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('[draggable="true"]')) return;
     setIsDragging(true);
@@ -361,8 +418,40 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
         </div>
       )}
 
+      {/* Barra de scroll espejo: arriba, visible, sincronizada con el tablero.
+          No toca nada del tablero; solo lee/escribe scrollLeft del contenedor. */}
+      <div className="hidden lg:block sticky top-0 z-30 py-2 pointer-events-none">
+        <div className="max-w-full px-1 pointer-events-auto">
+          <div
+            ref={trackRef}
+            onMouseDown={onTrackClick}
+            title="Desliza para recorrer el tablero"
+            className="relative h-3.5 rounded-full cursor-pointer"
+            style={{
+              background: 'rgba(30, 41, 59, 0.85)',
+              border: '1px solid rgba(99, 102, 241, 0.22)',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)',
+            }}
+          >
+            <div
+              onMouseDown={onThumbDown}
+              className="absolute top-0 h-full rounded-full transition-[background] duration-150"
+              style={{
+                left: `${mirror.left}%`,
+                width: `${mirror.thumb}%`,
+                background: 'linear-gradient(180deg, #818cf8 0%, #6366f1 50%, #4f46e5 100%)',
+                boxShadow: '0 0 8px rgba(99,102,241,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+                cursor: mirrorDragging.current ? 'grabbing' : 'grab',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Scrollable Kanban Container — touch-friendly */}
-      <div 
+      <div
+        ref={boardRef}
+        onScroll={updateMirror}
         id="kanban-board-container"
         className={`flex gap-3 overflow-x-auto pb-6 h-full min-h-[500px] items-start kanban-scroll w-full ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
         onMouseDown={handleMouseDown}
