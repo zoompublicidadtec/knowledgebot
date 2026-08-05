@@ -296,6 +296,21 @@ sepa el nombre.
   ningún punto por no llevar el prefijo.
 
 ### Panel
+- ✅ **Anti-congelamiento HTTP/2 (2026-08-04).** La campanita que avisa de
+  handoffs disparaba `fetch(/api/agent/handoff-alerts)` cada 30s **desde cada
+  pestaña abierta**. Como todo va por un único cable HTTP/2, una petición
+  colgada arrastraba al resto y el panel se quedaba congelado hasta que el
+  navegador cortaba (`ERR_HTTP2_PROTOCOL_ERROR` / `499` en nginx). Ahora la
+  campanita mata la petición a los 8s (`AbortController`), hace backoff si
+  falla (30s→60s→120s), se pausa cuando la pestaña no está visible y no
+  dispara dos veces. nginx además tiene timeouts y buffers más holgados.
+  La app siempre respondió rápido (4ms); el problema era de red.
+- ✅ **Mini-mapa de estados en el Kanban (2026-08-05).** Con 7 columnas no se
+  ven todas de un vistazo. Barra `glass` flotante, semitransparente, centrada
+  sobre las tarjetas: al tocar un estado el tablero se desliza hasta ahí y un
+  detector ilumina la columna actual. **Solo desplaza la vista** — no toca
+  tarjetas, stages ni la lógica del pipeline. La barra de scroll lateral
+  también se hizo visible (12px, gradiente índigo).
 - ✅ **Centro de Control** muestra estado real (antes eran datos inventados):
   servicios, líneas, catálogo, identidad y actividad de 14 días. Cada punto en
   rojo/ámbar indica la causa y la acción de reparación. Lo alimenta `/api/health`.
