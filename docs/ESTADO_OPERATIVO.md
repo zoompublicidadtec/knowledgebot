@@ -305,12 +305,7 @@ sepa el nombre.
   falla (30s→60s→120s), se pausa cuando la pestaña no está visible y no
   dispara dos veces. nginx además tiene timeouts y buffers más holgados.
   La app siempre respondió rápido (4ms); el problema era de red.
-- ✅ **Mini-mapa de estados en el Kanban (2026-08-05).** Con 7 columnas no se
-  ven todas de un vistazo. Barra `glass` flotante, semitransparente, centrada
-  sobre las tarjetas: al tocar un estado el tablero se desliza hasta ahí y un
-  detector ilumina la columna actual. **Solo desplaza la vista** — no toca
-  tarjetas, stages ni la lógica del pipeline. La barra de scroll lateral
-  también se hizo visible (12px, gradiente índigo).
+- ✅ **Barra de scroll espejo arriba en el Kanban (2026-08-05).** Con 7 columnas no se ven todas de un vistazo y la barra nativa (abajo) queda enterrada bajo cientos de tarjetas. Barra espejo arriba (sticky, siempre visible): track oscuro + thumb índigo degradado, sincronizada bidireccional con el tablero. **Solo desplaza la vista** — no toca tarjetas, stages ni la lógica del pipeline.
 - ✅ **Centro de Control** muestra estado real (antes eran datos inventados):
   servicios, líneas, catálogo, identidad y actividad de 14 días. Cada punto en
   rojo/ámbar indica la causa y la acción de reparación. Lo alimenta `/api/health`.
