@@ -159,12 +159,13 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
 
   // Desktop drag state
   const [isDragging, setIsDragging] = useState(false);
-  // --- Barra de scroll espejo (arriba, visible) ---
+  // --- Barra de scroll espejo (arriba, visible, con desplazamiento suave) ---
   const boardRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const mirrorRef = useRef({ thumb: 100, left: 0 });
   const mirrorDragging = useRef(false);
   const dragOffset = useRef(0);
+  const rafRef = useRef<number | null>(null);
   const [mirror, setMirror] = useState({ thumb: 100, left: 0 });
   const updateMirror = () => {
     const b = boardRef.current; if (!b) return;
@@ -174,11 +175,31 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
     const left = (b.scrollLeft / max) * (100 - thumb);
     mirrorRef.current = { thumb, left }; setMirror({ thumb, left });
   };
+  const smoothScrollTo = (targetLeft: number) => {
+    const b = boardRef.current; if (!b) return;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const start = b.scrollLeft;
+    const max = b.scrollWidth - b.clientWidth;
+    const target = Math.max(0, Math.min(max, targetLeft));
+    const distance = target - start;
+    if (Math.abs(distance) < 1) return;
+    const duration = 380;
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      b.scrollLeft = start + distance * eased;
+      if (t < 1) rafRef.current = requestAnimationFrame(step);
+      else rafRef.current = null;
+    };
+    rafRef.current = requestAnimationFrame(step);
+  };
   const onThumbDown = (e: React.MouseEvent) => {
     const track = trackRef.current; const b = boardRef.current;
     if (!track || !b) return;
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     const tr = track.getBoundingClientRect();
-    const thumbPx = (tr.width * mirrorRef.current.thumb) / 100;
     const leftPx = (tr.width * mirrorRef.current.left) / 100;
     dragOffset.current = e.clientX - (tr.left + leftPx);
     mirrorDragging.current = true;
@@ -193,7 +214,7 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
     const max = b.scrollWidth - b.clientWidth;
     const thumbPx = (tr.width * mirrorRef.current.thumb) / 100;
     const target = ratio * max - thumbPx / 2;
-    b.scrollTo({ left: Math.max(0, Math.min(max, target)), behavior: 'smooth' });
+    smoothScrollTo(target);
   };
   const [startX, setStartX] = useState(0);
   const [scrollLeftVal, setScrollLeftVal] = useState(0);
@@ -418,7 +439,7 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
         </div>
       )}
 
-      {/* Barra de scroll espejo: arriba, visible, sincronizada con el tablero.
+      {/* Barra de scroll espejo: arriba, visible, desplazamiento suave.
           No toca nada del tablero; solo lee/escribe scrollLeft del contenedor. */}
       <div className="hidden lg:block sticky top-0 z-30 py-2 pointer-events-none">
         <div className="max-w-full px-1 pointer-events-auto">
