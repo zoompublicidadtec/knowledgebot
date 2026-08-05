@@ -269,10 +269,13 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
-        .kanban-scroll { -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
-        .kanban-scroll::-webkit-scrollbar { height: 6px; }
-        .kanban-scroll::-webkit-scrollbar-track { background: rgba(15,23,42,0.5); border-radius: 8px; }
-        .kanban-scroll::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.5); border-radius: 8px; }
+        .kanban-scroll { -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; scrollbar-width: thin; scrollbar-color: rgba(99,102,241,0.65) rgba(15,23,42,0.6); }
+        .kanban-scroll::-webkit-scrollbar { height: 12px; }
+        .kanban-scroll::-webkit-scrollbar-track { background: rgba(15,23,42,0.6); border-radius: 8px; border: 1px solid rgba(148,163,184,0.08); }
+        .kanban-scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg, rgba(129,140,248,0.85), rgba(99,102,241,0.65)); border-radius: 8px; border: 2px solid rgba(10,14,26,0.5); }
+        .kanban-scroll::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, rgba(165,180,252,1), rgba(129,140,248,0.85)); }
+        .kanban-scroll::-webkit-scrollbar-thumb:active { background: rgba(99,102,241,0.95); }
+        .kanban-scroll { overscroll-behavior-x: contain; }
         .kanban-col { scroll-snap-align: start; }
       `}} />
 
