@@ -156,6 +156,8 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
   const [showGuide, setShowGuide] = useState(false);
   const [scrollDirection, setScrollDirection] = useState<'left' | 'right' | null>(null);
   const [moveTarget, setMoveTarget] = useState<any | null>(null);
+  // Mini-mapa: estado actualmente visible en el centro del tablero.
+  const [activeStage, setActiveStage] = useState(0);
 
   // Desktop drag state
   const [isDragging, setIsDragging] = useState(false);
@@ -259,6 +261,34 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
     setStartX(e.pageX - e.currentTarget.offsetLeft);
     setScrollLeftVal(e.currentTarget.scrollLeft);
   };
+  // --- Mini-mapa de estados: desplaza la VISTA del tablero (no las tarjetas) ---
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const goToColumn = (idx: number) => {
+    const board = boardRef.current;
+    if (!board) return;
+    const cols = board.querySelectorAll('[data-col-idx]');
+    if (!cols[idx]) return;
+    const boardRect = board.getBoundingClientRect();
+    const colRect = cols[idx].getBoundingClientRect();
+    const offset = colRect.left - boardRect.left - (boardRect.width / 2) + (colRect.width / 2);
+    board.scrollTo({ left: board.scrollLeft + offset, behavior: 'smooth' });
+  };
+  const onBoardScroll = () => {
+    const board = boardRef.current;
+    if (!board) return;
+    const cols = board.querySelectorAll('[data-col-idx]');
+    if (!cols.length) return;
+    const centerX = board.scrollLeft + board.clientWidth / 2;
+    let best = 0, bestDist = Infinity;
+    cols.forEach((c, i) => {
+      const el = c as HTMLElement;
+      const colCenter = el.offsetLeft + el.offsetWidth / 2;
+      const d = Math.abs(colCenter - centerX);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    setActiveStage(best);
+  };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isDragging) return;
     e.preventDefault();
@@ -364,9 +394,46 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
         </div>
       )}
 
+      {/* Mini-mapa flotante: burbujas semitransparentes centradas, debajo de las
+          pestañas de línea y por encima de las tarjetas. Solo desktop (lg+). */}
+      <div className="hidden lg:flex sticky top-0 z-30 justify-center py-2 pointer-events-none">
+        <div
+          className="flex items-center gap-1 px-2 py-1.5 rounded-2xl pointer-events-auto"
+          style={{
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: '1px solid rgba(99, 102, 241, 0.18)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+          }}
+          title="Toca un estado para desplazar el tablero hasta ahi"
+        >
+          <span className="text-[9px] uppercase tracking-wider font-semibold pr-1" style={{ color: 'rgba(148,163,184,0.55)' }}>
+            Ir a
+          </span>
+          {STAGES.map((s, i) => (
+            <button
+              key={s.id}
+              onClick={() => goToColumn(i)}
+              title={s.label}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold transition-all"
+              style={{
+                color: activeStage === i ? '#fff' : 'rgba(203,213,225,0.65)',
+                background: activeStage === i ? 'rgba(99,102,241,0.22)' : 'transparent',
+              }}
+            >
+              <span className={`w-2 h-2 rounded-full ${s.color}`} style={{ opacity: activeStage === i ? 1 : 0.6 }} />
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Scrollable Kanban Container — touch-friendly */}
-      <div 
+      <div
         id="kanban-board-container"
+        ref={boardRef}
+        onScroll={onBoardScroll}
         className={`flex gap-3 overflow-x-auto pb-6 h-full min-h-[500px] items-start kanban-scroll w-full ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
         onMouseDown={handleMouseDown}
         onMouseLeave={() => setIsDragging(false)}
@@ -377,9 +444,10 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
         onDragEnd={() => setScrollDirection(null)}
         onDrop={() => setScrollDirection(null)}
       >
-        {columns.map(col => (
-          <div 
+        {columns.map((col, colIdx) => (
+          <div
             key={col.id}
+            data-col-idx={colIdx}
             className={`kanban-col flex-shrink-0 rounded-2xl border ${col.border} ${col.bg} p-3 flex flex-col`}
             style={{ width: 'min(288px, 82vw)' }}
             onDragOver={(col as any).proximamente ? undefined : handleDragOver}
