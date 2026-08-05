@@ -159,7 +159,7 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
 
   // Desktop drag state
   const [isDragging, setIsDragging] = useState(false);
-  // --- Barra de scroll espejo (arriba, visible, con desplazamiento suave) ---
+  // --- Barra de scroll espejo (arriba, visible, desplazamiento suave) ---
   const boardRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const mirrorRef = useRef({ thumb: 100, left: 0 });
@@ -310,6 +310,24 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
   };
 
   // Desktop mouse pan handlers
+  // Mide el tablero al MONTAR (corrige que la barra nazca llena),
+  // al cambiar de tamano y al cargar contenido diferido (tarjetas).
+  useEffect(() => {
+    const b = boardRef.current; if (!b) return;
+    updateMirror(); // medicion inicial inmediata
+    const ro = new ResizeObserver(() => updateMirror());
+    ro.observe(b);
+    if (b.firstElementChild) ro.observe(b.firstElementChild as Element);
+    const onLoad = () => updateMirror();
+    window.addEventListener('load', onLoad);
+    const t = setTimeout(updateMirror, 60);
+    const t2 = setTimeout(updateMirror, 400);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('load', onLoad);
+      clearTimeout(t); clearTimeout(t2);
+    };
+  }, []);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!mirrorDragging.current || !boardRef.current || !trackRef.current) return;
@@ -439,8 +457,7 @@ export function KanbanBoard({ initialConversations, orgId }: { initialConversati
         </div>
       )}
 
-      {/* Barra de scroll espejo: arriba, visible, desplazamiento suave.
-          No toca nada del tablero; solo lee/escribe scrollLeft del contenedor. */}
+      {/* Barra de scroll espejo: arriba, visible, desplazamiento suave. */}
       <div className="hidden lg:block sticky top-0 z-30 py-2 pointer-events-none">
         <div className="max-w-full px-1 pointer-events-auto">
           <div
