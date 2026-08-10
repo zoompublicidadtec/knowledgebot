@@ -17,7 +17,7 @@ ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
 `EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
 
 El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`dce3608`**. **Si el código cambió desde
+Está generado contra el commit **`448be5d`**. **Si el código cambió desde
 entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
 
 ### Cómo consultarlo (por SSH al VPS)
@@ -55,8 +55,7 @@ graphify diagnose multigraph
 
 ### Qué contiene el grafo
 
-- `graph.json` — grafo consultable. Al 04-ago-2026: **1.423 nodos y 2.515
-  aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
+- `graph.json` — grafo consultable. Al 10-ago-2026: **1.451 nodos y 2.587 aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
   contradictorias.
 - `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
 - `graph.html` (1 MB) — visualización interactiva (abrir en navegador).
