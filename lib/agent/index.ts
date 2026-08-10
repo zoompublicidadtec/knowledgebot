@@ -2075,6 +2075,9 @@ ${resueltas}`;
           conversationId,
           mensajeDelCliente: messageText,
           respuestaDelBot: finalResponse,
+          // Si el turno de cierre no nombra el producto —«el total sería de
+          // $260.000, envíame tu nombre»— la familia se busca en lo ya hablado.
+          loYaHablado: mensajesPreviosDelBot,
           pasos: pasosDelTurno,
         });
         if (oferta) finalResponse = `${finalResponse}\n\n${oferta}`;

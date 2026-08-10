@@ -313,11 +313,31 @@ export async function buscarPorReferencia(codigos: string[], orgId?: string): Pr
     // dirección web, y ahí el comodín es `*`, no `%`: un `%` se interpreta como
     // el comienzo de un carácter escapado y la consulta no devuelve nada. Es lo
     // que hizo que el primer arreglo de la MU-303-1 no tuviera ningún efecto.
-    const filtros = pedidos
-      .map((c) => (c.match(/^[A-Z]+/) || [''])[0] || c.slice(0, 2))
-      .filter(Boolean)
-      .map((letras) => `reference.ilike.${letras}*`)
-      .join(',');
+    /**
+     * SE BUSCA CON Y SIN EL «ZM-» DELANTE.
+     *
+     * Todo producto de ZOOM lleva el prefijo `ZM-`: es lo que hace que el bot
+     * lo ofrezca por encima de un importado (`es_propio`). Pero el cliente
+     * —y el propio dueño— usan el código de la lista de precios, que va sin
+     * prefijo: pide «el sello S-841», no «ZM-S-841». Las dos formas tienen que
+     * llevar al mismo producto, así que se busca por las dos.
+     */
+    // Al normalizar se pierde el guion, así que «ZM-S-841» llega como «ZMS841»
+    // y sus «letras» serían «ZMS», que no existe. Se le quita el prefijo antes
+    // de mirar: así «S-841» y «ZM-S-841» generan el mismo filtro.
+    const letrasDe = (c: string) => {
+      const base = c.replace(/^ZM/, '') || c;
+      return (base.match(/^[A-Z]+/) || [''])[0] || base.slice(0, 2);
+    };
+    const filtros = [
+      ...new Set(
+        pedidos.flatMap((c) => {
+          const letras = letrasDe(c);
+          if (!letras) return [];
+          return [`reference.ilike.${letras}*`, `reference.ilike.ZM-${letras}*`];
+        })
+      ),
+    ].join(',');
     // `requires_area` NO es columna de products: pedirla devolvía un error 400 y
     // la consulta se quedaba vacía **sin avisar**. El registro decía «esa
     // referencia no está en el catálogo» sobre una que sí está. Por eso ahora
@@ -337,8 +357,16 @@ export async function buscarPorReferencia(codigos: string[], orgId?: string): Pr
     }
 
     const encontrados: any[] = [];
+    // El «ZM» del principio es nuestro, no del código: «S-841» tiene que
+    // encontrar «ZM-S-841». Se compara primero tal cual —por si algún día
+    // existieran las dos— y solo después sin el prefijo.
+    const sinPrefijo = (c: string) => c.replace(/^ZM/, '');
     for (const pedido of pedidos) {
-      const exacto = (candidatos || []).find((p: any) => normalizarCodigo(p.reference) === pedido);
+      const exacto =
+        (candidatos || []).find((p: any) => normalizarCodigo(p.reference) === pedido) ||
+        (candidatos || []).find(
+          (p: any) => sinPrefijo(normalizarCodigo(p.reference)) === sinPrefijo(pedido)
+        );
       if (exacto && !encontrados.some((e) => e.id === exacto.id)) encontrados.push(exacto);
     }
     if (encontrados.length === 0) return [];

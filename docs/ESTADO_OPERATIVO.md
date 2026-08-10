@@ -662,6 +662,30 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### El prefijo `ZM-` no es cosmético: es lo que hace propio a un producto
+`lib/agent/tools/search-catalog.ts` (`es_propio`) y
+`Motor de Conocimiento/api_service.py`. Un producto cuenta como producción
+propia de ZOOM —y por tanto se ofrece por encima de cualquier importado— **si su
+referencia empieza por `ZM-`**. No hay otra marca en la base.
+
+Por eso, al unificar las referencias de los sellos con las del Excel de la
+empresa (11-ago-2026) hubo que dejarlas como **`ZM-` + la del Excel**:
+`ZM-S-841`, `ZM-R-524`, `ZM-ST-1`. La primera versión las dejó como `S-841` a
+secas y eso los sacaba del grupo de propios.
+
+**Y el cliente escribe la del Excel, sin prefijo.** Las dos formas tienen que
+llevar al mismo producto, así que la búsqueda por código:
+- filtra por las dos (`reference.ilike.S*` y `reference.ilike.ZM-S*`), y
+- compara quitando el prefijo de los dos lados.
+
+Un detalle que costó una prueba: al normalizar un código se le quitan los
+guiones, así que `ZM-S-841` llega como `ZMS841` y sus «letras iniciales» serían
+`ZMS`, que no existe. El prefijo se quita **antes** de mirar las letras.
+
+Medido: «5 sellos ZM-S-841» → $119.000 y «1 sello S-841» → $23.800; las dos
+encuentran `ZM-S-841`. `MU-303-1` sigue funcionando igual.
+
+
 ### Un código de UNA letra también es una referencia — `S-841`
 `lib/agent/tools/search-catalog.ts`, `CODIGO_CON_GUION`.
 

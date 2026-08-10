@@ -182,7 +182,13 @@ export function cantidadDelPedido(
   }
 
   for (const texto of textos) {
-    const limpio = String(texto || '').replace(PRECIO_EN_TEXTO, ' ');
+    const limpio = String(texto || '')
+      .replace(PRECIO_EN_TEXTO, ' ')
+      // Y FUERA LOS PORCENTAJES. «Se requiere un 50% para iniciar la
+      // producción» es la condición de pago, no una cantidad: sin esto, a
+      // quien compró 20 cuadernos se le habrían ofrecido 50 bolígrafos.
+      .replace(/\d+\s*%/g, ' ')
+      .replace(/\b\d{1,2}\s*(mm|cm|ml|oz|gr|kg)\b/gi, ' ');
     const m = limpio.match(/(?<![\d.,])(\d{1,6})(?![\d.,])/);
     const n = m ? Number(m[1]) : NaN;
     if (Number.isFinite(n) && n > 0 && n <= 1_000_000) return n;
@@ -249,28 +255,52 @@ export async function ofertaDespuesDelCierre(params: {
   conversationId: string;
   mensajeDelCliente: string | null | undefined;
   respuestaDelBot: string | null | undefined;
+  /** Lo que ya se habló en esta conversación, de lo más reciente a lo más viejo. */
+  loYaHablado?: string[];
   pasos: any[];
 }): Promise<string | null> {
-  const { orgId, contactId, conversationId, mensajeDelCliente, respuestaDelBot, pasos } = params;
+  const {
+    orgId, contactId, conversationId,
+    mensajeDelCliente, respuestaDelBot, loYaHablado, pasos,
+  } = params;
 
   try {
     const supabase = createAdminClient();
 
     if (await yaSeOfrecio(supabase, contactId, conversationId)) return null;
 
-    // De qué familia es lo que compró. Se mira la respuesta del bot primero:
-    // ahí está el nombre del producto que se acaba de cotizar, mientras que el
-    // cliente en el cierre suele escribir solo «listo, lo quiero».
-    const cual =
+    /**
+     * DE QUÉ FAMILIA ES LO QUE COMPRÓ.
+     *
+     * Se mira, en este orden: la respuesta del bot —ahí suele estar el nombre
+     * del producto recién cotizado—, lo que escribió el cliente, y por último
+     * LO YA HABLADO en la conversación.
+     *
+     * Ese tercer paso no sobra: medido el 11-ago-2026, a «listo, me los llevo,
+     * ¿cómo pago?» el bot contestó «Para el pago, el total sería de $260.000…»
+     * **sin nombrar los cuadernos ni una vez**. Con solo el turno a la vista no
+     * había forma de saber qué se estaba vendiendo, y la oferta se caía justo
+     * en el momento para el que fue hecha.
+     */
+    let cual =
       (await hojaParaLoQueDijoElCliente(orgId, String(respuestaDelBot || ''))) ||
       (await hojaParaLoQueDijoElCliente(orgId, String(mensajeDelCliente || '')));
+
+    for (const dicho of (loYaHablado || []).slice(0, 6)) {
+      if (cual) break;
+      cual = await hojaParaLoQueDijoElCliente(orgId, String(dicho || ''));
+    }
     if (!cual) return null;
 
     const queOfrecer = String(cual.hoja.ofrecer_al_cerrar || '').trim();
     const frase = String(cual.hoja.frase_al_cerrar || '').trim();
     if (!queOfrecer || !frase) return null; // sin dato no se rellena
 
-    const cantidad = cantidadDelPedido(pasos, [respuestaDelBot, mensajeDelCliente]);
+    const cantidad = cantidadDelPedido(pasos, [
+      respuestaDelBot,
+      mensajeDelCliente,
+      ...(loYaHablado || []).slice(0, 6),
+    ]);
     if (!cantidad) {
       logger.info('Venta cruzada: no se supo la cantidad, no se ofrece', { orgId, conversationId });
       return null;
