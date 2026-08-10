@@ -1,7 +1,7 @@
 import { tool, jsonSchema } from 'ai';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
-import { hojaDeCategoria, textoDeHoja, traducirConsulta } from '../hojas';
+import { hojaParaEsteProducto, textoDeHoja, traducirConsulta } from '../hojas';
 
 function removeAccentsSimple(t: string): string {
   return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -174,15 +174,31 @@ function marcarSugeridos(matches: any[]): void {
  * obedecer dos veces y NUNCA existio.
  *
  * Sin hojas cargadas no toca nada y el bot se comporta exactamente como antes.
+ *
+ * SE BUSCA TAMBIEN POR LO QUE PIDIO EL CLIENTE, no solo por la categoria del
+ * producto. Medido el 11-ago-2026: de las 12 hojas del panel, 11 no tienen
+ * ninguna categoria marcada, asi que por este camino solo llegaba la de
+ * Cuadernos — el dueño podia llenar entera la hoja de Mugs y no pasaba nada.
+ * El porque completo, en `hojaParaEsteProducto`.
  */
-async function adjuntarGuiaDeVenta(matches: any[], orgId?: string): Promise<any[]> {
+async function adjuntarGuiaDeVenta(
+  matches: any[],
+  orgId?: string,
+  loQueSeBusco?: string,
+  mensajeDelCliente?: string
+): Promise<any[]> {
   if (!orgId || !Array.isArray(matches) || matches.length === 0) return matches;
   try {
     const cache = new Map<string, string>();
+    const pedido = String(loQueSeBusco || '');
+    // La hoja se busca por la CONSULTA; la lista de extras se decide con lo que
+    // el cliente escribió de verdad. Son dos textos distintos a proposito: la
+    // consulta la escribe el modelo y casi nunca dice «con 6 insertos».
+    const dijoElCliente = String(mensajeDelCliente || pedido);
     for (const m of matches) {
       const cat = String(m?.category || '');
       if (!cache.has(cat)) {
-        cache.set(cat, textoDeHoja(await hojaDeCategoria(orgId, cat)));
+        cache.set(cat, textoDeHoja(await hojaParaEsteProducto(orgId, cat, pedido), dijoElCliente));
       }
       const guia = cache.get(cat) || '';
       if (guia) m.guia_de_venta = guia;
@@ -366,7 +382,7 @@ function limpiarNombre(n: string): string {
   return out.replace(/\s{2,}/g, ' ').trim();
 }
 
-export function searchCatalogTool(ctx?: { orgId?: string }) {
+export function searchCatalogTool(ctx?: { orgId?: string; mensajeDelCliente?: string }) {
   return tool({
     description:
       'Busca productos en el catalogo por nombre, categoria o descripcion. Devuelve el ID del producto (product_id), nombre y unidad de medida. Usalo SIEMPRE para identificar de que producto habla el cliente antes de pedir el precio.',
@@ -380,7 +396,8 @@ export function searchCatalogTool(ctx?: { orgId?: string }) {
       },
       required: ['query'],
     }),
-    execute: async (args: any) => runCatalogSearch(String(args.query || ''), ctx?.orgId),
+    execute: async (args: any) =>
+      runCatalogSearch(String(args.query || ''), ctx?.orgId, ctx?.mensajeDelCliente),
   } as any);
 }
 
@@ -390,7 +407,11 @@ export function searchCatalogTool(ctx?: { orgId?: string }) {
  * que el modelo decida llamar a la herramienta: en produccion no la llamaba y
  * respondia "eso no lo manejamos" sobre productos que si existen.
  */
-export async function runCatalogSearch(rawQueryInput: string, orgId?: string): Promise<any> {
+export async function runCatalogSearch(
+  rawQueryInput: string,
+  orgId?: string,
+  mensajeDelCliente?: string
+): Promise<any> {
       const pedido = String(rawQueryInput || '').trim();
 
       if (!pedido) {
@@ -448,7 +469,7 @@ export async function runCatalogSearch(rawQueryInput: string, orgId?: string): P
           }));
 
           matches = await annotateMatchesWithPricing(supabase, matches);
-          matches = await adjuntarGuiaDeVenta(matches, orgId);
+          matches = await adjuntarGuiaDeVenta(matches, orgId, pedido + " " + rawQuery, mensajeDelCliente);
 
           // El producto que el cliente nombró por su código va PRIMERO y no lo
           // toca ningún filtro posterior.
@@ -504,7 +525,7 @@ export async function runCatalogSearch(rawQueryInput: string, orgId?: string): P
                   if (sisterMatches.length > 0) {
                     matches = [...matches, ...sisterMatches];
                     matches = await annotateMatchesWithPricing(supabase, matches);
-                    matches = await adjuntarGuiaDeVenta(matches, orgId);
+                    matches = await adjuntarGuiaDeVenta(matches, orgId, pedido + " " + rawQuery, mensajeDelCliente);
                     logger.info('Auto-redirect to sister category', { from: rawQuery, to: sister, added: sisterMatches.length });
                   }
                 }
@@ -541,7 +562,7 @@ export async function runCatalogSearch(rawQueryInput: string, orgId?: string): P
             // El Premium se recalcula dentro del conjunto entregado.
             for (const m of matches) m.is_most_expensive = false;
             matches = await annotateMatchesWithPricing(supabase, matches);
-            matches = await adjuntarGuiaDeVenta(matches, orgId);
+            matches = await adjuntarGuiaDeVenta(matches, orgId, pedido + " " + rawQuery, mensajeDelCliente);
             matches.sort((a: any, b: any) =>
               (Number(!!b.protegido) - Number(!!a.protegido)) ||
               (Number(b.has_pricing) - Number(a.has_pricing)) ||
@@ -620,7 +641,7 @@ export async function runCatalogSearch(rawQueryInput: string, orgId?: string): P
         }));
 
         matches = await annotateMatchesWithPricing(supabase, matches);
-        matches = await adjuntarGuiaDeVenta(matches, orgId);
+        matches = await adjuntarGuiaDeVenta(matches, orgId, pedido + " " + rawQuery, mensajeDelCliente);
 
         if (porCodigo.length > 0) {
           const yaEstan = new Set(matches.map((m: any) => String(m.product_id).toUpperCase()));

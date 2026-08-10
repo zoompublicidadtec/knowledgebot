@@ -49,6 +49,20 @@ export interface HojaDeCategoria {
   marcacion: string;
   marcacion_nota: string;
   notas: string;
+  /**
+   * LA VENTA CRUZADA. Los dos campos del 11-ago-2026. Ver `venta-cruzada.ts`
+   * para el porqué del diseño; aquí solo viven los datos que escribe el dueño.
+   *
+   * `ofrecer_al_cerrar` es la REFERENCIA del producto (el panel la guarda al
+   * elegirlo de la lista, para que no haya dos candidatos posibles), y
+   * `frase_al_cerrar` es la frase con la que se ofrece, en las palabras del
+   * dueño, con {precio} o {total} donde va la cifra que calcula el código.
+   *
+   * Vacíos = no hay venta cruzada para esta familia, y el bot se comporta
+   * exactamente como antes.
+   */
+  ofrecer_al_cerrar: string;
+  frase_al_cerrar: string;
 }
 
 /** «Mugs Mágicos» y «mug magico» tienen que ser la misma palabra. */
@@ -164,6 +178,46 @@ export async function hojaDeCategoria(
 }
 
 /**
+ * LA HOJA QUE LE TOCA A UN PRODUCTO ENCONTRADO — y por qué no basta con su
+ * categoría.
+ *
+ * EL FALLO SILENCIOSO QUE ESTO CIERRA, medido el 11-ago-2026. De las 12 hojas
+ * cargadas en el panel, **11 no tienen ninguna categoría marcada**: se
+ * sembraron con el vocabulario del cliente, que es lo que traduce la búsqueda,
+ * y eso funciona. Pero la guía de venta se le pegaba al producto mirando SOLO
+ * su categoría, así que el dueño podía llenar entera la hoja de «Mugs y
+ * pocillos» —qué preguntar, si la marcación va incluida— y **no pasaba nada**.
+ * Escribir y no ver ningún efecto es lo que hace que se deje de usar el panel.
+ *
+ * Y no se arregla pidiéndole que marque las categorías, porque el catálogo no
+ * está ordenado así. Medido el mismo día: los mugs activos viven en cuatro
+ * categorías distintas —«MUGS, BOTILITOS, VASOS Y TERMOS» (43), «HOGAR» (36),
+ * «Mugs» (6) y «ECO NATURE» (4)—, las gorras en otras cuatro y los bolígrafos
+ * en cuatro más. Nadie puede mantener eso a mano.
+ *
+ * ORDEN DE PRIORIDAD, y es a propósito:
+ *  1. La categoría, si el dueño le marcó una hoja: es lo que dijo EXPLÍCITAMENTE.
+ *  2. Lo que pidió el cliente: pidió mugs, se le aplica la hoja de mugs.
+ *  3. La hoja general.
+ */
+export async function hojaParaEsteProducto(
+  orgId: string,
+  nombreDeCategoria: string | null | undefined,
+  textoDelCliente: string
+): Promise<HojaDeCategoria | null> {
+  if (!orgId) return null;
+  if (!cache || cache.hasta < Date.now()) cache = await cargar(orgId);
+
+  const propia = cache.porNombreDeCategoria.get(normalizar(nombreDeCategoria || ''));
+  if (propia) return propia;
+
+  const porLoQuePidio = await hojaParaLoQueDijoElCliente(orgId, textoDelCliente);
+  if (porLoQuePidio) return porLoQuePidio.hoja;
+
+  return cache.general || null;
+}
+
+/**
  * LA HOJA QUE LE TOCA A LO QUE ESCRIBIÓ EL CLIENTE — el circuito al revés.
  *
  * `hojaDeCategoria` encuentra la hoja por la categoría de un producto que YA se
@@ -241,6 +295,22 @@ export async function familiasQuePidioElCliente(
   return familias.length >= 2 ? familias : [];
 }
 
+/**
+ * LOS EXTRAS DE LA FAMILIA QUE PIDIÓ EL CLIENTE.
+ *
+ * Los necesita el candado que impide ofrecerlos antes de cerrar la venta. Sale
+ * de la hoja y no de una lista escrita en el código: cada negocio tiene los
+ * suyos y el dueño los cambia desde el panel.
+ */
+export async function extrasDeLoQuePidio(
+  orgId: string | undefined,
+  texto: string
+): Promise<string[]> {
+  if (!orgId || !texto) return [];
+  const cual = await hojaParaLoQueDijoElCliente(orgId, texto);
+  return cual ? terminos(cual.hoja.adicionales) : [];
+}
+
 /** Con qué palabras hay que buscar esta familia. Vacío = el dueño no lo escribió. */
 export function comoSeBusca(hoja: HojaDeCategoria | null): string[] {
   return hoja ? terminos(hoja.buscar_como) : [];
@@ -316,7 +386,11 @@ function sinAcentos(s: string): string {
  * rellena con un ejemplo, porque un ejemplo puesto para que no quede vacío se
  * convierte en una mentira dicha con total seguridad (la regla de DEFAULT_PERSONA).
  */
-export function textoDeHoja(hoja: HojaDeCategoria | null): string {
+/** Cómo pide un cliente que le sumen algo, sin nombrarlo. */
+const PIDE_AGREGAR =
+  /(agregar|agregarle|agreg[aá]|sumar|sumarle|a[ñn]adir|adicional|adicionales|\bextras?\b|incluir|incluye|que mas le|qu[eé] m[aá]s le|personaliz)/i;
+
+export function textoDeHoja(hoja: HojaDeCategoria | null, loQuePidioElCliente?: string): string {
   if (!hoja) return '';
   const lineas: string[] = [];
 
@@ -330,7 +404,33 @@ export function textoDeHoja(hoja: HojaDeCategoria | null): string {
   agregar('NO le preguntes', hoja.no_preguntar);
   agregar('Busca en el catálogo con', hoja.buscar_como);
   agregar('NUNCA busques con estas palabras (no existen en el catálogo)', hoja.nunca_buscar);
-  agregar('Se le puede sumar', hoja.adicionales);
+  /**
+   * LA LISTA DE EXTRAS SOLO SE ENTREGA CUANDO VIENE A CUENTO.
+   *
+   * Escrita siempre —«Se le puede sumar: insertos - filtro uv - guardas»— el
+   * modelo la leía como una orden de ofrecerlos y cerraba la cotización con
+   * «¿Te gustaría agregarle insertos, filtro UV o guardas?»: una lista, sin
+   * precio, con palabras que el cliente no entiende y ANTES de cerrar la venta.
+   * Las cuatro cosas que el dueño prohibió.
+   *
+   * Reescribirlo como orden («no los ofrezcas») NO funcionó — medido el
+   * 11-ago-2026, los siguió enumerando. Es la Regla 1 del proyecto por séptima
+   * vez: lo que obliga es el código. Así que la lista no se le entrega si el
+   * cliente no la nombró ni preguntó por agregar algo. Lo que no está delante
+   * no se puede ofrecer.
+   *
+   * Ofrecer es ahora trabajo del código, después del cierre y con el precio ya
+   * hecho: ver `venta-cruzada.ts`.
+   */
+  const extras = String(hoja.adicionales || '').trim();
+  if (extras) {
+    const dijo = normalizar(loQuePidioElCliente || '');
+    const nombraUnExtra = terminos(extras).some((t) => dijo.includes(t));
+    const preguntaPorSumar = PIDE_AGREGAR.test(dijo);
+    if (nombraUnExtra || preguntaPorSumar) {
+      lineas.push(`- Estos extras existen y tienen precio: ${extras}.`);
+    }
+  }
 
   if (hoja.marcacion === 'incluida') {
     lineas.push(

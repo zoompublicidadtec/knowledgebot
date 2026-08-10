@@ -33,6 +33,7 @@ import {
   getHojas,
   saveHojas,
   contarProductosPorCategoria,
+  buscarProductoParaOferta,
 } from './actions';
 import { CatalogTable, type CatalogProduct, type SortField, type SortDir } from './components/CatalogTable';
 import { BulkActionsBar } from './components/BulkActionsBar';
@@ -1266,6 +1267,8 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                         marcacion: '',
                         marcacion_nota: '',
                         notas: '',
+                        ofrecer_al_cerrar: '',
+                        frase_al_cerrar: '',
                       },
                       ...hojas,
                     ])
@@ -1639,6 +1642,13 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                     lo diría a un empleado nuevo. Si tiene una nota en un archivo, péguela tal cual.
                   </p>
                 </div>
+
+                <OfertaAlCerrar
+                  producto={h.ofrecer_al_cerrar || ''}
+                  frase={h.frase_al_cerrar || ''}
+                  onProducto={(v: string) => set('ofrecer_al_cerrar', v)}
+                  onFrase={(v: string) => set('frase_al_cerrar', v)}
+                />
               </div>
             );
           })}
@@ -2257,6 +2267,198 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
             </form>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * LA VENTA CRUZADA, en el panel.
+ *
+ * Regla del dueño: la oferta adicional NO puede hacer dudar al cliente ni
+ * tumbar la venta. Si el bot ofrece «insertos» a secas, el cliente pregunta qué
+ * es un inserto y la venta cerrada se abre de nuevo. Por eso aquí se escriben
+ * DOS cosas y no una lista: qué producto, y la frase exacta con la que se
+ * ofrece —en las palabras del cliente y con el precio adentro—.
+ *
+ * SE ELIGE DE UNA LISTA, no se escribe a mano: «bolígrafo» son 27 productos y
+ * el sistema no adivina entre dos. Y se muestra el precio de verdad mientras se
+ * escribe, porque la pregunta que el dueño se hace es «¿qué le va a decir esto
+ * al cliente?» — no «¿guardé bien el campo?».
+ */
+function OfertaAlCerrar({
+  producto,
+  frase,
+  onProducto,
+  onFrase,
+}: {
+  producto: string;
+  frase: string;
+  onProducto: (v: string) => void;
+  onFrase: (v: string) => void;
+}) {
+  const CANTIDAD_EJEMPLO = 20;
+  const [texto, setTexto] = useState('');
+  const [opciones, setOpciones] = useState<Array<{ reference: string; name: string; precio: number | null }>>([]);
+  const [buscando, setBuscando] = useState(false);
+  const [elegido, setElegido] = useState<{ reference: string; name: string; precio: number | null } | null>(null);
+
+  // Si la hoja ya traía un producto guardado, se muestra cuál es y a qué precio.
+  useEffect(() => {
+    let vigente = true;
+    if (!producto) { setElegido(null); return; }
+    buscarProductoParaOferta(producto, CANTIDAD_EJEMPLO).then(r => {
+      if (!vigente) return;
+      const exacto = (r || []).find(p => p.reference === producto);
+      if (exacto) setElegido(exacto);
+    });
+    return () => { vigente = false; };
+  }, [producto]);
+
+  const buscar = async () => {
+    setBuscando(true);
+    setOpciones(await buscarProductoParaOferta(texto, CANTIDAD_EJEMPLO));
+    setBuscando(false);
+  };
+
+  const pesos = (n: number) => '$' + Math.round(n).toLocaleString('es-CO');
+  const tienePrecio = /\{precio\}|\{total\}/.test(frase);
+
+  const vistaPrevia =
+    elegido && elegido.precio != null && frase
+      ? frase
+          .replace(/\{precio\}/g, pesos(elegido.precio))
+          .replace(/\{total\}/g, pesos(elegido.precio * CANTIDAD_EJEMPLO))
+          .replace(/\{cantidad\}/g, String(CANTIDAD_EJEMPLO))
+          .replace(/\{producto\}/g, elegido.name)
+      : '';
+
+  return (
+    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+      <div>
+        <label className="block text-[10px] font-bold text-emerald-300/90 uppercase mb-1">
+          Cuando el cliente ya dijo que compra, ¿qué más le ofrecemos?
+        </label>
+        <p className="text-[11px] text-slate-400">
+          Esto se dice <strong>solo después</strong> de que el cliente confirmó la compra, nunca
+          antes. Es <strong>una sola cosa</strong>, con el precio ya puesto, para que el cliente
+          conteste sí o no y no tenga que preguntar nada.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+          1. ¿Qué producto?
+        </label>
+        {elegido ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-200 text-xs font-semibold">
+              {elegido.name}
+            </span>
+            <span className="text-[11px] text-slate-400">
+              {elegido.precio != null
+                ? `${pesos(elegido.precio)} cada uno si lleva ${CANTIDAD_EJEMPLO}`
+                : 'sin un precio único para esa cantidad'}
+            </span>
+            <button
+              type="button"
+              onClick={() => { onProducto(''); setElegido(null); }}
+              className="text-[11px] text-rose-300 hover:text-rose-200 underline"
+            >
+              cambiar
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={texto}
+                onChange={e => setTexto(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); buscar(); } }}
+                className="input text-sm flex-1"
+                placeholder="Escriba parte del nombre: boligrafo, inserto, filtro uv…"
+              />
+              <button type="button" onClick={buscar} className="btn-secondary text-xs shrink-0">
+                <MagnifyingGlass size={14} /> Buscar
+              </button>
+            </div>
+            {buscando && <p className="text-[11px] text-slate-500 mt-1">Buscando…</p>}
+            {!buscando && opciones.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {opciones.map(o => (
+                  <button
+                    key={o.reference}
+                    type="button"
+                    onClick={() => { onProducto(o.reference); setElegido(o); setOpciones([]); setTexto(''); }}
+                    className="w-full text-left px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-slate-200 flex justify-between gap-3"
+                  >
+                    <span className="truncate">{o.name}</span>
+                    <span className={o.precio != null ? 'text-emerald-300 shrink-0' : 'text-amber-300 shrink-0'}>
+                      {o.precio != null ? pesos(o.precio) + ' c/u' : 'sin precio para 20'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!buscando && texto && opciones.length === 0 && (
+              <p className="text-[11px] text-amber-300/80 mt-1">
+                No apareció nada con esa palabra. Pruebe con una palabra más corta.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+          2. ¿Cómo se lo decimos? (una sola frase)
+        </label>
+        <textarea
+          rows={2}
+          value={frase}
+          onChange={e => onFrase(e.target.value)}
+          className="input text-sm"
+          placeholder="¿Le sumamos los bolígrafos con su logo? Salen a {precio} cada uno."
+        />
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <span className="text-[10px] text-slate-500">Escriba dentro de la frase:</span>
+          <button
+            type="button"
+            onClick={() => onFrase(frase + '{precio}')}
+            className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] text-slate-300"
+          >
+            {'{precio}'} = cuánto vale cada uno
+          </button>
+          <button
+            type="button"
+            onClick={() => onFrase(frase + '{total}')}
+            className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] text-slate-300"
+          >
+            {'{total}'} = cuánto vale todo
+          </button>
+        </div>
+        {frase && !tienePrecio && (
+          <p className="text-[11px] text-rose-300 mt-1">
+            La frase tiene que llevar el precio adentro. Sin eso el bot no la va a decir, porque el
+            cliente tendría que preguntar cuánto vale y eso es lo que estamos evitando.
+          </p>
+        )}
+      </div>
+
+      {vistaPrevia && (
+        <div className="rounded-lg bg-slate-900/60 border border-white/5 p-3">
+          <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">
+            Así se lo va a decir al cliente, si compra {CANTIDAD_EJEMPLO}
+          </p>
+          <p className="text-sm text-emerald-200">{vistaPrevia}</p>
+        </div>
+      )}
+
+      {(!producto || !frase) && (
+        <p className="text-[11px] text-slate-500">
+          Si deja esto vacío no pasa nada malo: el bot simplemente no ofrece nada extra.
+        </p>
       )}
     </div>
   );

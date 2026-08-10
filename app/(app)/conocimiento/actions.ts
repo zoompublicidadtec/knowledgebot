@@ -1332,6 +1332,10 @@ export interface HojaDeCategoria {
   marcacion_nota: string;
   /** Cualquier otra cosa que el asesor deba tener presente. */
   notas: string;
+  /** Referencia del producto que se ofrece cuando la venta ya está cerrada. */
+  ofrecer_al_cerrar: string;
+  /** La frase con que se ofrece, con {precio} o {total} donde va la cifra. */
+  frase_al_cerrar: string;
 }
 
 function limpiarHoja(h: any, indice: number): HojaDeCategoria {
@@ -1355,6 +1359,8 @@ function limpiarHoja(h: any, indice: number): HojaDeCategoria {
     marcacion: MARCACIONES.includes(marcacion) ? marcacion : '',
     marcacion_nota: texto(h?.marcacion_nota),
     notas: texto(h?.notas),
+    ofrecer_al_cerrar: texto(h?.ofrecer_al_cerrar),
+    frase_al_cerrar: texto(h?.frase_al_cerrar),
   };
 }
 
@@ -1429,6 +1435,72 @@ export async function saveHojas(hojas: any[]) {
   } catch (error: any) {
     logger.error('saveHojas', { error: error.message });
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * EL BUSCADOR DEL PRODUCTO QUE SE OFRECE AL CERRAR.
+ *
+ * El campo guarda la REFERENCIA, no el nombre escrito a mano, porque «bolígrafo»
+ * son 27 productos distintos y el sistema no elige a dedo entre dos candidatos:
+ * si hay duda, no ofrece nada y el dueño no se entera de por qué.
+ *
+ * Devuelve el precio ya calculado para la cantidad de ejemplo, que es lo único
+ * que responde a la pregunta que el dueño de verdad se hace: «¿qué le va a
+ * decir el bot al cliente?». Sin esto, escribir una hoja es escribir a ciegas.
+ */
+export async function buscarProductoParaOferta(
+  texto: string,
+  cantidad = 20
+): Promise<Array<{ reference: string; name: string; precio: number | null }>> {
+  try {
+    const clave = String(texto || '').trim();
+    if (clave.length < 2) return [];
+
+    const supabase = await createClient();
+    const n = Number(cantidad) > 0 ? Math.round(Number(cantidad)) : 20;
+
+    const { data: productos, error } = await (supabase as any)
+      .from('products')
+      .select('id, reference, name')
+      .eq('active', true)
+      .or(`name.ilike.*${clave}*,reference.ilike.*${clave}*`)
+      .limit(8);
+
+    // Una consulta rota devuelve vacío sin avisar: el 10-ago costó una tarde.
+    if (error) {
+      logger.error('buscarProductoParaOferta', { error: error.message, clave });
+      return [];
+    }
+    if (!productos?.length) return [];
+
+    const { data: tarifas } = await (supabase as any)
+      .from('price_tiers')
+      .select('product_id, price, min_qty, max_qty, price_basis')
+      .in('product_id', productos.map((p: any) => p.id));
+
+    return productos.map((p: any) => {
+      const suyas = (tarifas || []).filter((t: any) => {
+        if (t.product_id !== p.id) return false;
+        const base = String(t.price_basis || 'unitario').toLowerCase();
+        if (base !== 'unitario') return false;
+        const precio = Number(t.price);
+        if (!Number.isFinite(precio) || precio <= 0 || precio > 1e9) return false;
+        return n >= (t.min_qty || 0) && (t.max_qty == null || n <= t.max_qty);
+      });
+      const precios: number[] = suyas.map((t: any) => Number(t.price));
+      const distintos = precios.filter((p, i) => precios.indexOf(p) === i);
+      // Con dos precios posibles para la misma cantidad no hay un precio: hay
+      // una duda, y el bot tampoco va a poder resolverla en el cierre.
+      return {
+        reference: String(p.reference || ''),
+        name: String(p.name || ''),
+        precio: distintos.length === 1 ? distintos[0] : null,
+      };
+    });
+  } catch (error: any) {
+    logger.error('buscarProductoParaOferta', { error: error.message });
+    return [];
   }
 }
 

@@ -30,6 +30,49 @@ import { calculateCustomPriceTool } from './tools/calculate-custom-price';
 import { buildQuoteTool } from './tools/build-quote';
 import { updatePipelineStageTool } from './tools/update-pipeline-stage';
 import { etapaPorHechos, moverEtapaSiAvanza } from './pipeline-automatico';
+import { ofertaDespuesDelCierre } from './venta-cruzada';
+import { extrasDeLoQuePidio } from './hojas';
+
+/**
+ * LA PREGUNTA QUE OFRECE EXTRAS ANTES DE CERRAR SE CAE — no bloquea el turno.
+ *
+ * El fallo, medido y repetido: tras dar el precio base de 30 cuadernos, el bot
+ * remataba con «¿Te gustaría agregarle insertos, filtro UV o guardas?». Es una
+ * LISTA, sin precio, con palabras que el cliente no entiende, y ANTES de que la
+ * venta esté cerrada: las cuatro cosas que el dueño prohibió. Ofrecer es
+ * trabajo de `venta-cruzada.ts`, después del cierre y con el precio hecho.
+ *
+ * LOS NOMBRES SALEN DE LA HOJA DEL PANEL, no de una lista escrita aquí: cada
+ * negocio tiene sus extras y el dueño los cambia cuando quiera.
+ *
+ * SE QUITA LA FRASE, NO SE BLOQUEA LA RESPUESTA. Bloquear gasta uno de los tres
+ * intentos y ya se ha visto acabar en la respuesta de respaldo (lección del
+ * 10-ago). Y con dos frenos, por si el patrón se pasa de listo:
+ *  - solo cae una PREGUNTA que enumera DOS o más extras — «¿te sumo el filtro
+ *    UV?» a secas es una cosa concreta y se respeta;
+ *  - si al quitarla la respuesta se quedara sin el precio, no se toca nada.
+ */
+function quitarOfertaPrematuraDeExtras(texto: string, extras: string[]): string {
+  const original = String(texto || '');
+  if (extras.length < 2 || !original.trim()) return original;
+
+  const sinTildes = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const frases = original.split(/(?<=[.!?])\s+|\n+/);
+
+  const quedan = frases.filter((f) => {
+    if (!f.includes('?')) return true;
+    const plana = sinTildes(f);
+    const cuantos = extras.filter((e) => plana.includes(sinTildes(e))).length;
+    return cuantos < 2;
+  });
+
+  if (quedan.length === frases.length) return original;
+
+  const limpia = quedan.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  // Si al quitarla se pierde el precio o no queda casi nada, mejor dejarlo todo.
+  if (limpia.length < 15 || (original.includes('$') && !limpia.includes('$'))) return original;
+  return limpia;
+}
 import { logger } from '../logger';
 import type { AgentConfig } from '../database.types';
 
@@ -916,15 +959,36 @@ function referenciasYaCotizadas(messages: { role: string; content: string }[]): 
 function respuestaCortada(t: string): boolean {
   const texto = String(t || '').trim();
   if (!texto) return true;
-  // Termina en el símbolo de moneda o en una cifra a medio escribir. No se
-  // mira la paridad de los asteriscos: el bot usa «* » como viñeta y daría
-  // falsos positivos en cada propuesta de tres opciones.
-  if (/[$*_]$/.test(texto)) return true;
-  if (/\$\s?[\d.]{0,3}$/.test(texto)) return true;
-  if (/\b(de|por|con|en|el|la|los|las|un|una|y|o|a)$/i.test(texto)) return true;
+  /**
+   * UN ASTERISCO FINAL NO ES UN CORTE: casi siempre CIERRA una negrita.
+   *
+   * Hasta el 11-ago-2026 cualquier texto terminado en «*» se daba por cortado.
+   * Pero así es como el bot escribe un precio en WhatsApp, y una cotización que
+   * termina en la línea del precio termina en asterisco:
+   *
+   *   «Claro, te cotizo 30 cuadernos.
+   *    *30 Cuaderno Argollado - Base 80 hojas (Ref: ZM-CUA-010) — $390.000 COP*»
+   *
+   * Medido ese día: esa respuesta se bloqueó TRES veces —los tres intentos—, y
+   * al recortarla «a la última frase completa» se le quitó justo el renglón del
+   * precio. Al cliente le llegó «Claro, te cotizo 30 cuadernos argollados» y
+   * nada más: la cotización estaba bien calculada y se tiró a la basura.
+   *
+   * Solo se veía cuando la respuesta terminaba en el precio; con una pregunta
+   * detrás («¿te gustaría agregarle algo?») el asterisco no quedaba al final y
+   * el fallo dormía.
+   *
+   * Así que se miran los cierres de formato y se juzga lo que hay DEBAJO.
+   */
+  const sinCierre = texto.replace(/[*_]+$/, '').trim();
+  if (!sinCierre) return true;
+  // El símbolo de moneda o una cifra a medio escribir: eso sí es un corte.
+  if (/\$$/.test(sinCierre)) return true;
+  if (/\$\s?[\d.]{0,3}$/.test(sinCierre)) return true;
+  if (/\b(de|por|con|en|el|la|los|las|un|una|y|o|a)$/i.test(sinCierre)) return true;
   // Guion, coma o dos puntos al final: la lista se quedó a medias. Visto el
   // 10-ago: «...te tengo estas opciones: * Cuaderno Argollado -» y ahí terminó.
-  if (/[-–—,;:]$/.test(texto)) return true;
+  if (/[-–—,;:]$/.test(sinCierre)) return true;
   return false;
 }
 
@@ -1411,7 +1475,13 @@ export async function runAgentForMessage(params: {
       isValidColombianName
     );
 
-    const toolContext = { orgId, contactId, contactPhone, contactName, conversationId };
+    // `mensajeDelCliente` viaja con el contexto para que la guía de venta sepa
+    // si el cliente preguntó por los extras: la lista de adicionales solo se le
+    // entrega al modelo cuando viene a cuento, o la ofrece por su cuenta.
+    const toolContext = {
+      orgId, contactId, contactPhone, contactName, conversationId,
+      mensajeDelCliente: messageText,
+    };
 
     /**
      * SI EL CLIENTE PIDE UNA PERSONA, SE LE DA — Y ANTES DE QUE EL MODELO HABLE.
@@ -1925,12 +1995,17 @@ ${resueltas}`;
      * columna equivocada es un fastidio; quedarse sin contestar es perder al
      * cliente. Ver lib/agent/pipeline-automatico.ts.
      */
+    // Se guarda fuera del try porque la venta cruzada, más abajo, se apoya en
+    // esta misma señal: la venta está cerrada cuando el turno da «sold».
+    let destinoDelTurno: 'inbox' | 'sales' | 'sold' | null = null;
+
     try {
       const destino = etapaPorHechos({
         mensajeDelCliente: messageText,
         respuestaDelBot: finalResponse,
         steps: pasosDelTurno,
       });
+      destinoDelTurno = destino;
       if (destino) {
         await moverEtapaSiAvanza({
           orgId,
@@ -1945,6 +2020,69 @@ ${resueltas}`;
     } catch (errEtapa) {
       logger.error('No se pudo mover la etapa del Pipeline', {
         error: String(errEtapa), orgId, conversationId,
+      });
+    }
+
+    /**
+     * LA VENTA CRUZADA — lo ÚLTIMO del turno, y por tres razones.
+     *
+     * 1. DESPUÉS DEL CANDADO. El precio que lleva la oferta lo calculó el
+     *    código leyendo el catálogo, no el modelo, así que no hay nada que
+     *    revisar; y si se pegara antes, `applyOutputGuardrail` vería una cifra
+     *    que ninguna herramienta del modelo devolvió y bloquearía la respuesta
+     *    entera, gastando uno de los tres intentos por una frase de regalo.
+     *
+     * 2. DESPUÉS DE MOVER LA TARJETA. La etapa se decide con lo que el bot le
+     *    contestó al cliente; si la oferta se sumara antes, `huboCotizacion`
+     *    vería un precio de más y contaría como cotización algo que es una
+     *    sugerencia.
+     *
+     * 3. SOLO CUANDO LA VENTA YA ESTÁ CERRADA — la regla del dueño, y la razón
+     *    de que se use la MISMA señal que mueve la tarjeta a «Listo para
+     *    pagar»: está medida y peca de conservadora, que es justo lo que hace
+     *    falta aquí. Ofrecer antes de tiempo reabre una venta cerrada.
+     *
+     * Si algo falta —la frase, el producto, la cantidad o la tarifa— no se
+     * ofrece nada. Ver lib/agent/venta-cruzada.ts.
+     */
+    /**
+     * Antes de ofrecer nada: si la venta NO está cerrada, se cae la pregunta
+     * que enumera extras. Va aquí, después del candado, porque quitar una
+     * frase de más no cambia ningún precio y así no gasta un intento.
+     */
+    try {
+      if (destinoDelTurno !== 'sold') {
+        const extras = await extrasDeLoQuePidio(orgId, String(messageText || ''));
+        const limpia = quitarOfertaPrematuraDeExtras(String(finalResponse || ''), extras);
+        if (limpia !== finalResponse) {
+          logger.info('Se cayó la oferta de extras: la venta todavía no está cerrada', {
+            orgId, conversationId, extras: extras.join(', '),
+          });
+          finalResponse = limpia;
+        }
+      }
+    } catch (errExtras) {
+      logger.error('No se pudo revisar la oferta de extras', {
+        error: String(errExtras), orgId, conversationId,
+      });
+    }
+
+    try {
+      if (destinoDelTurno === 'sold') {
+        const oferta = await ofertaDespuesDelCierre({
+          orgId,
+          contactId,
+          conversationId,
+          mensajeDelCliente: messageText,
+          respuestaDelBot: finalResponse,
+          pasos: pasosDelTurno,
+        });
+        if (oferta) finalResponse = `${finalResponse}\n\n${oferta}`;
+      }
+    } catch (errOferta) {
+      // El cliente ya tiene su respuesta ganada: esto no puede quitársela.
+      logger.error('No se pudo ofrecer la venta cruzada', {
+        error: String(errOferta), orgId, conversationId,
       });
     }
 

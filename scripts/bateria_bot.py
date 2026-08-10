@@ -156,6 +156,47 @@ CASOS = [
         and not alguna(r[-1], "no puedo"),
         "en el cierre pide datos y explica el pago",
     ),
+    # ---------------------------------------------------------- venta cruzada
+    (
+        # La hoja de Cuadernos ofrece boligrafos al cerrar. Tiene que salir UNA
+        # oferta, con precio, y solo despues de que el cliente dijo que compra.
+        "venta_cruzada",
+        [
+            "necesito 20 cuadernos argollados de 80 hojas media carta",
+            "listo, me los llevo, como pago?",
+        ],
+        lambda r: alguna(r[-1], "boligrafo", "bolígrafo") and "$" in r[-1],
+        "al cerrar debe ofrecer los boligrafos CON precio",
+    ),
+    (
+        # Se ofrece UNA sola vez. Si el cliente no dijo que si, no se insiste:
+        # repetir la oferta es lo que reabre una venta ya cerrada.
+        "cruzada_una_vez",
+        [
+            "necesito 20 cuadernos argollados de 80 hojas media carta",
+            "listo, me los llevo, como pago?",
+            "perfecto, mandame los datos de pago",
+        ],
+        None,  # se evalua aparte: la oferta en el 2do turno y NO en el 3ro
+        "la oferta se hace una sola vez por conversacion",
+    ),
+    (
+        # La hoja de Mugs no tiene oferta configurada: al cerrar no se inventa
+        # ninguna. Vacio es vacio, igual que con los datos del negocio.
+        "cruzada_sin_hoja",
+        ["cuanto valen 20 mugs magicos", "me quedo con esos, donde pago?"],
+        lambda r: not alguna(r[-1], "boligrafo", "bolígrafo"),
+        "sin oferta escrita en la hoja no se ofrece nada",
+    ),
+    (
+        # Los extras NO se ofrecen antes de cerrar: sin precio y con palabras
+        # que el cliente no entiende, solo abren preguntas.
+        "extras_prematuros",
+        ["cuanto valen 30 cuadernos argollados de 80 hojas media carta"],
+        # Y tiene que COTIZAR: una respuesta sin precio no vale como aprobado.
+        lambda r: "$" in r[-1] and not alguna(r[-1], "filtro uv", "guardas", "insertos"),
+        "debe cotizar y NO ofrecer insertos ni guardas antes de cerrar",
+    ),
 ]
 
 
@@ -170,7 +211,13 @@ def cifras(t):
 
 def correr(caso):
     clave, mensajes, evalua, esperado = caso
-    tel = "5739%s%s@c.us" % (ETIQUETA, clave[:6])
+    # UN CONTACTO NUEVO Y DISTINTO POR CASO.
+    #
+    # Antes el telefono se armaba con las 6 primeras letras de la clave, y
+    # «cruzada_una_vez» y «cruzada_sin_hoja» daban las mismas seis: los dos
+    # casos corrieron sobre el MISMO contacto, se pisaron el historial y los dos
+    # dieron PASA sin haber probado nada. El indice hace la clave irrepetible.
+    tel = "5739%s%02d%s@c.us" % (ETIQUETA, CASOS.index(caso), clave[:6])
     tel = tel.replace("_", "")
     respuestas = []
     t0 = time.time()
@@ -188,13 +235,25 @@ def correr(caso):
         repetidas = cifras(respuestas[0]) & cifras(respuestas[-1])
         ok = len(repetidas) == 0
         nota = "repetidas: %s" % (", ".join(sorted(repetidas)) or "ninguna")
+    elif clave == "cruzada_una_vez":
+        # Se busca LA FRASE de la oferta, no el nombre del producto. Mirar
+        # «boligrafo» daba un falso fallo: en el 3er turno el bot resumia el
+        # pedido —«los 20 cuadernos y los 20 boligrafos»— sin volver a ofrecer
+        # nada. Repetir la OFERTA es el fallo; hablar de lo ya ofrecido, no.
+        ofrecio = [alguna(x, "una cosa más", "una cosa mas") for x in respuestas]
+        ok = ofrecio[1] and not ofrecio[2]
+        nota = "ofrecio en los turnos: %s" % (
+            ", ".join(str(i + 1) for i, v in enumerate(ofrecio) if v) or "ninguno"
+        )
     else:
         ok = bool(evalua(respuestas))
         nota = ""
 
     # NINGUNA respuesta puede salir cortada, gane o pierda el resto.
-    final = (respuestas[-1] or "").strip()
-    if final and (final[-1] in "$*-,;:" or final.endswith(" de") or final.endswith(" por")):
+    # El «*» final casi siempre CIERRA una negrita —asi escribe el bot un
+    # precio en WhatsApp— y no es un corte: se mira lo que hay debajo.
+    final = (respuestas[-1] or "").strip().rstrip("*_").strip()
+    if final and (final[-1] in "$-,;:" or final.endswith(" de") or final.endswith(" por")):
         ok = False
         nota = (nota + " | CORTADA al final: ...%s" % final[-32:]).strip(" |")
 

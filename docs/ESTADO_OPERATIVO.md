@@ -662,6 +662,144 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### La venta cruzada — una sola oferta, después de cerrar, con el precio hecho
+`lib/agent/venta-cruzada.ts`, enganchada al final del turno en
+`lib/agent/index.ts`. Los dos campos que la encienden viven en la hoja de
+categoría del panel: **qué producto ofrecer al cerrar** y **con qué frase**.
+
+La regla que manda es la del dueño: *la oferta adicional no puede hacer dudar al
+cliente ni tumbar la venta*. Si el bot ofrece «insertos» a secas, el cliente
+pregunta qué es un inserto y la venta cerrada se reabre entera. De ahí salen las
+cinco garantías, y **todas están en código**, no pedidas al modelo:
+
+1. **Solo después del cierre.** Se usa la misma señal que mueve la tarjeta a
+   «Listo para pagar» (`clienteQuiereCerrar`), que ya está medida y peca de
+   conservadora, que es justo lo que hace falta aquí.
+2. **Una sola oferta**, nunca una lista.
+3. **Con el precio ya calculado**, leído del catálogo para la cantidad que el
+   cliente compró. Si la tarifa es ambigua o no hay cantidad, no se ofrece.
+4. **Una sola vez por conversación** (marca en `contacts.metadata.venta_cruzada`,
+   por conversación). Si el cliente no contesta que sí, no se insiste.
+5. **En las palabras del dueño.** Sin frase escrita no hay oferta: la misma
+   regla de `DEFAULT_PERSONA`, sin dato no se rellena con un ejemplo.
+
+Va **después del candado de salida** a propósito: el precio lo calculó el
+código, no el modelo, así que no hay nada que revisar, y si se pegara antes,
+`applyOutputGuardrail` vería una cifra que ninguna herramienta del modelo
+devolvió y bloquearía la respuesta entera gastando un intento. Y **después de
+mover la tarjeta**, para que `huboCotizacion` no cuente una sugerencia como
+cotización.
+
+Medido el 11-ago-2026: al cerrar 20 cuadernos, «Una cosa más: te sumo 20
+bolígrafos para entregar junto con los cuadernos por $17.000. ¿Te sirve?» —
+una frase, un precio, y se contesta con sí o no.
+
+### La hoja se le pega al producto por lo que pidió el cliente, no solo por su categoría
+`lib/agent/hojas.ts` (`hojaParaEsteProducto`) y `adjuntarGuiaDeVenta` en
+`search-catalog.ts`.
+
+**El fallo silencioso, medido el 11-ago-2026.** De las 12 hojas del panel,
+**once no tienen ninguna categoría marcada**: se sembraron con el vocabulario
+del cliente, que es lo que traduce la búsqueda, y eso funcionaba. Pero la guía
+de venta se pegaba mirando **solo la categoría del producto**, así que el dueño
+podía llenar entera la hoja de «Mugs y pocillos» —qué preguntar, si la marcación
+va incluida— y **no pasaba absolutamente nada**. Escribir y no ver ningún efecto
+es lo que hace que se deje de usar el panel.
+
+Y no se arregla pidiéndole que marque las categorías, porque **el catálogo no
+está ordenado así**: los mugs activos viven en cuatro categorías distintas
+—«MUGS, BOTILITOS, VASOS Y TERMOS» (43), «HOGAR» (36), «Mugs» (6) y «ECO
+NATURE» (4)—, las gorras en otras cuatro y los bolígrafos en cuatro más. Nadie
+puede mantener eso a mano.
+
+Orden de prioridad: la categoría si tiene hoja propia (es lo que el dueño dijo
+explícitamente) → la hoja de lo que pidió el cliente → la hoja general.
+
+### El asterisco de cierre no es una frase cortada
+`lib/agent/index.ts`, `respuestaCortada`.
+
+Hasta el 11-ago-2026 cualquier respuesta terminada en `*` se daba por cortada.
+Pero así es como el bot escribe un precio en WhatsApp, y una cotización que
+termina en la línea del precio termina en asterisco:
+
+```
+Claro, te cotizo 30 cuadernos.
+*30 Cuaderno Argollado - Base 80 hojas (Ref: ZM-CUA-010) — $390.000 COP*
+```
+
+Medido ese día: esa respuesta se bloqueó **las tres veces** —los tres intentos—
+y al recortarla «a la última frase completa» se le quitó justo el renglón del
+precio. Al cliente le llegó «Claro, te cotizo 30 cuadernos argollados» y nada
+más: **la cotización estaba bien calculada y se tiró a la basura**.
+
+El fallo llevaba tiempo dormido y solo se destapó al quitar la pregunta de
+extras del final: con una pregunta detrás, el asterisco no quedaba último.
+Ahora se quitan los cierres de formato y se juzga lo que hay debajo. Probado
+aparte con 18 frases —10 cortadas de verdad y 8 completas—: 18/18.
+
+### La oferta de extras antes de cerrar — dónde estaba escrita de verdad
+`lib/agent/index.ts`, `quitarOfertaPrematuraDeExtras`, con los nombres sacados
+de la hoja (`extrasDeLoQuePidio`).
+
+El bot remataba una cotización con «¿Te gustaría agregarle **insertos, filtro UV
+o guardas**?»: una lista, sin precio, con palabras que el cliente no entiende y
+**antes** de cerrar la venta. Las cuatro cosas que el dueño prohibió al pedir la
+venta cruzada.
+
+**Se buscó la causa en tres sitios y estaba en los tres, por orden de descubrimiento:**
+
+1. **La hoja del panel**, campo «¿Qué extras se le pueden agregar?». Se reescribió
+   como orden —«no los ofrezcas ni los enumeres»— y **el modelo los siguió
+   enumerando**. Regla 1 del proyecto, séptima demostración. Ahora la lista solo
+   se le entrega cuando el cliente nombra un extra o pregunta por agregar algo:
+   lo que no está delante no se puede ofrecer.
+2. **`ZM-CUA-014`, «CÓMO ARMAR EL PRECIO DE UN CUADERNO»**: un instructivo
+   guardado como producto **activo**, que salía en toda búsqueda de cuadernos
+   diciendo «sumar insertos, sumar filtro UV, sumar guardas». Apagado, con
+   respaldo en `backups/ZM-CUA-014_antes_de_apagar.json`. Es el mismo error que
+   `instrucciones_venta`: comportamiento metido donde van los datos.
+3. **El propio `system-prompt.ts`**, sección «REGLA ESPECIAL: Cuadernos», que
+   nombra literalmente «1 inserto», «2 insertos», «filtro uv», «guardas para
+   argollado», «cosido», «diseño». **Es un dato del negocio escrito en el
+   código**, justo lo que la regla 7 prohíbe, y sigue ahí: quitarlo obliga a
+   trasladar antes la mecánica de cotización del cuaderno, y eso tiene su propia
+   medición (la regresión de los $487.000 depende de ese bloque).
+
+Mientras esos nombres sigan en el prompt, **el modelo puede ofrecerlos cuando
+quiera**. Por eso el cierre no es una instrucción sino un candado: si la venta
+todavía no está cerrada, la pregunta que **enumera dos o más extras** se cae de
+la respuesta. Dos frenos para no pasarse: «¿le sumamos el filtro UV?» —una sola
+cosa concreta— se respeta, y si al quitar la frase se perdiera el precio, no se
+toca nada. **Se quita la frase, no se bloquea el turno**: bloquear gasta uno de
+los tres intentos y ya se vio acabar en la respuesta de respaldo.
+
+Probado aparte con 8 casos —3 que deben caerse, 5 intocables— y sin extras en la
+hoja no toca nada: 8/8.
+
+> Lección de método: **la salida truncada de un `grep` no es una respuesta.**
+> La primera búsqueda de «inserto» en el código traía 20 líneas de `index.ts` y
+> ahí se cortó; `system-prompt.ts` estaba en la línea 21. Se dio por buena una
+> conclusión sacada de media lista.
+
+### El «producto» que le daba instrucciones al bot — ZM-CUA-014
+«CÓMO ARMAR EL PRECIO DE UN CUADERNO» no era un producto: era un instructivo
+guardado como ficha del catálogo, activo, y salía en **toda** búsqueda de
+cuadernos. Su descripción enumera «sumar insertos (1, 2, 3, 4 u 8), sumar filtro
+UV, sumar guardas», y el modelo la leía y le preguntaba al cliente por esos
+extras **antes de cerrar la venta** — con palabras que el cliente no entiende y
+sin precio, las cuatro cosas que el dueño prohibió.
+
+Es el mismo error que `instrucciones_venta`, en otro sitio: instrucciones de
+comportamiento metidas donde van los datos. Lo que decía ya vive en dos lugares
+que sí mandan: la hoja de Cuadernos del panel y `buildQuote`, que arma el
+desglose en código desde el 03-ago. Apagado el 11-ago-2026, con respaldo en
+`backups/ZM-CUA-014_antes_de_apagar.json`.
+
+> Antes de culpar a la hoja o al prompt de lo que el bot dice de más,
+> **mirar qué le devolvió el buscador**. Un instructivo con forma de producto
+> pesa más que cualquier regla escrita.
+
+
 
 ### Dos cosas en un mismo mensaje — `falta-una-de-las-dos`
 `lib/agent/hojas.ts` (`familiasQuePidioElCliente`) y el candado del mismo nombre
