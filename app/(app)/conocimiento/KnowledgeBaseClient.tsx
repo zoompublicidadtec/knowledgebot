@@ -2421,23 +2421,36 @@ function OfertaAlCerrar({
           className="input text-sm"
           placeholder="¿Le sumamos los bolígrafos con su logo? Salen a {precio} cada uno."
         />
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          <span className="text-[10px] text-slate-500">Escriba dentro de la frase:</span>
-          <button
-            type="button"
-            onClick={() => onFrase(frase + '{precio}')}
-            className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] text-slate-300"
-          >
-            {'{precio}'} = cuánto vale cada uno
-          </button>
-          <button
-            type="button"
-            onClick={() => onFrase(frase + '{total}')}
-            className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] text-slate-300"
-          >
-            {'{total}'} = cuánto vale todo
-          </button>
+        {/*
+          LOS CUATRO, NO DOS. El 11-ago-2026 el dueño abrió esta pantalla y se
+          encontró un {cantidad} escrito en la frase de ejemplo que ningún botón
+          explicaba. Si la pantalla enseña dos y el sistema entiende cuatro, el
+          que la usa no sabe qué puede escribir. Aquí se muestran todos.
+        */}
+        <p className="text-[10px] text-slate-500 mt-1">
+          Haga clic para agregarlos al final de la frase. El bot los cambia por el dato de verdad:
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 mt-1">
+          {[
+            ['{precio}', 'cuánto vale CADA UNO'],
+            ['{total}', 'cuánto vale TODO junto'],
+            ['{cantidad}', 'cuántos lleva el cliente'],
+            ['{producto}', 'el nombre del producto'],
+          ].map(([marca, explica]) => (
+            <button
+              key={marca}
+              type="button"
+              onClick={() => onFrase(frase + marca)}
+              className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[11px] text-slate-300 text-left"
+            >
+              <strong className="text-emerald-300">{marca}</strong> = {explica}
+            </button>
+          ))}
         </div>
+        <p className="text-[10px] text-slate-500 mt-1">
+          La frase tiene que llevar <strong>{'{precio}'}</strong> o <strong>{'{total}'}</strong>.
+          Los otros dos son opcionales.
+        </p>
         {frase && !tienePrecio && (
           <p className="text-[11px] text-rose-300 mt-1">
             La frase tiene que llevar el precio adentro. Sin eso el bot no la va a decir, porque el
