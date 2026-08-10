@@ -8,7 +8,13 @@ import { bookAppointmentTool } from './tools/book-appointment';
 import { cancelAppointmentTool } from './tools/cancel-appointment';
 import { rescheduleAppointmentTool } from './tools/reschedule-appointment';
 import { queryKnowledgeBaseTool } from './tools/query-knowledge-base';
-import { searchCatalogTool, runCatalogSearch } from './tools/search-catalog';
+import {
+  searchCatalogTool,
+  runCatalogSearch,
+  buscarPorReferencia,
+  referenciasEnElTexto,
+} from './tools/search-catalog';
+import { hojaParaLoQueDijoElCliente, comoSeBusca } from './hojas';
 import { getProductPriceTool } from './tools/get-product-price';
 import { saveContactInfoTool } from './tools/save-contact-info';
 import {
@@ -217,6 +223,65 @@ function sanitizeIdentity(text: string, agentName: string): { text: string; hit:
       ? `${out} Dame un segundo y te confirmo la cotización exacta.`
       // No quedó nada aprovechable: la frase de respaldo de siempre.
       : `Claro que sí. Dame un segundo y te confirmo con producción. Mientras tanto, cuéntame qué cantidad necesitas y te armo la cotización, habla con ${agentName.split(' ')[0]}.`;
+  }
+  return { text: out, hit: true };
+}
+
+/**
+ * NO SE INVENTA LA POLÍTICA DE MARCACIÓN. Nuevo el 10-ago-2026.
+ *
+ * Medido ese día: a «¿los mugs ya vienen con mi logo impreso?» el bot contestó
+ * «los precios de catálogo no incluyen la marcación del logo, esta se cotiza
+ * aparte según la técnica, tamaño y número de tintas». **Nadie le dijo eso.**
+ * No hay hoja de Mugs, así que se lo inventó con total seguridad — y encima
+ * preguntando por técnica y tintas, que es justo lo que la hoja de Cuadernos
+ * prohíbe preguntar.
+ *
+ * Es el mismo fallo que DEFAULT_PERSONA: un dato del negocio que el bot rellena
+ * solo cuando el dueño no lo escribió. Se aplica la misma regla — si nadie lo
+ * dijo, la frase entera se cae y el bot ofrece consultarlo. **No se bloquea**
+ * la respuesta: bloquear gasta un intento de los tres y ya está medido que los
+ * candados se pelean entre sí. Se quita la oración y lo demás sale.
+ */
+const AFIRMA_POLITICA_DE_MARCACION =
+  /(no incluyen? la marcaci[óo]n|se cotiza aparte|marcaci[óo]n (?:se cobra|va) aparte|no incluye el logo|el logo se cobra|aparte seg[úu]n la t[ée]cnica|sin incluir la marcaci[óo]n|incluye la marcaci[óo]n|marcaci[óo]n (?:est[áa] )?incluida|ya viene(?:n)? marcad)/i;
+
+/** ¿Alguna hoja del dueño habló de la marcación en este turno? */
+function politicaDeMarcacionRespaldada(steps: any[]): boolean {
+  for (const step of steps || []) {
+    for (const tr of (step.toolResults || []) as any[]) {
+      const crudo = (tr as any).output ?? (tr as any).result;
+      if (!crudo) continue;
+      const texto = typeof crudo === 'string' ? crudo : JSON.stringify(crudo);
+      if (/INCLUIDO EN EL PRECIO|SE COTIZA APARTE|NO SE IMPRIME NADA|Sobre lo que se imprime/i.test(texto)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function quitarPoliticaInventada(text: string, steps: any[]): { text: string; hit: boolean } {
+  if (!text || !AFIRMA_POLITICA_DE_MARCACION.test(text)) return { text, hit: false };
+  if (politicaDeMarcacionRespaldada(steps)) return { text, hit: false };
+
+  const kept = text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter((s) => s.trim() && !AFIRMA_POLITICA_DE_MARCACION.test(s));
+
+  let out = kept.join(' ').replace(/\s{2,}/g, ' ').trim();
+
+  /**
+   * Si lo que queda no lleva un precio, el cliente sigue sin respuesta: preguntó
+   * por la marcación y le quitamos justo esa frase. Medido el 10-ago: al quitar
+   * la política inventada quedó **solo el saludo**, y `respuestaSirve` lo dio
+   * por bueno porque el saludo termina en pregunta. Así que aquí no se consulta
+   * a `respuestaSirve`: sin cifra, siempre se añade el paso siguiente.
+   */
+  if (!/\$\s?\d/.test(out)) {
+    out = out.length >= 25
+      ? `${out} Lo de la marcación lo confirmo con producción y te digo enseguida.`
+      : 'Eso de la marcación lo confirmo con producción y te aviso enseguida. Cuéntame qué cantidad necesitas y te armo la cotización.';
   }
   return { text: out, hit: true };
 }
@@ -434,7 +499,10 @@ async function applyOutputGuardrail(
   approvedPrices: Set<number> = new Set(),
   catalogHits: any[] = [],
   fraseOfftopic = '',
-  palabrasPedidas: Set<string> = new Set()
+  palabrasPedidas: Set<string> = new Set(),
+  palabrasPrevias: Set<string> = new Set(),
+  referenciasYaCotizadas: Set<string> = new Set(),
+  referenciasResueltas: any[] = []
 ): Promise<{ blocked: boolean; reason: string }> {
   try {
     // 1. Toda referencia citada al cliente tiene que existir de verdad. En
@@ -456,17 +524,71 @@ async function applyOutputGuardrail(
     //     rematando algo ya cotizado ("sí, los de 120 hojas") y ahí no hay nada
     //     que reprochar. Basta con que UNA de sus búsquedas tenga que ver con lo
     //     que el cliente acaba de escribir.
+    //     CORREGIDO EL 10-AGO-2026. Tal como estaba, este candado castigaba al
+    //     bot **por acertar**. Medido en los registros de producción del propio
+    //     día, tres bloqueos seguidos, los tres injustos:
+    //
+    //       consultas ["mug"]         pidió "mugs"                    → BLOQUEADO
+    //       consultas ["boligrafo"]   pidió "esferos"                 → BLOQUEADO
+    //       consultas ["mug mágico"]  pidió "mugs cambien color agua" → BLOQUEADO
+    //
+    //     El primero por la longitud de la palabra (ver MULETILLAS_CORTAS). Los
+    //     otros dos porque **traducir la jerga del cliente al nombre del
+    //     catálogo es exactamente lo que queremos que haga**: «esfero» es
+    //     bolígrafo y «mug que cambia de color» es el Mug Mágico. Comparar la
+    //     consulta contra las palabras crudas del cliente convierte cada acierto
+    //     en un bloqueo, y el bot gastaba dos de sus tres intentos ahí. Después
+    //     de dos bloqueos entrega la respuesta de respaldo, que no vende nada.
+    //
+    //     El fallo que este candado existe para atajar es otro y muy concreto:
+    //     **seguir hablando de lo de ANTES**. Así que ahora se bloquea solo
+    //     cuando la consulta se parece al tema ANTERIOR y no al de ahora. Si no
+    //     se parece a ninguno de los dos, es una traducción y pasa.
     if (palabrasPedidas.size > 0) {
       const consultas = consultasDeCatalogo(steps);
       const alTema = consultas.some((q) =>
         coincideAlgunaPalabra(palabrasPedidas, palabrasDeContenido(q))
       );
-      if (consultas.length > 0 && !alTema) {
-        logger.error('GUARDRAIL: buscó algo distinto de lo que pidió el cliente', {
-          consultas, pidio: [...palabrasPedidas].join(','),
+      const soloAlTemaViejo =
+        palabrasPrevias.size > 0 &&
+        consultas.length > 0 &&
+        !alTema &&
+        consultas.every((q) => coincideAlgunaPalabra(palabrasPrevias, palabrasDeContenido(q)));
+
+      if (soloAlTemaViejo) {
+        logger.error('GUARDRAIL: siguió con el tema anterior en vez de lo que pidió el cliente', {
+          consultas, pidio: [...palabrasPedidas].join(','), antes: [...palabrasPrevias].join(','),
         });
         return { blocked: true, reason: 'search-off-topic' };
       }
+      if (consultas.length > 0 && !alTema) {
+        // No es el fallo que este candado persigue: se anota para poder medirlo,
+        // pero no se bloquea. Casi siempre es una traducción correcta.
+        logger.info('El bot buscó con otras palabras que las del cliente (traducción, no bloqueo)', {
+          consultas, pidio: [...palabrasPedidas].join(','),
+        });
+      }
+    }
+
+    /**
+     * 0.05 NEGAR UNA REFERENCIA QUE SÍ EXISTE. Nuevo el 10-ago-2026.
+     *
+     * Es la queja con la que el dueño abrió el día: pidió «10 mug metálicos ref
+     * MU-303-1» y el bot le contestó que esa referencia no está en el catálogo.
+     * Está: es el *Mug Metálico Wilem 380ml II*, activo, guardado como
+     * `MU-303-1.` con un punto que dejó el Excel.
+     *
+     * Ya se resuelve el código y el producto se le entrega al modelo. Pero
+     * entregárselo no basta —la regla del proyecto, otra vez—: en la prueba, el
+     * modelo tenía el producto delante, buscó por su cuenta la palabra
+     * «referencia», no encontró nada parecido y volvió a decir que no existe.
+     * Aquí ya no puede: si el sistema resolvió el código, negarlo se bloquea.
+     */
+    if (referenciasResueltas.length > 0 && NIEGA_UNA_REFERENCIA.test(responseText)) {
+      logger.error('GUARDRAIL: negó una referencia que el sistema sí resolvió', {
+        resueltas: referenciasResueltas.map((p: any) => `${p.product_id}:${p.name}`),
+      });
+      return { blocked: true, reason: 'nego-referencia-que-existe' };
     }
 
     // 0.1 NO PIDAS DATOS DE UNA MARCACIÓN QUE NO SABEMOS COTIZAR. Va junto a
@@ -511,6 +633,11 @@ async function applyOutputGuardrail(
 
     if (cited.length > 0) {
       const allowed = collectAllowedReferences(steps);
+      // Lo que el sistema ya resolvió por código cuenta como verificado: lo
+      // encontró él mismo en la base hace tres líneas.
+      for (const p of referenciasResueltas) {
+        if (p?.product_id) allowed.add(String(p.product_id).toUpperCase());
+      }
       const unverified = cited.filter(r => !allowed.has(r));
 
       if (unverified.length > 0) {
@@ -522,6 +649,34 @@ async function applyOutputGuardrail(
           .eq('active', true);
 
         const real = new Set((found || []).map((p: any) => String(p.reference).toUpperCase()));
+
+        /**
+         * Y OTRA VEZ EL PUNTO DE MÁS. La comparación exacta daba por inventada
+         * la referencia `MU-303-1` porque el catálogo la guarda como
+         * `MU-303-1.`. Es el último eslabón de la misma cadena: el código se
+         * resolvía bien, la calculadora daba el precio bien, y el candado
+         * antialucinación tumbaba la respuesta al final por un carácter.
+         */
+        const codigo = (t: string) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const faltantes = unverified.filter((r) => !real.has(r));
+        if (faltantes.length > 0) {
+          const letras = [...new Set(
+            faltantes.map((r) => (codigo(r).match(/^[A-Z]+/) || [''])[0]).filter((l) => l.length >= 2)
+          )];
+          if (letras.length > 0) {
+            const { data: parecidos } = await (supabase as any)
+              .from('products')
+              .select('reference')
+              .eq('active', true)
+              .or(letras.map((l) => `reference.ilike.${l}*`).join(','))
+              .limit(1000);
+            const normReales = new Set((parecidos || []).map((p: any) => codigo(p.reference)));
+            for (const r of faltantes) {
+              if (normReales.has(codigo(r))) real.add(r);
+            }
+          }
+        }
+
         const invented = unverified.filter(r => !real.has(r));
 
         if (invented.length > 0) {
@@ -595,6 +750,30 @@ async function applyOutputGuardrail(
       const todasConocidas = mentionedPrices.every(
         p => approvedPrices.has(parseCOP(p)) || desdeElPanel.has(parseCOP(p))
       );
+
+      /**
+       * PERO SOLO SI SON LOS MISMOS PRODUCTOS. Corregido el 10-ago-2026.
+       *
+       * Esta puerta existe para el cierre: «me quedo con ese» y el bot repite el
+       * total ya cotizado sin volver a calcular. El agujero era que aceptaba una
+       * cifra vieja pegada a un producto NUEVO. Es el fallo que el dueño trajo
+       * en una captura: pidió mugs metálicos y recibió MU-180 $235.000,
+       * MU-439 $429.900 y MU-345 $589.000; un minuto después, otros tres mugs
+       * completamente distintos con **las mismas tres cifras**. Comprobado
+       * contra las tarifas: el Mug Tintero a 10 unidades vale $8.000, no
+       * $23.500. Eran los precios del mensaje anterior, reciclados.
+       *
+       * Ahora, si la respuesta nombra una referencia que no se había cotizado
+       * antes en esta conversación, la puerta se cierra y hay que calcular.
+       */
+      const referenciasNuevas = cited.filter((r) => !referenciasYaCotizadas.has(r));
+      if (todasConocidas && referenciasNuevas.length > 0) {
+        logger.error('CANDADO v4: precios viejos pegados a productos nuevos', {
+          referenciasNuevas, cifras: mentionedPrices,
+        });
+        return { blocked: true, reason: 'precio-reciclado' };
+      }
+
       if (todasConocidas) {
         logger.info('CANDADO v4: precios ya aprobados en la conversación', {
           count: mentionedPrices.length,
@@ -689,6 +868,65 @@ function collectApprovedPrices(messages: { role: string; content: string }[]): S
   return out;
 }
 
+/**
+ * Referencias que el bot YA cotizó antes en esta conversación. Es la otra mitad
+ * de `collectApprovedPrices`: una cifra vieja solo vale si va con su producto.
+ */
+function referenciasYaCotizadas(messages: { role: string; content: string }[]): Set<string> {
+  const out = new Set<string>();
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    for (const r of extractCitedReferences(m.content)) out.add(r);
+  }
+  return out;
+}
+
+/**
+ * ¿La respuesta se cortó a mitad de frase? Medido el 10-ago-2026: a «cuánto
+ * vale un banner laminado de 200 x 100 cm» el cliente recibió literalmente
+ * «...tiene un precio de *$» y nada más. Un mensaje partido en el precio es
+ * peor que no contestar: parece una estafa a medio escribir.
+ */
+function respuestaCortada(t: string): boolean {
+  const texto = String(t || '').trim();
+  if (!texto) return true;
+  // Termina en el símbolo de moneda o en una cifra a medio escribir. No se
+  // mira la paridad de los asteriscos: el bot usa «* » como viñeta y daría
+  // falsos positivos en cada propuesta de tres opciones.
+  if (/[$*_]$/.test(texto)) return true;
+  if (/\$\s?[\d.]{0,3}$/.test(texto)) return true;
+  if (/\b(de|por|con|en|el|la|los|las|un|una|y|o|a)$/i.test(texto)) return true;
+  // Guion, coma o dos puntos al final: la lista se quedó a medias. Visto el
+  // 10-ago: «...te tengo estas opciones: * Cuaderno Argollado -» y ahí terminó.
+  if (/[-–—,;:]$/.test(texto)) return true;
+  return false;
+}
+
+/**
+ * EL BOT QUE CONTESTA SOLO EL SALUDO — la causa, encontrada el 10-ago-2026.
+ * ---------------------------------------------------------------------------
+ * Estaba en la lista de pendientes como «reproducido, sin causa encontrada»: el
+ * cliente escribía, el bot respondía «Hola, hablas con Oscar Herrera…» y nada
+ * más, y había que mandarle un «?» para despertarlo.
+ *
+ * La causa estaba en el registro, a la vista: **`finishReason: "other"`**. El
+ * proveedor avisa que la generación NO terminó de forma normal, y lo que llega
+ * es un pedazo. A veces el pedazo se nota —«…50 esferos con el logo de tu
+ * empresa:» y se acabó—, pero cuando lo poco que alcanzó a escribir fue el
+ * saludo, el texto parece completo: termina en «?» y pasa todos los controles.
+ * En una sola tanda de 15 pruebas apareció **4 veces**.
+ *
+ * Nadie miraba ese aviso. Ahora se mira: si la generación no terminó bien y lo
+ * único que quedó es el saludo, se vuelve a pedir la respuesta.
+ */
+function seQuedoEnElSaludo(texto: string, saludo: string): boolean {
+  const limpio = sinAcentos(String(texto || '').toLowerCase()).replace(/[^a-z0-9¿?]+/g, ' ').trim();
+  const salu = sinAcentos(String(saludo || '').toLowerCase()).replace(/[^a-z0-9¿?]+/g, ' ').trim();
+  if (!limpio) return true;
+  const resto = salu ? limpio.replace(salu, '').trim() : limpio;
+  return resto.length < 25;
+}
+
 /** Cuántos mensajes seguidos del bot fueron solo preguntas, sin precios. */
 function countQuestionStreak(messages: { role: string; content: string }[]): number {
   let streak = 0;
@@ -775,6 +1013,26 @@ function sinAcentos(text: string): string {
     .join('');
 }
 
+/**
+ * MULETILLAS DE TRES LETRAS.
+ *
+ * Hasta el 10-ago-2026 se descartaba TODA palabra de menos de 4 letras, y con
+ * ella se iba **«mug»**, que es uno de los productos que más vende ZOOM. El
+ * efecto medido en los registros de producción: el cliente escribía «20 mugs»,
+ * el modelo buscaba «mug» —lo correcto— y el candado de «buscó otra cosa» lo
+ * BLOQUEABA, porque al quitar las palabras cortas la consulta se quedaba sin
+ * ninguna palabra que comparar. Dos intentos perdidos en cada mensaje de mugs.
+ *
+ * Ahora entran las de 3 letras y se descartan por lista, no por longitud.
+ */
+const MULETILLAS_CORTAS = new Set([
+  'que', 'los', 'las', 'del', 'con', 'por', 'una', 'uno', 'sin', 'mas', 'muy',
+  'son', 'sus', 'esa', 'ese', 'hay', 'para', 'pero', 'como', 'este', 'esta',
+  'aca', 'ahi', 'asi', 'ver', 'dar', 'ser', 'tan', 'sea', 'les', 'nos', 'yo',
+  'tu', 'el', 'la', 'lo', 'un', 'de', 'en', 'es', 'al', 'se', 'me', 'te', 'ya',
+  'si', 'no', 'ok', 'oye', 'hoy', 'dia', 'vez', 'fin', 'don', 'sr', 'sra',
+]);
+
 function palabrasDeContenido(text: string): Set<string> {
   const out = new Set<string>();
   // Las medidas se escriben "20x30" en el catálogo y "20por30", "20 por 30" o
@@ -787,7 +1045,9 @@ function palabrasDeContenido(text: string): Set<string> {
     // "20x30", que identifican el producto exacto.
     const esMedida = /^[0-9]+x[0-9]+$/.test(w);
     if (esMedida) { out.add(w); continue; }
-    if (w.length >= 4 && !PALABRAS_VACIAS.has(w) && !/^[0-9]+$/.test(w)) out.add(w);
+    if (/^[0-9]+$/.test(w)) continue;
+    if (PALABRAS_VACIAS.has(w) || MULETILLAS_CORTAS.has(w)) continue;
+    if (w.length >= 3) out.add(w);
   }
   return out;
 }
@@ -831,11 +1091,50 @@ async function frecuenciaEnCatalogo(termino: string): Promise<number> {
  */
 async function probeCatalogo(
   messageText: string,
-  historialCliente: string[] = []
-): Promise<{ relevant: any[]; total: number }> {
+  historialCliente: string[] = [],
+  orgId?: string
+): Promise<{ relevant: any[]; total: number; hoja?: string }> {
   const texto = String(messageText || '');
   // Los avisos internos de media fallida no son una petición del cliente.
   if (texto.trim().startsWith('[El cliente envió')) return { relevant: [], total: 0 };
+
+  /**
+   * LA HOJA MANDA LA BÚSQUEDA. Nuevo el 10-ago-2026, y es el cambio de fondo.
+   *
+   * Hasta hoy el dueño escribía en el panel «busca en el catálogo con: cuaderno
+   * 80 hojas» y «nunca busques con: agenda, grande, cosido» — y el sistema NO
+   * usaba ni una ni otra para buscar: las convertía en texto y se las pegaba al
+   * modelo como consejo, DESPUÉS de que la búsqueda ya había ocurrido. Le
+   * decíamos con qué palabras buscar después de buscar.
+   *
+   * Ahora, si lo que escribió el cliente coincide con el vocabulario de una
+   * hoja, la consulta la pone la hoja. Medido contra el buscador el mismo día:
+   * «esfero» puntúa 0,650 y cuela una *Alcancía Esfera*; «boligrafo», 1,150 y
+   * trae bolígrafos. La misma intención, un 77 % mejor encontrada.
+   */
+  if (orgId) {
+    try {
+      const cual = await hojaParaLoQueDijoElCliente(orgId, texto);
+      const terminosDeLaHoja = comoSeBusca(cual?.hoja || null);
+      if (cual && terminosDeLaHoja.length > 0) {
+        for (const consulta of terminosDeLaHoja.slice(0, 2)) {
+          const res: any = await runCatalogSearch(consulta, orgId);
+          const matches: any[] = res?.matches || [];
+          if (matches.length > 0) {
+            logger.info('La hoja del panel mandó la búsqueda', {
+              hoja: cual.hoja.nombre, dijoElCliente: cual.palabra,
+              seBuscoCon: consulta, encontrados: matches.length,
+            });
+            return { relevant: matches, total: matches.length, hoja: cual.hoja.nombre };
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('No se pudo usar la hoja para buscar; sigue el camino normal', {
+        error: String(err),
+      });
+    }
+  }
 
   // El motor puntúa por palabras clave: la frase entera lo diluye y una palabra
   // genérica lo desvía. Medido: la frase completa devolvía 0 bolsas de organza;
@@ -989,6 +1288,10 @@ function consultasDeCatalogo(steps: any[]): string[] {
   return out;
 }
 
+/** Frases con las que el bot niega tener una REFERENCIA concreta. */
+const NIEGA_UNA_REFERENCIA =
+  /(no encuentro|no la encuentro|no lo encuentro|no aparece|no est[áa] en (?:nuestro|mi|el) cat[áa]logo|no existe esa|no tengo esa|no manejamos esa|no tenemos esa|no la tengo|no lo tengo)/i;
+
 /** Frases con las que el bot niega tener un producto. */
 const NEGACION_DE_CATALOGO =
   /(no lo manejamos|no la manejamos|no los manejamos|no las manejamos|no manejamos|no lo trabajamos|no la trabajamos|eso puntual no|no tenemos ese|no tenemos esa|no contamos con|no disponemos)/i;
@@ -1126,7 +1429,40 @@ export async function runAgentForMessage(params: {
       .filter((m) => m.role === 'user' && m.content && m.content.trim() !== messageText.trim())
       .slice(-3)
       .map((m) => m.content);
-    const catalogProbe = await probeCatalogo(messageText, historialCliente);
+    const catalogProbe = await probeCatalogo(messageText, historialCliente, orgId);
+
+    /**
+     * LA REFERENCIA QUE DIJO EL CLIENTE, RESUELTA COMO CÓDIGO Y ANTES DE TODO.
+     *
+     * Este rail borraba los códigos antes de poder usarlos: descarta las
+     * palabras de menos de 4 letras y los números sueltos, así que de
+     * «MU-303-1» no quedaba nada. El cliente pedía una referencia y el bot le
+     * contestaba que no existe — comprobado el 10-ago: **existe, está activa**,
+     * y está guardada como `MU-303-1.` con un punto de más que dejó el Excel.
+     */
+    const codigosPedidos = referenciasEnElTexto(messageText);
+    let referenciasResueltas: any[] = [];
+    if (codigosPedidos.length > 0) {
+      const porCodigo = await buscarPorReferencia(codigosPedidos, orgId);
+      referenciasResueltas = porCodigo;
+      if (porCodigo.length > 0) {
+        const yaEstan = new Set(
+          catalogProbe.relevant.map((m: any) => String(m.product_id).toUpperCase())
+        );
+        catalogProbe.relevant = [
+          ...porCodigo.filter((p: any) => !yaEstan.has(String(p.product_id).toUpperCase())),
+          ...catalogProbe.relevant,
+        ];
+        logger.info('El cliente nombró una referencia y se resolvió exacta', {
+          conversationId, pidio: codigosPedidos.join(','),
+          encontro: porCodigo.map((p: any) => p.product_id).join(','),
+        });
+      } else {
+        logger.info('El cliente nombró una referencia que no está en el catálogo', {
+          conversationId, pidio: codigosPedidos.join(','),
+        });
+      }
+    }
     // Frase plantilla de Personalización, sin el {scope}: es la que el modelo
     // usa para despachar lo que cree fuera del negocio.
     const fraseOfftopic = String(persona.offtopic_redirect || '').split('{scope}')[0].trim();
@@ -1154,6 +1490,22 @@ ${lineas}`;
       });
     }
 
+    // El código que escribió el cliente, ya resuelto, va aparte y arriba: en la
+    // lista larga se perdía y el modelo terminaba buscando la palabra
+    // «referencia» por su cuenta (medido el 10-ago). Es un dato, no una orden.
+    if (referenciasResueltas.length > 0) {
+      const resueltas = referenciasResueltas
+        .map((p: any) =>
+          `- El cliente escribió el código ${codigosPedidos[0]} y corresponde a este producto: ` +
+          `product_id: ${p.product_id} | ${p.name}${p.has_pricing ? '' : ' | SIN TARIFA'}`
+        )
+        .join('\n');
+      systemPromptFinal = `${systemPromptFinal}
+
+## Referencia exacta que pidió el cliente (existe y está activa)
+${resueltas}`;
+    }
+
     // === BUQUE DE RECÁLCULO (obligar a usar la calculadora) ===
     // El bot genera respuesta → guardrail revisa → si bloquea, se le devuelve
     // una orden de recalcular → repite hasta 3 intentos. Escala en severidad.
@@ -1163,6 +1515,26 @@ ${lineas}`;
         'ALTO. El TOTAL que diste no lo calculó ninguna herramienta: lo sumaste tú, y por eso el mismo pedido da cifras distintas. Cuando el precio final es la SUMA de varias piezas (un producto base más sus adicionales), ejecuta buildQuote enviando SOLO qué lleva el pedido, sin una sola cifra, y responde con el total que devuelva.',
         'BLOQUEADO DE NUEVO. No sumes ni multipliques tú. Ejecuta buildQuote con la cantidad, la variante que eligió el cliente y la lista de piezas, y copia su total tal cual, sin recalcular.',
         'ÚLTIMO INTENTO. Ejecuta buildQuote AHORA y responde únicamente con el total que devuelva. Si buildQuote te pide un dato que falta, pregúntaselo al cliente en vez de inventarlo.',
+      ],
+      'precio-reciclado': [
+        'ALTO. Le pusiste a un producto NUEVO las cifras de un producto que cotizaste antes en esta misma conversación. Cada producto tiene su propia tarifa. Ejecuta getProductPrice para CADA referencia que vas a nombrar, con la cantidad que pidió el cliente, y usa solo esas cifras.',
+        'BLOQUEADO DE NUEVO. Ninguna cifra del historial sirve para un producto distinto. Calcula el precio de cada producto que menciones, uno por uno, en este turno.',
+        'ÚLTIMO INTENTO. Ejecuta getProductPrice con cada product_id y responde únicamente con lo que devuelva. Si no puedes calcular alguno, no lo ofrezcas.',
+      ],
+      'nego-referencia-que-existe': [
+        'ALTO. Le dijiste al cliente que esa referencia no existe y SÍ existe: {REFERENCIAS}. Úsala tal cual, ejecuta getProductPrice con ese product_id y la cantidad que pidió, y dale el precio. PROHIBIDO repetir que no la encuentras.',
+        'BLOQUEADO DE NUEVO. El producto es {REFERENCIAS}. Cotízalo con getProductPrice y responde con su precio.',
+        'ÚLTIMO INTENTO. Usa exactamente este product_id: {REFERENCIAS}. Ejecuta getProductPrice y entrega el precio.',
+      ],
+      'solo-el-saludo': [
+        'Solo escribiste el saludo y el cliente se quedó sin respuesta. Contéstale lo que preguntó, en un mensaje corto y completo: si pidió productos, búscalos y dale las 3 opciones con su precio; si preguntó algo puntual, respóndelo.',
+        'Otra vez te quedaste en el saludo. NO saludes: ve directo a lo que el cliente preguntó, con precios si pidió precios.',
+        'ÚLTIMO INTENTO. Sin saludo. Una respuesta corta y completa a lo que el cliente acaba de escribir.',
+      ],
+      'respuesta-cortada': [
+        'Tu mensaje salió cortado a la mitad, justo en el precio, y así no se le puede enviar al cliente. Vuelve a escribir la respuesta COMPLETA, terminando la frase y con todas las cifras.',
+        'Otra vez quedó a medias. Escribe el mensaje entero de una sola vez, corto y cerrado, con el precio completo.',
+        'ÚLTIMO INTENTO. Un mensaje breve, completo y con la cifra entera. No lo dejes a medias.',
       ],
       'no-calculator': [
         'ALTO. Tu respuesta fue BLOQUEADA porque diste precios sin usar la calculadora. Está PROHIBIDO dar precios de memoria. Ejecuta searchCatalog para encontrar el producto y luego getProductPrice (o calculateCustomPrice si se cobra por área o metro, como DTF, vinilos o screen) antes de responder. No repitas precios del historial.',
@@ -1217,6 +1589,18 @@ ${lineas}`;
     // Lo que el cliente acaba de escribir, para contrastarlo con lo que el
     // modelo fue a buscar al catálogo.
     const palabrasPedidas = palabrasDeContenido(messageText);
+    // Y de qué se hablaba ANTES: es lo único que distingue «siguió con lo de
+    // antes» —el fallo real— de «tradujo la jerga del cliente», que es un
+    // acierto y hasta hoy se castigaba igual.
+    const palabrasPreviasDelCliente = new Set<string>();
+    for (const previo of historialCliente) {
+      for (const w of palabrasDeContenido(previo)) {
+        if (!palabrasPedidas.has(w)) palabrasPreviasDelCliente.add(w);
+      }
+    }
+    // Referencias que ya se cotizaron en esta conversación: una cifra vieja solo
+    // vale si va con el producto con el que se aprobó.
+    const yaCotizadas = referenciasYaCotizadas(messages);
     // Cuando el bot buscó fuera de tema, preguntar deja de ser una falta: es
     // justo lo que le estamos pidiendo. Sin esto, el candado del interrogatorio
     // volvería a empujarlo a cotizar lo primero que tenga a mano.
@@ -1287,12 +1671,51 @@ ${lineas}`;
         logger.warn('GUARDRAIL: identidad de IA saneada en la respuesta', { orgId, conversationId });
       }
 
+      // Una política de marcación que nadie escribió en el panel se cae, igual
+      // que se cae una frase donde el bot se declara IA. Sin gastar intentos.
+      const marcacion = quitarPoliticaInventada(cleanedResponse, result.steps || []);
+      if (marcacion.hit) {
+        cleanedResponse = marcacion.text;
+        logger.warn('GUARDRAIL: se quitó una política de marcación que ninguna hoja respalda', {
+          orgId, conversationId,
+        });
+      }
+
       // Revisar con el guardrail
-      const guardrailResult = await applyOutputGuardrail(
+      let guardrailResult = await applyOutputGuardrail(
         cleanedResponse, result.steps || [], permitirPreguntar ? 0 : questionStreak,
         approvedPrices, catalogProbe.relevant, fraseOfftopic,
-        buscandoAdicionales ? new Set<string>() : palabrasPedidas
+        buscandoAdicionales ? new Set<string>() : palabrasPedidas,
+        palabrasPreviasDelCliente, yaCotizadas, referenciasResueltas
       );
+
+      // Un mensaje partido a la mitad del precio no puede salir jamás. Va
+      // después del resto para no tapar una causa más informativa.
+      const razonDeCorte = (result as any).finishReason;
+      // El proveedor avisa que la generación no terminó bien. Si además el
+      // texto no cierra con puntuación, es un pedazo: no puede salir así.
+      const noCierra = !/[.!?…)\]»"'*]$/.test(cleanedResponse.trim());
+      const seCortoAMedias =
+        (razonDeCorte === 'other' || razonDeCorte === 'length') && noCierra;
+
+      if (!guardrailResult.blocked && (respuestaCortada(cleanedResponse) || seCortoAMedias)) {
+        logger.error('GUARDRAIL: la respuesta salió cortada a mitad de frase', {
+          orgId, conversationId, finishReason: razonDeCorte, final: cleanedResponse.slice(-60),
+        });
+        guardrailResult = { blocked: true, reason: 'respuesta-cortada' };
+      } else if (
+        !guardrailResult.blocked &&
+        palabrasPedidas.size > 0 &&
+        seQuedoEnElSaludo(cleanedResponse, persona.greeting)
+      ) {
+        // No se exige que la generación viniera marcada como truncada: a veces
+        // llega como terminada y aun así el bot solo saludó. Lo que decide es
+        // el hecho — el cliente preguntó algo concreto y no recibió respuesta.
+        logger.error('GUARDRAIL: el cliente preguntó y el bot solo saludó', {
+          orgId, conversationId, finishReason: razonDeCorte, dijo: cleanedResponse.slice(0, 90),
+        });
+        guardrailResult = { blocked: true, reason: 'solo-el-saludo' };
+      }
 
       // === REPARTIDOR DE FOTOS: capturar fotos+precios del rastro del bot ===
       try {
@@ -1380,7 +1803,12 @@ ${lineas}`;
       const orderText = (orders[attempt] || orders[orders.length - 1])
         .replace('{PRODUCTOS}', catalogListado || 'los que devuelva searchCatalog')
         .replace('{BUSCADO}', consultasDeCatalogo(result.steps || []).join(' / ') || 'otra cosa')
-        .replace('{PEDIDO}', messageText.trim().slice(0, 200));
+        .replace('{PEDIDO}', messageText.trim().slice(0, 200))
+        .replace(
+          '{REFERENCIAS}',
+          referenciasResueltas.map((p: any) => `${p.product_id} (${p.name})`).join(', ') ||
+            'la que devolvió searchCatalog'
+        );
       loopMessages = [...loopMessages,
         { role: 'assistant', content: cleanedResponse },
         { role: 'user', content: orderText },
@@ -1397,6 +1825,24 @@ ${lineas}`;
         // Los textos viven en request-human-handoff.ts: la frase que se entrega
         // y la que detecta que el bot se trabó tienen que ser LA MISMA.
         finalResponse = permitirPreguntar ? RESPALDO_PREGUNTAR : RESPALDO_COTIZAR;
+
+        /**
+         * Salvo si lo único que falló fue el corte. Ahí hay una respuesta buena
+         * hasta donde llegó, y tirarla para poner una frase de espera es peor:
+         * el cliente ya tenía sus tres opciones y sus precios. Se recorta a la
+         * última frase cerrada y se entrega, si lo que queda sirve.
+         */
+        if (guardrailResult.reason === 'respuesta-cortada') {
+          const frases = cleanedResponse.split(/(?<=[.!?])\s+|\n+/);
+          while (frases.length > 0 && respuestaCortada(frases.join(' '))) frases.pop();
+          const recortada = frases.join(' ').replace(/\s{2,}/g, ' ').trim();
+          if (recortada.length >= 40 && respuestaSirve(recortada) && !respuestaCortada(recortada)) {
+            logger.warn('Respuesta cortada: se entrega recortada a la última frase completa', {
+              orgId, conversationId, quedo: recortada.length,
+            });
+            finalResponse = formatPricesForColombia(recortada);
+          }
+        }
       }
     }
 

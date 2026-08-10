@@ -31,6 +31,18 @@ export interface HojaDeCategoria {
   preguntar: string;
   no_preguntar: string;
   como_preguntar: string;
+  /**
+   * CÓMO LO LLAMA EL CLIENTE. Campo nuevo del 10-ago-2026, y el que cierra el
+   * circuito: sin él, la hoja solo se podía encontrar DESPUÉS de buscar, por la
+   * categoría del producto ya hallado. Con él, la hoja se encuentra por las
+   * palabras que el cliente escribió, ANTES de buscar, y su `buscar_como` pasa
+   * a mandar la consulta.
+   *
+   * Medido el 10-ago contra el buscador de producción: «esfero» puntúa 0,650 y
+   * cuela una *Alcancía Esfera*; «boligrafo» puntúa 1,150 y trae bolígrafos.
+   * La misma intención, un 77 % mejor encontrada con la palabra del catálogo.
+   */
+  dice_el_cliente: string;
   buscar_como: string;
   nunca_buscar: string;
   adicionales: string;
@@ -39,9 +51,19 @@ export interface HojaDeCategoria {
   notas: string;
 }
 
+/** «Mugs Mágicos» y «mug magico» tienen que ser la misma palabra. */
+function terminos(campo: string | null | undefined): string[] {
+  return String(campo || '')
+    .split(/[,;\n·|]|\s-\s/)
+    .map((t) => normalizar(t))
+    .filter((t) => t.length >= 3);
+}
+
 type Cache = {
   hasta: number;
   porNombreDeCategoria: Map<string, HojaDeCategoria>;
+  /** palabra que usa el cliente -> hoja. Se arma con `dice_el_cliente`. */
+  porPalabraDelCliente: Map<string, HojaDeCategoria>;
   general: HojaDeCategoria | null;
 };
 
@@ -58,7 +80,12 @@ function normalizar(s: string): string {
 }
 
 async function cargar(orgId: string): Promise<Cache> {
-  const vacio: Cache = { hasta: Date.now() + DURACION_CACHE_MS, porNombreDeCategoria: new Map(), general: null };
+  const vacio: Cache = {
+    hasta: Date.now() + DURACION_CACHE_MS,
+    porNombreDeCategoria: new Map(),
+    porPalabraDelCliente: new Map(),
+    general: null,
+  };
   try {
     const supabase = createAdminClient();
 
@@ -78,9 +105,16 @@ async function cargar(orgId: string): Promise<Cache> {
     for (const c of cats || []) nombrePorId.set(String(c.id), String(c.name || ''));
 
     const porNombre = new Map<string, HojaDeCategoria>();
+    const porPalabra = new Map<string, HojaDeCategoria>();
     let general: HojaDeCategoria | null = null;
 
     for (const hoja of hojas) {
+      // El vocabulario del cliente vale también para la hoja general: sirve
+      // para traducir aunque la hoja no reclame ninguna categoría.
+      // MANDA LA PRIMERA, igual que con las categorías: la hoja más nueva.
+      for (const palabra of terminos(hoja?.dice_el_cliente)) {
+        if (!porPalabra.has(palabra)) porPalabra.set(palabra, hoja);
+      }
       if (hoja?.general) {
         general = hoja;
         continue;
@@ -97,7 +131,12 @@ async function cargar(orgId: string): Promise<Cache> {
       }
     }
 
-    return { hasta: Date.now() + DURACION_CACHE_MS, porNombreDeCategoria: porNombre, general };
+    return {
+      hasta: Date.now() + DURACION_CACHE_MS,
+      porNombreDeCategoria: porNombre,
+      porPalabraDelCliente: porPalabra,
+      general,
+    };
   } catch (err) {
     logger.warn('hojas: no se pudieron cargar, el bot sigue sin ellas', { error: String(err) });
     return vacio;
@@ -122,6 +161,110 @@ export async function hojaDeCategoria(
 
   const propia = cache.porNombreDeCategoria.get(normalizar(nombreDeCategoria || ''));
   return propia || cache.general || null;
+}
+
+/**
+ * LA HOJA QUE LE TOCA A LO QUE ESCRIBIÓ EL CLIENTE — el circuito al revés.
+ *
+ * `hojaDeCategoria` encuentra la hoja por la categoría de un producto que YA se
+ * encontró: llega tarde, y si la búsqueda trajo lo que no era, la guía llega
+ * pegada al producto equivocado. Esta busca la hoja por las palabras del
+ * cliente, ANTES de buscar, para que su `buscar_como` mande la consulta.
+ *
+ * Devuelve también qué palabra del cliente hizo la coincidencia, porque el
+ * candado de «buscó otra cosa» la necesita para no castigar una traducción
+ * correcta (medido el 10-ago: el modelo tradujo «esferos» a «boligrafo» y el
+ * candado lo bloqueó por buscar «algo distinto de lo que pidió el cliente»).
+ */
+export async function hojaParaLoQueDijoElCliente(
+  orgId: string,
+  texto: string
+): Promise<{ hoja: HojaDeCategoria; palabra: string } | null> {
+  if (!orgId || !texto) return null;
+  if (!cache || cache.hasta < Date.now()) cache = await cargar(orgId);
+  if (cache.porPalabraDelCliente.size === 0) return null;
+
+  const plano = normalizar(texto).replace(/[^a-z0-9ñ]+/g, ' ');
+
+  // Gana la coincidencia MÁS LARGA: «mug que cambia de color» tiene que ganarle
+  // a «mug» a secas, o la traducción se queda a medias y vuelve el fallo.
+  let mejor: { hoja: HojaDeCategoria; palabra: string } | null = null;
+  for (const [palabra, hoja] of cache.porPalabraDelCliente) {
+    const suelta = new RegExp(`(^| )${palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(es|s)?( |$)`);
+    if (!suelta.test(plano)) continue;
+    if (!mejor || palabra.length > mejor.palabra.length) mejor = { hoja, palabra };
+  }
+  return mejor;
+}
+
+/** Con qué palabras hay que buscar esta familia. Vacío = el dueño no lo escribió. */
+export function comoSeBusca(hoja: HojaDeCategoria | null): string[] {
+  return hoja ? terminos(hoja.buscar_como) : [];
+}
+
+/** Palabras que NUNCA pueden entrar a una búsqueda de esta familia. */
+export function loQueNuncaSeBusca(hoja: HojaDeCategoria | null): string[] {
+  return hoja ? terminos(hoja.nunca_buscar) : [];
+}
+
+/**
+ * TRADUCE UNA CONSULTA ANTES DE QUE SALGA HACIA EL CATÁLOGO.
+ *
+ * Sustituye SOLO la palabra del cliente por la del catálogo y deja el resto de
+ * la frase intacta. Esa precisión importa: medido el 10-ago, «gorra de dril»
+ * puntúa 2,97 y «gorra» a secas 2,79 — si al traducir se perdiera el «dril»,
+ * arreglaríamos el sinónimo y romperíamos la búsqueda específica.
+ *
+ * Y quita las palabras que el dueño marcó como inexistentes en su catálogo.
+ *
+ * Se aplica también a lo que busca el MODELO por su cuenta. Sin eso el arreglo
+ * queda a medias, y está medido: con la hoja puesta, el sistema buscó
+ * «boligrafo» y trajo bolígrafos, pero el modelo buscó «esferos» por su lado,
+ * se trajo una *Alcancía Esfera* y fue la que le ofreció al cliente.
+ */
+export async function traducirConsulta(
+  orgId: string | undefined,
+  consulta: string
+): Promise<{ consulta: string; hoja: string | null; cambio: boolean }> {
+  const original = String(consulta || '');
+  if (!orgId || !original.trim()) return { consulta: original, hoja: null, cambio: false };
+
+  try {
+    const cual = await hojaParaLoQueDijoElCliente(orgId, original);
+    if (!cual) return { consulta: original, hoja: null, cambio: false };
+
+    let salida = original;
+    const destino = comoSeBusca(cual.hoja)[0] || '';
+
+    // 1. La palabra del cliente pasa a ser la del catálogo, en su mismo sitio.
+    if (destino && normalizar(cual.palabra) !== normalizar(destino)) {
+      const escapada = cual.palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const conPlural = new RegExp(`(^|\\s)${escapada}(es|s)?(?=\\s|$)`, 'i');
+      salida = sinAcentos(salida).replace(conPlural, `$1${destino}`);
+    }
+
+    // 2. Fuera las palabras que no existen en el catálogo de este negocio.
+    for (const veto of loQueNuncaSeBusca(cual.hoja)) {
+      const escapada = veto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      salida = salida.replace(new RegExp(`(^|\\s)${escapada}(es|s)?(?=\\s|$)`, 'ig'), ' ');
+    }
+
+    salida = salida.replace(/\s{2,}/g, ' ').trim();
+    if (!salida) salida = destino || original;
+
+    return {
+      consulta: salida,
+      hoja: cual.hoja.nombre,
+      cambio: normalizar(salida) !== normalizar(original),
+    };
+  } catch {
+    return { consulta: original, hoja: null, cambio: false };
+  }
+}
+
+/** Quita tildes sin tocar el resto, para comparar y sustituir. */
+function sinAcentos(s: string): string {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 /**

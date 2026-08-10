@@ -1315,6 +1315,11 @@ export interface HojaDeCategoria {
   no_preguntar: string;
   /** Cómo pedir esos datos en palabras que el cliente entienda. */
   como_preguntar: string;
+  /**
+   * Cómo llama el cliente a estos productos. Es lo que permite encontrar la
+   * hoja ANTES de buscar, y por tanto que `buscar_como` mande la consulta.
+   */
+  dice_el_cliente: string;
   /** Con qué palabras se busca en el catálogo. */
   buscar_como: string;
   /** Palabras que NO existen en el catálogo y no hay que usar al buscar. */
@@ -1341,6 +1346,7 @@ function limpiarHoja(h: any, indice: number): HojaDeCategoria {
     preguntar: texto(h?.preguntar),
     no_preguntar: texto(h?.no_preguntar),
     como_preguntar: texto(h?.como_preguntar),
+    dice_el_cliente: texto(h?.dice_el_cliente),
     buscar_como: texto(h?.buscar_como),
     nunca_buscar: texto(h?.nunca_buscar),
     adicionales: texto(h?.adicionales),

@@ -1259,6 +1259,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                         preguntar: '',
                         no_preguntar: '',
                         como_preguntar: '',
+                        dice_el_cliente: '',
                         buscar_como: '',
                         nunca_buscar: '',
                         adicionales: '',
@@ -1513,6 +1514,24 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                   />
                   <p className="text-[10px] text-slate-500 mt-1">
                     Cosas que usted ya da por hechas y el cliente no tiene por qué aclarar.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    ¿Cómo lo pide el cliente, con sus propias palabras?
+                  </label>
+                  <input
+                    type="text"
+                    value={h.dice_el_cliente || ''}
+                    onChange={e => set('dice_el_cliente', e.target.value)}
+                    className="input text-sm"
+                    placeholder="esfero · lapicero · pluma · birome"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Separe con comas. Es lo más importante de esta hoja: en cuanto el cliente use
+                    una de estas palabras, el bot busca con el nombre que usted puso abajo, y no
+                    con la palabra del cliente. Así deja de traer cosas que no eran.
                   </p>
                 </div>
 

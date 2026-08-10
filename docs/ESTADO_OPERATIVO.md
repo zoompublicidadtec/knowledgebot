@@ -662,6 +662,142 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+
+### Las hojas MANDAN la búsqueda — el circuito, al derecho
+`lib/agent/hojas.ts` (`hojaParaLoQueDijoElCliente`, `traducirConsulta`) y el campo
+**«¿Cómo lo pide el cliente?»** en Conocimiento → Hojas.
+
+Hasta el 10-ago la hoja se encontraba por la **categoría de un producto ya
+hallado**: llegaba tarde y, si la búsqueda traía lo que no era, la guía quedaba
+pegada al producto equivocado. El dueño escribía «busca con: cuaderno 80 hojas»
+y «nunca busques con: agenda, grande, cosido» y **el código no usaba ninguna de
+las dos para buscar**.
+
+Ahora la hoja se encuentra por **las palabras del cliente**, antes de buscar, y
+su `buscar_como` pone la consulta. Gana la coincidencia más larga, para que
+«mug que cambia de color» le gane a «mug». La sustitución es **quirúrgica**:
+solo cambia la palabra del cliente y deja el resto de la frase — medido,
+«gorra de dril» puntúa **2,97** y «gorra» a secas **2,79**, así que tragarse el
+«dril» habría arreglado el sinónimo rompiendo lo específico.
+
+Se aplica también a lo que busca el **modelo por su cuenta** (`runCatalogSearch`),
+que era por donde se escapaba: con la hoja puesta el sistema buscaba «boligrafo»
+y traía bolígrafos, pero el modelo buscaba «esferos» por su lado, se traía una
+*Alcancía Esfera* y era la que ofrecía.
+
+Medido el 10-ago contra el motor de producción: «esfero» **0,650** (y cuela la
+alcancía), «boligrafo» **1,150**. La misma intención, **un 77 % mejor
+encontrada** con la palabra del catálogo. Sin hojas cargadas, todo se comporta
+como antes.
+
+### La referencia exacta — un código no es lenguaje
+`lib/agent/tools/search-catalog.ts` (`referenciasEnElTexto`, `buscarPorReferencia`).
+
+`MU-303-1` **existe y está activa**: es el *Mug Metálico Wilem 380ml II*,
+guardado como `MU-303-1.` con un punto que dejó el Excel. El bot decía que no
+existe. La escondían **cuatro** cosas encadenadas, y hubo que quitarlas una por
+una:
+
+1. El rail determinista descarta palabras de menos de 4 letras y números
+   sueltos: de «MU-303-1» no quedaba **nada** con que buscar.
+2. Sin el código, el modelo buscaba «mug metálico» — y con esas palabras el
+   motor devuelve los mugs de ZOOM, no el Wilem.
+3. El filtro de **ZOOM primero** lo habría descartado por importado.
+4. El candado antialucinación lo daba por **inventado**, por el mismo punto.
+
+Un código se compara **sin puntos, guiones ni mayúsculas**, y el producto que el
+cliente nombró queda **protegido**: ningún filtro posterior puede quitarlo, y
+encabeza la propuesta. Si el sistema resolvió el código, **negarlo se bloquea**
+(`nego-referencia-que-existe`).
+
+> **Trampa pagada:** dentro de `.or(...)` de Supabase el comodín es `*`, no `%`.
+> Un `%` viaja en la dirección web como el principio de un carácter escapado y
+> la consulta devuelve vacío **sin error**. Y pedir una columna que no existe
+> (`requires_area` no está en `products`) devuelve 400 y también deja la
+> consulta vacía en silencio. Los dos fallos mudos costaron una tarde: por eso
+> ahora el error de esa consulta se mira y se escribe en el registro.
+
+### El bot que contestaba solo el saludo — causa encontrada
+`lib/agent/index.ts` (`seQuedoEnElSaludo`, motivo `solo-el-saludo`).
+
+Estaba en la lista como «reproducido, sin causa encontrada»: el cliente escribía,
+el bot respondía «Hola, hablas con Oscar Herrera…» y nada más, y había que
+mandarle un «?» para despertarlo.
+
+La causa estaba en el registro, a la vista: **`finishReason: "other"`**. El
+proveedor avisa que la generación **no terminó de forma normal** y lo que llega
+es un pedazo. Cuando el pedazo se nota —«…50 esferos con el logo de tu
+empresa:» y se acabó— salta el control de respuesta cortada; pero cuando lo
+único que alcanzó a escribir fue el saludo, el texto **parece completo**: termina
+en «?» y pasaba todos los controles. En una sola tanda de 15 pruebas apareció
+**4 veces**. Ahora, si el cliente preguntó algo concreto y solo salió el saludo,
+se vuelve a pedir la respuesta.
+
+### El candado que castigaba los aciertos — `search-off-topic`
+`lib/agent/index.ts`, dentro de `applyOutputGuardrail`.
+
+Comparaba las palabras de la búsqueda contra las palabras **crudas** del cliente.
+Medido en producción el 10-ago, tres bloqueos seguidos y los tres injustos:
+
+| lo que buscó | lo que pidió el cliente | resultado |
+|---|---|---|
+| `mug` | «mugs» | 🔴 bloqueado |
+| `boligrafo` | «esferos» | 🔴 bloqueado |
+| `mug mágico` | «mugs cambien color agua» | 🔴 bloqueado |
+
+El primero por longitud: se descartaba toda palabra de menos de 4 letras y con
+ella se iba **«mug»**. Los otros dos porque **traducir la jerga es justo lo que
+queremos que haga**. Cada bloqueo gastaba uno de los tres intentos, y a la
+tercera salía la respuesta de respaldo, que no vende nada.
+
+Ahora se bloquea **solo** si la búsqueda se parece al tema **anterior** y no al
+de ahora — que es el fallo que este candado existe para atajar («quiero unos
+avisos» y buscó «mug»). Si no se parece a ninguno de los dos, es una traducción:
+se anota en el registro y pasa. Y las palabras de 3 letras entran: se descartan
+por lista (`MULETILLAS_CORTAS`), no por longitud.
+
+### Precios viejos pegados a productos nuevos — `precio-reciclado`
+`lib/agent/index.ts`. La puerta de «precios ya aprobados» existe para el cierre:
+«me quedo con ese» y el bot repite el total sin recalcular. El agujero era que
+aceptaba una cifra vieja con un producto **nuevo**. Es la captura que trajo el
+dueño: pidió mugs metálicos y recibió $235.000 / $429.900 / $589.000, y un
+minuto después **otros tres mugs distintos con las mismas tres cifras**.
+Comprobado contra `price_tiers`: el Mug Tintero a 10 unidades vale $8.000, no
+$23.500. Ahora, si la respuesta nombra una referencia que no se había cotizado
+antes en esa conversación, la puerta se cierra y hay que calcular.
+
+### La política de marcación que nadie escribió
+`lib/agent/index.ts` (`quitarPoliticaInventada`).
+
+A «¿los mugs ya vienen con mi logo impreso?» el bot contestó «los precios de
+catálogo no incluyen la marcación, se cotiza aparte según la técnica, tamaño y
+número de tintas». **Nadie le dijo eso**: no hay hoja de Mugs. Es el mismo fallo
+que `DEFAULT_PERSONA` —un dato del negocio que el bot rellena cuando el dueño no
+lo escribió— y se le aplica la misma regla: si ninguna hoja lo respalda, la
+oración **se cae** y el bot ofrece confirmarlo. **No se bloquea la respuesta**:
+bloquear gasta un intento de los tres y ya está medido que los candados se
+pelean entre sí.
+
+### La calculadora pedía más filas de las que la base entrega
+`lib/agent/tools/get-product-price.ts`. Al resolver un producto por su nombre
+pedía `.limit(2000)` y `.limit(3000)` — y **la base nunca devuelve más de 1.000
+por petición**: no da error, devuelve mil y se queda callada. Con 8.624 filas en
+la tabla, el resto era invisible para la calculadora. Ahora filtra por activos
+(2.235) y **pagina de a 1.000** hasta recorrerlos todos.
+
+### Cifras del catálogo, medidas el 10-ago-2026
+| dato | valor |
+|---|---|
+| productos en la tabla | 8.624 |
+| **activos** (los únicos que el bot ve) | **2.235** |
+| apagados por la deduplicación | 6.389, de los cuales 6.291 tienen gemelo activo |
+| activos **cotizables** (con tarifa usable) | 2.118 — **94,8 %** |
+| activos sin tarifa | 117 |
+| referencias repetidas entre activos | **0** |
+| activos con foto | 2.233 — 99,9 % |
+| categorías | 82 (80 con productos) |
+| cobertura con 12 hojas | 1.610 productos — **72 %**; con 20 hojas, 83 % |
+
 > **Por qué existe esta sección.** El dueño lo pidió el 03-ago-2026 con estas
 > palabras: «no tener que acudir al código para saber que hay una memoria que
 > existe y que sirve para X cosa». Tenía razón, y la causa está medida:

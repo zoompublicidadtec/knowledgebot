@@ -57,12 +57,65 @@ export function getProductPriceTool() {
             resolved = { id: byRef[0].id };
           }
 
-          // 2. Si no, coincidencia EXACTA por nombre normalizado.
+          /**
+           * 1b. EL MISMO CÓDIGO, SIN PUNTOS NI GUIONES. Nuevo el 10-ago-2026.
+           *
+           * La comparación exacta de arriba falla por un carácter: el catálogo
+           * guarda `MU-303-1.` con el punto que dejó el Excel, y el modelo
+           * escribe `MU-303-1`. Con eso, un producto activo y con tarifa
+           * ($14.900) resultaba «no encontrado» y el cliente se iba sin precio.
+           *
+           * Se compara sin puntos, guiones ni mayúsculas, y se filtra en la
+           * base por las letras del código en vez de traerse el catálogo entero.
+           */
+          const soloCodigo = (t: string) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
           if (!resolved) {
-            const { data: byName } = await (supabase as any)
-              .from('products')
-              .select('id, name')
-              .limit(2000);
+            const letras = (soloCodigo(product_id).match(/^[A-Z]+/) || [''])[0];
+            if (letras.length >= 2) {
+              const { data: porLetras } = await (supabase as any)
+                .from('products')
+                .select('id, reference')
+                .eq('active', true)
+                .or(`reference.ilike.${letras}*`)
+                .limit(1000);
+              const igual = (porLetras || []).find(
+                (p: any) => soloCodigo(p.reference) === soloCodigo(product_id)
+              );
+              if (igual) {
+                resolved = { id: igual.id };
+                logger.info('Get price: la referencia se resolvió sin puntos ni guiones', {
+                  pidio: product_id, era: igual.reference,
+                });
+              }
+            }
+          }
+
+          /**
+           * 2 y 3. Coincidencia por NOMBRE. Ojo con los límites: aquí pedía
+           * 2.000 y 3.000 filas, y **la base nunca devuelve más de 1.000 por
+           * petición** — pedir de más no da error, simplemente devuelve mil y se
+           * queda callada. Con 8.624 productos en la tabla, el resto quedaba
+           * invisible para la calculadora. Se filtra por activos, que son 2.235,
+           * y se pagina de a 1.000 hasta recorrerlos todos.
+           */
+          const traerActivos = async (columnas: string) => {
+            const filas: any[] = [];
+            for (let desde = 0; desde < 6000; desde += 1000) {
+              const { data } = await (supabase as any)
+                .from('products')
+                .select(columnas)
+                .eq('active', true)
+                .order('id')
+                .range(desde, desde + 999);
+              if (!data || data.length === 0) break;
+              filas.push(...data);
+              if (data.length < 1000) break;
+            }
+            return filas;
+          };
+
+          if (!resolved) {
+            const byName = await traerActivos('id, name');
             const exact = (byName || []).find((p: any) => norm(p.name) === pid);
             if (exact) resolved = { id: exact.id };
           }
@@ -71,10 +124,7 @@ export function getProductPriceTool() {
           // identificador recibido (o viceversa). Esto cubre el caso en que el
           // agente pasó el nombre real del catálogo en vez del código.
           if (!resolved) {
-            const { data: allProds } = await (supabase as any)
-              .from('products')
-              .select('id, name, reference')
-              .limit(3000);
+            const allProds = await traerActivos('id, name, reference');
             const partial = (allProds || []).find((p: any) => {
               const n = norm(p.name);
               const r = norm(p.reference || '');
