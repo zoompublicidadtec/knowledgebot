@@ -197,6 +197,50 @@ export async function hojaParaLoQueDijoElCliente(
   return mejor;
 }
 
+/**
+ * TODAS las familias que el cliente nombró en un mismo mensaje.
+ *
+ * «Me interesa el botilito, pero también mándame fotos de gorras de dril» son
+ * DOS cosas, y el bot atendía una y se olvidaba de la otra — no siempre, que es
+ * lo peor: en cinco tandas de prueba falló una. Con esto el sistema sabe
+ * cuántas familias hay sobre la mesa y puede exigir que estén todas.
+ *
+ * Solo devuelve más de una cuando el mensaje **suma** («y», «también»,
+ * «además», «aparte»). Sin esa señal, «no quiero mugs, quiero gorras» nombra
+ * dos familias y pide una sola.
+ */
+const SUMA_DOS_COSAS = /(\by\b|tambi[ée]n|adem[áa]s|aparte|de paso|igualmente|otra cosa)/i;
+
+export async function familiasQuePidioElCliente(
+  orgId: string | undefined,
+  texto: string
+): Promise<{ nombre: string; palabras: string[] }[]> {
+  if (!orgId || !texto || !SUMA_DOS_COSAS.test(texto)) return [];
+  if (!cache || cache.hasta < Date.now()) cache = await cargar(orgId);
+  if (cache.porPalabraDelCliente.size === 0) return [];
+
+  const plano = normalizar(texto).replace(/[^a-z0-9ñ]+/g, ' ');
+  const porHoja = new Map<string, { nombre: string; palabras: string[] }>();
+
+  for (const [palabra, hoja] of cache.porPalabraDelCliente) {
+    const suelta = new RegExp(`(^| )${palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(es|s)?( |$)`);
+    if (!suelta.test(plano)) continue;
+    const clave = hoja.nombre || hoja.id;
+    if (!porHoja.has(clave)) {
+      porHoja.set(clave, {
+        nombre: hoja.nombre,
+        // Con cualquiera de estas palabras basta para dar la familia por
+        // atendida en la respuesta: el nombre con que se busca y el que usa
+        // el cliente.
+        palabras: [...comoSeBusca(hoja), ...terminos(hoja.dice_el_cliente)].filter(Boolean),
+      });
+    }
+  }
+
+  const familias = [...porHoja.values()];
+  return familias.length >= 2 ? familias : [];
+}
+
 /** Con qué palabras hay que buscar esta familia. Vacío = el dueño no lo escribió. */
 export function comoSeBusca(hoja: HojaDeCategoria | null): string[] {
   return hoja ? terminos(hoja.buscar_como) : [];

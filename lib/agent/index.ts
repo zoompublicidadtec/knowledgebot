@@ -14,7 +14,7 @@ import {
   buscarPorReferencia,
   referenciasEnElTexto,
 } from './tools/search-catalog';
-import { hojaParaLoQueDijoElCliente, comoSeBusca } from './hojas';
+import { hojaParaLoQueDijoElCliente, comoSeBusca, familiasQuePidioElCliente } from './hojas';
 import { getProductPriceTool } from './tools/get-product-price';
 import { saveContactInfoTool } from './tools/save-contact-info';
 import {
@@ -502,7 +502,8 @@ async function applyOutputGuardrail(
   palabrasPedidas: Set<string> = new Set(),
   palabrasPrevias: Set<string> = new Set(),
   referenciasYaCotizadas: Set<string> = new Set(),
-  referenciasResueltas: any[] = []
+  referenciasResueltas: any[] = [],
+  familiasPedidas: { nombre: string; palabras: string[] }[] = []
 ): Promise<{ blocked: boolean; reason: string }> {
   try {
     // 1. Toda referencia citada al cliente tiene que existir de verdad. En
@@ -589,6 +590,31 @@ async function applyOutputGuardrail(
         resueltas: referenciasResueltas.map((p: any) => `${p.product_id}:${p.name}`),
       });
       return { blocked: true, reason: 'nego-referencia-que-existe' };
+    }
+
+    /**
+     * 0.06 EL CLIENTE PIDIÓ DOS COSAS Y SOLO LE CONTESTASTE UNA.
+     *
+     * «Me interesa el botilito, pero también mándame fotos de gorras de dril»:
+     * el bot cotizaba los botilitos y se olvidaba de las gorras. Y lo peor no
+     * es que fallara, sino que fallaba **a veces** — en cinco tandas de prueba,
+     * una. Lo que sale a veces no se puede prometer.
+     *
+     * Solo cuenta cuando el mensaje SUMA («y», «también», «además»): sin esa
+     * señal, «no quiero mugs, quiero gorras» nombra dos familias y pide una.
+     */
+    if (familiasPedidas.length >= 2) {
+      const plana = sinAcentos(responseText.toLowerCase());
+      const sinAtender = familiasPedidas.filter(
+        (f) => !f.palabras.some((w) => plana.includes(sinAcentos(w.toLowerCase())))
+      );
+      if (sinAtender.length > 0 && sinAtender.length < familiasPedidas.length) {
+        logger.error('GUARDRAIL: el cliente pidió dos cosas y falta una en la respuesta', {
+          pidio: familiasPedidas.map((f) => f.nombre).join(' + '),
+          falta: sinAtender.map((f) => f.nombre).join(', '),
+        });
+        return { blocked: true, reason: 'falta-una-de-las-dos' };
+      }
     }
 
     // 0.1 NO PIDAS DATOS DE UNA MARCACIÓN QUE NO SABEMOS COTIZAR. Va junto a
@@ -1521,6 +1547,11 @@ ${resueltas}`;
         'BLOQUEADO DE NUEVO. Ninguna cifra del historial sirve para un producto distinto. Calcula el precio de cada producto que menciones, uno por uno, en este turno.',
         'ÚLTIMO INTENTO. Ejecuta getProductPrice con cada product_id y responde únicamente con lo que devuelva. Si no puedes calcular alguno, no lo ofrezcas.',
       ],
+      'falta-una-de-las-dos': [
+        'ALTO. El cliente pidió DOS cosas en el mismo mensaje y solo le contestaste una. Falta: {FALTA}. Búscala con searchCatalog, cotízala con getProductPrice y ponla en la MISMA respuesta, junto a lo que ya escribiste. Un bloque para cada cosa.',
+        'BLOQUEADO DE NUEVO: sigue faltando {FALTA}. La respuesta tiene que atender las dos cosas que pidió, cada una con sus opciones y su precio.',
+        'ÚLTIMO INTENTO. Dos bloques en un solo mensaje: lo que ya tenías y además {FALTA}, con precios reales.',
+      ],
       'nego-referencia-que-existe': [
         'ALTO. Le dijiste al cliente que esa referencia no existe y SÍ existe: {REFERENCIAS}. Úsala tal cual, ejecuta getProductPrice con ese product_id y la cantidad que pidió, y dale el precio. PROHIBIDO repetir que no la encuentras.',
         'BLOQUEADO DE NUEVO. El producto es {REFERENCIAS}. Cotízalo con getProductPrice y responde con su precio.',
@@ -1601,6 +1632,13 @@ ${resueltas}`;
     // Referencias que ya se cotizaron en esta conversación: una cifra vieja solo
     // vale si va con el producto con el que se aprobó.
     const yaCotizadas = referenciasYaCotizadas(messages);
+    // ¿Pidió dos cosas distintas en el mismo mensaje?
+    const familiasPedidas = await familiasQuePidioElCliente(orgId, messageText);
+    if (familiasPedidas.length >= 2) {
+      logger.info('El cliente pidió más de una familia en el mismo mensaje', {
+        conversationId, familias: familiasPedidas.map((f) => f.nombre).join(' + '),
+      });
+    }
     // Cuando el bot buscó fuera de tema, preguntar deja de ser una falta: es
     // justo lo que le estamos pidiendo. Sin esto, el candado del interrogatorio
     // volvería a empujarlo a cotizar lo primero que tenga a mano.
@@ -1686,7 +1724,7 @@ ${resueltas}`;
         cleanedResponse, result.steps || [], permitirPreguntar ? 0 : questionStreak,
         approvedPrices, catalogProbe.relevant, fraseOfftopic,
         buscandoAdicionales ? new Set<string>() : palabrasPedidas,
-        palabrasPreviasDelCliente, yaCotizadas, referenciasResueltas
+        palabrasPreviasDelCliente, yaCotizadas, referenciasResueltas, familiasPedidas
       );
 
       // Un mensaje partido a la mitad del precio no puede salir jamás. Va
@@ -1804,6 +1842,7 @@ ${resueltas}`;
         .replace('{PRODUCTOS}', catalogListado || 'los que devuelva searchCatalog')
         .replace('{BUSCADO}', consultasDeCatalogo(result.steps || []).join(' / ') || 'otra cosa')
         .replace('{PEDIDO}', messageText.trim().slice(0, 200))
+        .replace('{FALTA}', familiasPedidas.map((f: any) => f.nombre).join(' y ') || 'lo que falta')
         .replace(
           '{REFERENCIAS}',
           referenciasResueltas.map((p: any) => `${p.product_id} (${p.name})`).join(', ') ||

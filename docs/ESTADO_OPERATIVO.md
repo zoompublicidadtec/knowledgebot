@@ -663,6 +663,48 @@ ls /root/knowledgebot/backups/products_*.json
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
 
+### Dos cosas en un mismo mensaje — `falta-una-de-las-dos`
+`lib/agent/hojas.ts` (`familiasQuePidioElCliente`) y el candado del mismo nombre
+en `lib/agent/index.ts`.
+
+«Me interesa el botilito, pero **también** mándame fotos de gorras de dril» son
+dos cosas. El bot cotizaba los botilitos y se olvidaba de las gorras — y no
+siempre, que es lo peor: una de cada cinco tandas de prueba. Lo que sale a veces
+no se le puede prometer a nadie.
+
+El sistema cuenta cuántas familias nombró el cliente usando **el vocabulario de
+las hojas** (el campo «cómo lo pide el cliente»). Si la respuesta deja una
+fuera, se bloquea y se le ordena atender las dos en el mismo mensaje, un bloque
+por cada una.
+
+Solo cuenta cuando el mensaje **suma**: «y», «también», «además», «aparte». Sin
+esa señal, «no quiero mugs, quiero gorras» nombra dos familias y pide una sola,
+y bloquear ahí sería el error contrario.
+
+> Este candado tapa el caso frecuente, no todos. Entender de verdad una petición
+> con dos intenciones es el trabajo del **asesor racional**, que sigue sin
+> construirse (ver §4).
+
+### El filtro de identidad, por patrón y no por lista
+`lib/agent/index.ts`, `MARCADORES_DE_IDENTIDAD`.
+
+Conocía «no puedo mostrar» y «no puedo enviar imágenes» y aun así dejó pasar
+«**no te la puedo enviar por aquí**» —la frase de la captura del dueño del
+10-ago— porque el «te la» se mete en medio. El 03-ago se le había escapado «no
+tengo la capacidad de enviar fotos» por lo mismo. **Enumerar redacciones es
+jugar al gato y al ratón, y se pierde.**
+
+Ahora la marca es el patrón: negar mostrar/enviar/ver **con el objeto** (foto,
+imagen) **o con el medio** («por aquí», «por este canal»).
+
+**El primer intento fue demasiado ancho y se corrigió antes de desplegarlo:**
+cubría cualquier «no te lo puedo mandar», y eso se lleva por delante «no te lo
+puedo mandar antes del viernes, la producción tarda 8 días», que es logística
+legítima. Batería propia: **20/20** — 10 frases que debe tapar y 10 que no puede
+tocar, entre ellas «no te puedo bajar más el precio» y «el sistema de impresión
+DTF permite full color».
+
+
 ### Las hojas MANDAN la búsqueda — el circuito, al derecho
 `lib/agent/hojas.ts` (`hojaParaLoQueDijoElCliente`, `traducirConsulta`) y el campo
 **«¿Cómo lo pide el cliente?»** en Conocimiento → Hojas.
