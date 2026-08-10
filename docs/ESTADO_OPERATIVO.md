@@ -662,6 +662,47 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### El nombre recortado que escondia once productos distintos
+Once bolsas de algodon Eco Activa se llamaban **exactamente igual** y valian
+entre $2.100 y $8.400. No eran duplicados: eran **once tamaños**. El nombre
+viene recortado del Excel y la medida quedaba justo despues del corte, asi que
+ni el cliente ni el bot podian distinguirlas.
+
+El dato no faltaba: estaba en la **descripcion** de cada una. Se subio al
+nombre, con la medida y como se agarra —cordon o manija—, porque con la medida
+sola no bastaba: hay dos de 40x40 y dos de 34x40. Y cuando ni eso alcanzaba
+(dos bolsas de cambre de 28x35), se añadio lo que las diferencia de verdad
+(«base interna plegable»).
+
+**Los «...» del final NO se tocan** (regla del proyecto): la medida se INSERTA
+antes. Y el guion comprueba, antes de escribir, que despues del cambio no quede
+ningun nombre repetido; si quedara, no toca nada.
+
+> La leccion: cuando dos productos activos se llaman igual, **antes de darlos
+> por duplicados, mirar la descripcion**. El dato que los distingue suele estar
+> ahi, y el problema es que el nombre no lo muestra.
+
+### Barrido de duplicados del catalogo — como se hace y que dio
+`scripts` de trabajo en `/tmp` y respaldos en `backups/`. Se mira **solo lo
+ACTIVO**, que es lo unico que el bot ve: entre los apagados los duplicados son
+normales, son el resultado de la deduplicacion. (El 10-ago se dio una alarma
+por no filtrar; no repetirlo.)
+
+Se separan tres casos, porque no todos son errores:
+1. **Referencia repetida** — siempre es un error.
+2. **Mismo nombre y mismo precio** — duplicado de verdad.
+3. **Mismo nombre y precio distinto** — hay que mirarlo: puede ser un sello
+   cuadrado y uno redondo, o dos mugs muy parecidos.
+
+Estado al 11-ago-2026, sobre 2.228 activos: **0 referencias repetidas, 0
+duplicados de verdad y 1 grupo a revisar** —el Mug Metalico Star, que el dueño
+confirmo que son dos productos distintos—. Se cerraron por el camino: las once
+bolsas (eran tamaños), el fechador de 24x24 (dos productos; el dueño borro uno)
+y **cinco prendas cargadas dos veces**, cuya copia tenia los mismos precios sin
+la opcion «Base» y con la foto de las bolsas ecologicas. Las copias se
+**apagaron, no se borraron**: siguen con sus tarifas y se reactivan con un clic.
+
+
 ### El prefijo `ZM-` no es cosmético: es lo que hace propio a un producto
 `lib/agent/tools/search-catalog.ts` (`es_propio`) y
 `Motor de Conocimiento/api_service.py`. Un producto cuenta como producción
