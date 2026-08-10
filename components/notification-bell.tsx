@@ -333,7 +333,7 @@ export function NotificationBell() {
                     </div>
 
                     {/* Info (clickable to open conversation) */}
-                    <Link href={`/conversaciones/${alert.conversationId}`} onClick={() => setOpen(false)} className="flex-1 min-w-0">
+                    <Link href={`/conversaciones/${alert.conversationId}`} prefetch={false} onClick={() => setOpen(false)} className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
                         <p className="text-sm font-medium text-white truncate">
                           {alert.contactName || alert.contactPhone}

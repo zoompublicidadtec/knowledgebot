@@ -662,6 +662,41 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### El tablero de las hojas — que hay, que falta y que esta repetido
+`app/(app)/conocimiento/actions.ts` (`diagnosticoDeHojas`) y el bloque de tres
+numeros al principio de la pestaña «Hojas de categoria».
+
+El dueño lo pidio el 11-ago-2026 con estas palabras: «cada vez que creo una hoja
+nueva me tengo que salir de la de ejemplo y ya no tengo referencia de como
+llenarla; una vez lleno una hoja no hay forma de saber si estoy repitiendo una
+que ya llene, ni cuales me faltan, ni donde miro». Con 12 hojas ya no se sostiene
+de memoria, y estaba trabajando a ciegas.
+
+Y pidio **menos texto, no mas**: «no necesito mas explicaciones en el mismo
+panel porque ya hay muchas y aun asi no entiendo nada». Asi que no se añadio ni
+una linea de ayuda: se añadieron los tres numeros que contestan sus tres
+preguntas, y dos botones.
+
+- **Cuanto cubre.** Un producto esta cubierto si alguna palabra de su nombre
+  esta en el vocabulario de alguna hoja — la misma regla que usa el bot. Medido
+  el 11-ago con 12 hojas: **863 de 2.228, el 39 %**.
+- **Que falta.** Las familias que ninguna hoja reconoce, de mas productos a
+  menos, y cada una es un boton que **crea la hoja con el vocabulario ya
+  puesto**. Al estrenarlo: sello (73 productos), soporte (41), speaker (38),
+  organizador (35), cargador (28), nevera (28)…
+- **Que se pisa.** La misma palabra en dos hojas: el bot usa una y descarta la
+  otra sin avisar. Al estrenarlo: ninguna.
+- **A medio llenar.** Hojas con vocabulario pero sin nada de lo comercial:
+  encuentran el producto y no saben que preguntar. Al estrenarlo: 11 de 12.
+- **Duplicar hoja.** La hoja nueva nace con todo lo de una que ya funciona, que
+  es lo que resuelve el «me salgo de la de ejemplo y pierdo la referencia». Las
+  categorias NO se copian: dos hojas sobre la misma categoria se pisan.
+
+> Que el 39 % de cobertura salga con 12 hojas y que la familia mas descubierta
+> sean los **sellos** —73 productos, el trabajo del mismo dia— dice lo util que
+> era tener el numero delante.
+
+
 ### El nombre recortado que escondia once productos distintos
 Once bolsas de algodon Eco Activa se llamaban **exactamente igual** y valian
 entre $2.100 y $8.400. No eran duplicados: eran **once tamaños**. El nombre

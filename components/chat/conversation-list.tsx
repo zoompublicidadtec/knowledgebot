@@ -363,8 +363,23 @@ export function ConversationList({
             const esMio = conv.ultimo_mensaje?.direction === 'outbound';
 
             return (
+              /*
+                * prefetch={false}: sin esto el sistema PRECARGA la pagina de
+                * cada chat en cuanto su fila aparece en pantalla. La lista
+                * pinta las 149 conversaciones sin tope, asi que bajar por ella
+                * disparaba decenas de paginas completas del servidor -dos
+                * consultas cada una- que nadie pidio.
+                *
+                * Se vio en la consola del dueno el 04-ago-2026, cuatro
+                * seguidas: «conversaciones/4160e410...?_rsc=», y ese _rsc es
+                * justamente la marca de una precarga.
+                *
+                * Abrir un chat cuesta 0,30 s medidos: no hace falta adelantarlo,
+                * y menos multiplicado por 149.
+                */
               <Link
                 key={conv.id}
+                prefetch={false}
                 href={`/conversaciones/${conv.id}`}
                 className={`
                   chat-fila relative overflow-hidden

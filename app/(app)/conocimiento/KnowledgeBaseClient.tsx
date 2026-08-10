@@ -34,6 +34,7 @@ import {
   saveHojas,
   contarProductosPorCategoria,
   buscarProductoParaOferta,
+  diagnosticoDeHojas,
 } from './actions';
 import { CatalogTable, type CatalogProduct, type SortField, type SortDir } from './components/CatalogTable';
 import { BulkActionsBar } from './components/BulkActionsBar';
@@ -204,6 +205,8 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
   // Cuantos productos activos tiene cada categoria: sirve para avisar que
   // una hoja no esta llegando a ningun producto.
   const [conteoPorCategoria, setConteoPorCategoria] = useState<Record<string, number>>({});
+  // El tablero: que hay, que falta y que esta repetido. Ver diagnosticoDeHojas.
+  const [diag, setDiag] = useState<any>(null);
 
   // Categories State
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -333,6 +336,7 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
     try {
       setHojas((await getHojas()) as any[]);
       setConteoPorCategoria(await contarProductosPorCategoria());
+      setDiag(await diagnosticoDeHojas());
     } catch (err) {
       console.error(err);
     } finally {
@@ -1308,6 +1312,100 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
             )}
           </div>
 
+          {/*
+            EL TABLERO. El dueño lo pidió el 11-ago-2026 con estas palabras:
+            «una vez lleno una hoja no hay forma de saber si estoy repitiendo
+            una que ya llené, ni cuáles me faltan, ni dónde miro». Con 12 hojas
+            ya no se sostiene de memoria. Son tres preguntas y tres respuestas,
+            sin una línea más de explicación.
+          */}
+          {!loadingHojas && diag && (
+            <div className="card space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-2xl font-bold text-white">{hojas.length}</p>
+                  <p className="text-[11px] text-slate-400">hojas creadas</p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-2xl font-bold text-emerald-300">
+                    {diag.totalProductos
+                      ? Math.round((diag.cubiertos / diag.totalProductos) * 100)
+                      : 0}
+                    %
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    de sus productos los reconoce el bot ({diag.cubiertos} de {diag.totalProductos})
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-2xl font-bold text-amber-300">{diag.aMedias.length}</p>
+                  <p className="text-[11px] text-slate-400">hojas a medio llenar</p>
+                </div>
+              </div>
+
+              {diag.faltan.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold text-slate-300 uppercase mb-1">
+                    Lo que el bot todavía no reconoce — haga clic y le creo la hoja
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {diag.faltan.map((f: any) => (
+                      <button
+                        key={f.palabra}
+                        type="button"
+                        onClick={() => {
+                          setHojas([
+                            {
+                              id: 'hoja_' + Date.now(),
+                              nombre: f.palabra.charAt(0).toUpperCase() + f.palabra.slice(1),
+                              categorias: [], general: false,
+                              preguntar: '', no_preguntar: '', como_preguntar: '',
+                              dice_el_cliente: f.palabra + ', ' + f.palabra + 's',
+                              buscar_como: f.palabra,
+                              nunca_buscar: '', adicionales: '', marcacion: '',
+                              marcacion_nota: '', notas: '',
+                              ofrecer_al_cerrar: '', frase_al_cerrar: '',
+                            },
+                            ...hojas,
+                          ]);
+                          setMsgHojas(
+                            `Hoja de «${f.palabra}» creada arriba. Complétela y dele a Guardar hojas.`
+                          );
+                        }}
+                        className="px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-[11px] text-amber-200 border border-amber-500/20"
+                      >
+                        {f.palabra} <span className="text-amber-400/70">({f.productos})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {diag.repetidas.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold text-rose-300 uppercase mb-1">
+                    Palabras repetidas en dos hojas — el bot usa una sola
+                  </p>
+                  <div className="space-y-0.5">
+                    {diag.repetidas.map((r: any) => (
+                      <p key={r.palabra} className="text-[11px] text-slate-300">
+                        <strong className="text-rose-200">{r.palabra}</strong> está en:{' '}
+                        {r.hojas.join(' y ')}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {diag.aMedias.length > 0 && (
+                <p className="text-[11px] text-slate-400">
+                  <strong className="text-amber-300">A medio llenar:</strong> {diag.aMedias.join(' · ')}
+                  {' '}— el bot encuentra los productos pero no sabe qué preguntar ni qué decir.
+                </p>
+              )}
+            </div>
+          )}
+
           {loadingHojas && <p className="text-sm text-slate-400">Cargando hojas…</p>}
 
           {!loadingHojas && hojas.length === 0 && (
@@ -1387,6 +1485,31 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                     />
                     Vale para todo lo demás
                   </label>
+                  {/*
+                    DUPLICAR. El dueño: «cada vez que creo una hoja nueva me
+                    tengo que salir de la de ejemplo y ya no tengo referencia de
+                    cómo llenarla». Con esto la hoja nueva nace llena, con la que
+                    ya funciona delante, y solo hay que cambiar lo que difiere.
+                  */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const copia = {
+                        ...h,
+                        id: 'hoja_' + Date.now(),
+                        nombre: (h.nombre || 'Hoja') + ' (copia)',
+                        // Las categorías NO se copian: dos hojas sobre la misma
+                        // categoría se pisan y el bot usa una sola.
+                        categorias: [],
+                        general: false,
+                      };
+                      setHojas([copia, ...hojas]);
+                      setMsgHojas('Copia creada arriba, con todo lo de «' + (h.nombre || 'la hoja') + '» ya escrito.');
+                    }}
+                    className="text-xs text-primary-300 hover:text-primary-200 px-2 py-2 shrink-0 mb-6"
+                  >
+                    Duplicar
+                  </button>
                   <button
                     type="button"
                     onClick={() => setHojas(hojas.filter((_: any, j: number) => j !== i))}

@@ -1439,6 +1439,136 @@ export async function saveHojas(hojas: any[]) {
 }
 
 /**
+ * EL TABLERO DE LAS HOJAS — qué hay, qué falta y qué está repetido.
+ *
+ * POR QUÉ EXISTE. El dueño lo dijo con todas las letras el 11-ago-2026: «cada
+ * vez que creo una hoja nueva me tengo que salir de la de ejemplo y ya no tengo
+ * referencia; una vez llena una hoja no hay forma de saber si estoy repitiendo
+ * una que ya llené, ni cuáles me faltan, ni dónde miro». Estaba trabajando a
+ * ciegas, y con 12 hojas ya no se puede sostener de memoria.
+ *
+ * Y pidió expresamente **menos texto explicativo, no más**: el panel ya está
+ * lleno de ayudas y aun así no se entiende. Lo que hacía falta no era otra
+ * explicación, sino los tres números que contestan sus tres preguntas.
+ */
+export interface DiagnosticoDeHojas {
+  /** Productos activos que alguna hoja reconoce, y el total. */
+  cubiertos: number;
+  totalProductos: number;
+  /** Familias que ninguna hoja reconoce, de más productos a menos. */
+  faltan: Array<{ palabra: string; productos: number }>;
+  /** La misma palabra en dos hojas: el bot usa una y descarta la otra. */
+  repetidas: Array<{ palabra: string; hojas: string[] }>;
+  /** Hojas con vocabulario pero sin nada de lo comercial. */
+  aMedias: string[];
+}
+
+/** Palabras que no nombran una familia de productos. */
+const VACIAS = new Set([
+  'set', 'kit', 'juego', 'de', 'del', 'la', 'el', 'los', 'las', 'con', 'sin',
+  'para', 'por', 'en', 'y', 'o', 'a', 'un', 'una', 'mini', 'gran', 'x1', 'x2',
+  'color', 'blanco', 'blanca', 'negro', 'negra', 'iva', 'incluido', 'oferta',
+  'nacional', 'produccion', 'producción', 'premium', 'eco', 'nuevo', 'nueva',
+]);
+
+function limpiar(s: string): string {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9ñ\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** La palabra con la que un cliente llamaría a este producto: la primera útil. */
+function familiaDe(nombre: string): string {
+  for (const p of limpiar(nombre).split(' ')) {
+    if (p.length >= 4 && !VACIAS.has(p)) return p;
+  }
+  return '';
+}
+
+export async function diagnosticoDeHojas(): Promise<DiagnosticoDeHojas> {
+  const vacio: DiagnosticoDeHojas = {
+    cubiertos: 0, totalProductos: 0, faltan: [], repetidas: [], aMedias: [],
+  };
+  try {
+    const supabase = await createClient();
+    const hojas = await getHojas();
+
+    // El vocabulario de todas las hojas, y de quién es cada palabra.
+    const duenoDeLaPalabra = new Map<string, string[]>();
+    for (const h of hojas) {
+      const suyas = new Set(
+        `${h.dice_el_cliente || ''},${h.buscar_como || ''}`
+          .split(/[,;\n·|]/)
+          .map((t) => limpiar(t))
+          .filter((t) => t.length >= 3)
+      );
+      for (const p of suyas) {
+        duenoDeLaPalabra.set(p, [...(duenoDeLaPalabra.get(p) || []), h.nombre || 'sin nombre']);
+      }
+    }
+
+    const repetidas = [...duenoDeLaPalabra.entries()]
+      .filter(([, quienes]) => quienes.length > 1)
+      .map(([palabra, hojas]) => ({ palabra, hojas }))
+      .slice(0, 20);
+
+    // Los productos activos, por páginas: la base devuelve 1.000 y se calla.
+    const nombres: string[] = [];
+    for (let desde = 0; ; desde += 1000) {
+      const { data, error } = await (supabase as any)
+        .from('products')
+        .select('name')
+        .eq('active', true)
+        .range(desde, desde + 999);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      nombres.push(...data.map((p: any) => String(p.name || '')));
+      if (data.length < 1000) break;
+    }
+
+    let cubiertos = 0;
+    const sinCubrir = new Map<string, number>();
+    for (const nombre of nombres) {
+      const palabras = limpiar(nombre).split(' ');
+      const loReconoce = palabras.some((p) => duenoDeLaPalabra.has(p));
+      if (loReconoce) {
+        cubiertos++;
+        continue;
+      }
+      const fam = familiaDe(nombre);
+      if (fam) sinCubrir.set(fam, (sinCubrir.get(fam) || 0) + 1);
+    }
+
+    const faltan = [...sinCubrir.entries()]
+      .map(([palabra, productos]) => ({ palabra, productos }))
+      .sort((a, b) => b.productos - a.productos)
+      .slice(0, 12);
+
+    // Una hoja «a medias» tiene el vocabulario puesto pero nada que ayude a
+    // vender: sirve para encontrar el producto y para nada más.
+    const aMedias = hojas
+      .filter(
+        (h) =>
+          (h.dice_el_cliente || '').trim() &&
+          !(h.preguntar || '').trim() &&
+          !(h.como_preguntar || '').trim() &&
+          !(h.marcacion || '').trim() &&
+          !(h.notas || '').trim()
+      )
+      .map((h) => h.nombre || 'sin nombre');
+
+    return { cubiertos, totalProductos: nombres.length, faltan, repetidas, aMedias };
+  } catch (error: any) {
+    logger.error('diagnosticoDeHojas', { error: error.message });
+    return vacio;
+  }
+}
+
+/**
  * EL BUSCADOR DEL PRODUCTO QUE SE OFRECE AL CERRAR.
  *
  * El campo guarda la REFERENCIA, no el nombre escrito a mano, porque «bolígrafo»
