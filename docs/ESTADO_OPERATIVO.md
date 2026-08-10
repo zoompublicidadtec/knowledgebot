@@ -662,6 +662,43 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### Un código de UNA letra también es una referencia — `S-841`
+`lib/agent/tools/search-catalog.ts`, `CODIGO_CON_GUION`.
+
+El detector de referencias exigía **dos letras** antes del guion, de modo que
+todo el catálogo de sellos de ZOOM era invisible para él: son `S-…` y `R-…`.
+Medido el 11-ago-2026, recién unificadas las referencias con las del Excel de la
+empresa: a «precio del sello S-828D» el bot contestaba **«no encuentro el sello
+S-828D en nuestro catálogo»** sobre una referencia activa y con precio.
+
+Ahora basta una letra, y el que evita los falsos positivos es el mínimo de
+caracteres: «a-1» o «y-2» se quedan en dos y se descartan solos. El mínimo bajó
+de 4 a 3 para que entren `N-46` y las almohadillas. Probado aparte con 19
+frases —10 que deben detectarse y 9 normales que no pueden dar ninguna—: 19/19.
+
+### Las referencias de los sellos son las del Excel de la empresa
+Los 78 sellos activos que aparecen en la lista de precios interna llevan ahora
+**la misma referencia que usa la empresa** (`S-841`, `R-524`, `S-828D`,
+`AR16314700`…) en vez de los `ZM-GEN-xxx` que inventó la importación. El cotejo
+exigió que coincidieran **nombre y precio** antes de tocar nada: 78 de 79 filas
+casaron, 0 ambiguas, 0 con precio distinto, y ninguna referencia nueva chocaba
+con otro producto. Respaldo en `backups/refs_sellos_antes.json`.
+
+Dos cosas que el cotejo dejó a la vista:
+
+- **`S-311-7` «Repuesto S-310» ($105.000) no existe en el panel.** Está en la
+  lista de precios de la empresa y hay que crearlo.
+- Los **28 sellos cuadrados, redondos y rectangulares** conservan su
+  `ZM-GEN-xxx`: en el Excel su «referencia» es la medida misma (`2x2`, `10x8`),
+  que ya está en el nombre del producto. Ponerla como referencia haría que
+  cualquier «2x2» de una frase se leyera como un código.
+
+> Lo que parecía un duplicado y no lo era: «Sello fechador autoentintable placa
+> (24x24mm)» está dos veces con precios distintos. Son **dos productos**: el
+> cuadrado `S-524D` ($64.400) y el redondo `R-524D` ($47.600). Con la referencia
+> del Excel puesta, la diferencia por fin se ve.
+
+
 ### La venta cruzada — una sola oferta, después de cerrar, con el precio hecho
 `lib/agent/venta-cruzada.ts`, enganchada al final del turno en
 `lib/agent/index.ts`. Los dos campos que la encienden viven en la hoja de

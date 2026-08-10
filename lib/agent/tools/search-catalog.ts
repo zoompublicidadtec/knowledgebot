@@ -228,7 +228,19 @@ async function adjuntarGuiaDeVenta(
  * queda PROTEGIDO: ningún filtro posterior puede quitarlo de la propuesta,
  * porque es exactamente lo que pidió.
  */
-const CODIGO_CON_GUION = /\b[A-Za-z]{2,12}(?:-[A-Za-z0-9]{1,8}){1,4}\b/g;
+/**
+ * UNA SOLA LETRA TAMBIEN ES UNA REFERENCIA: «S-841», «R-524», «D-5».
+ *
+ * Hasta el 11-ago-2026 se exigian DOS letras antes del guion, y con eso todo el
+ * catalogo de sellos de ZOOM quedaba invisible: son «S-…» y «R-…». Medido ese
+ * dia, recien unificadas las referencias con las del Excel de la empresa, a
+ * «precio del sello S-828D» el bot contestaba **«no encuentro el sello S-828D
+ * en nuestro catalogo»** sobre una referencia que existe y esta activa.
+ *
+ * El filtro de longitud minima es el que evita los falsos positivos: «a-1» o
+ * «y-2» se quedan en dos caracteres y se descartan solos.
+ */
+const CODIGO_CON_GUION = /\b[A-Za-z]{1,12}(?:-[A-Za-z0-9]{1,8}){1,4}\b/g;
 const CODIGO_PEGADO = /\b[A-Za-z]{2,6}\s?\d{2,6}\b/g;
 
 function normalizarCodigo(s: string): string {
@@ -246,6 +258,9 @@ const NO_SON_REFERENCIAS = new Set([
   'cuestan', 'unos', 'unas', 'como', 'hasta', 'desde', 'sobre', 'entre', 'que',
   'las', 'los', 'una', 'uno', 'mas', 'ref', 'cantidad', 'precio', 'total',
   'oz', 'ml', 'cm', 'mm', 'gr', 'kg', 'unidades', 'unidad', 'hojas', 'paneles',
+  // Letras sueltas, ahora que un codigo puede empezar con una sola: «x» es la
+  // de las medidas y las demas son palabras enteras del español.
+  'x', 'y', 'o', 'a', 'e', 'u', 'talla', 'tallas',
 ]);
 
 export function referenciasEnElTexto(texto: string): string[] {
@@ -265,7 +280,9 @@ export function referenciasEnElTexto(texto: string): string[] {
     if (/\s/.test(c) && !enMayusculas) continue;
 
     const norm = normalizarCodigo(c);
-    if (norm.length < 4) continue;
+    // TRES caracteres, no cuatro: «N-46» y «S-1» son referencias reales del
+    // catalogo de sellos. Por debajo de tres, cualquier cosa parece un codigo.
+    if (norm.length < 3) continue;
     if (!out.includes(norm)) out.push(norm);
   }
   return out.slice(0, 5);
