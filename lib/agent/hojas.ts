@@ -81,6 +81,30 @@ type Cache = {
   general: HojaDeCategoria | null;
 };
 
+/**
+ * LAS PREPOSICIONES HUERFANAS QUE DEJABA LA TRADUCCION.
+ *
+ * Medido el 11-ago-2026 escribiendo la hoja de sellos. El dueño pone en el
+ * vocabulario «sellos automaticos» y en las palabras vetadas «caucho»; el
+ * cliente escribe «sellos automaticos de caucho», y al catalogo le llegaba
+ * **«sello de»** — un «de» solo, colgando. La frase entera se sustituye por la
+ * palabra del catalogo y despues los vetos se comen lo que queda alrededor.
+ *
+ * Nadie puede prever eso al llenar un formulario, y no tiene por que: es el
+ * codigo el que arma la consulta, asi que es el codigo el que la deja limpia.
+ * Sin esto, la unica defensa era saberse la trampa de memoria.
+ */
+const CONECTOR_SUELTO = /^(de|del|la|el|los|las|un|una|con|para|en|por|al|y|o|que)$/;
+
+function limpiarConsulta(s: string): string {
+  const palabras = String(s || '').split(/\s+/).filter(Boolean);
+  // Se quitan por los dos extremos, no en medio: «sello de caucho» sin «caucho»
+  // queda «sello de» y sobra el «de»; pero «juego de mesa» no se toca.
+  while (palabras.length && CONECTOR_SUELTO.test(normalizar(palabras[palabras.length - 1]))) palabras.pop();
+  while (palabras.length && CONECTOR_SUELTO.test(normalizar(palabras[0]))) palabras.shift();
+  return palabras.join(' ').replace(/\s{2,}/g, ' ').trim();
+}
+
 let cache: Cache | null = null;
 const DURACION_CACHE_MS = 60 * 1000;
 
@@ -347,25 +371,7 @@ export async function traducirConsulta(
     const cual = await hojaParaLoQueDijoElCliente(orgId, original);
     if (!cual) return { consulta: original, hoja: null, cambio: false };
 
-    let salida = original;
-    const destino = comoSeBusca(cual.hoja)[0] || '';
-
-    // 1. La palabra del cliente pasa a ser la del catálogo, en su mismo sitio.
-    if (destino && normalizar(cual.palabra) !== normalizar(destino)) {
-      const escapada = cual.palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const conPlural = new RegExp(`(^|\\s)${escapada}(es|s)?(?=\\s|$)`, 'i');
-      salida = sinAcentos(salida).replace(conPlural, `$1${destino}`);
-    }
-
-    // 2. Fuera las palabras que no existen en el catálogo de este negocio.
-    for (const veto of loQueNuncaSeBusca(cual.hoja)) {
-      const escapada = veto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      salida = salida.replace(new RegExp(`(^|\\s)${escapada}(es|s)?(?=\\s|$)`, 'ig'), ' ');
-    }
-
-    salida = salida.replace(/\s{2,}/g, ' ').trim();
-    if (!salida) salida = destino || original;
-
+    const salida = traducirConEstaHoja(cual.hoja, cual.palabra, original);
     return {
       consulta: salida,
       hoja: cual.hoja.nombre,
@@ -374,6 +380,73 @@ export async function traducirConsulta(
   } catch {
     return { consulta: original, hoja: null, cambio: false };
   }
+}
+
+/**
+ * La traducción, sin base de datos de por medio.
+ *
+ * Se separó para que el botón «Probar» del panel use EXACTAMENTE este código y
+ * no una copia parecida. Una copia parecida se desincroniza, y entonces el
+ * botón dice que la hoja funciona cuando no funciona — que es peor que no
+ * tener botón.
+ */
+export function traducirConEstaHoja(
+  hoja: HojaDeCategoria,
+  palabra: string,
+  consulta: string
+): string {
+  const original = String(consulta || '');
+  let salida = original;
+  const destino = comoSeBusca(hoja)[0] || '';
+
+  // 1. La palabra del cliente pasa a ser la del catálogo, en su mismo sitio.
+  if (destino && normalizar(palabra) !== normalizar(destino)) {
+    const escapada = palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const conPlural = new RegExp(`(^|\\s)${escapada}(es|s)?(?=\\s|$)`, 'i');
+    salida = sinAcentos(salida).replace(conPlural, `$1${destino}`);
+  }
+
+  // 2. Fuera las palabras que no existen en el catálogo de este negocio.
+  for (const veto of loQueNuncaSeBusca(hoja)) {
+    const escapada = veto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    salida = salida.replace(new RegExp(`(^|\\s)${escapada}(es|s)?(?=\\s|$)`, 'ig'), ' ');
+  }
+
+  // 3. Y la consulta queda limpia. Ver `limpiarConsulta`: sin esto, quitar una
+  //    palabra dejaba el «de» que la precedía colgando al final.
+  salida = limpiarConsulta(salida);
+  if (!salida) salida = destino || original;
+  return salida;
+}
+
+/**
+ * QUÉ HOJA LE TOCA A ESTE TEXTO, entre las que se le pasen.
+ *
+ * Misma regla que en producción —gana la coincidencia más larga— pero sobre una
+ * lista dada en vez de sobre la caché. Es lo que permite probar una hoja que el
+ * dueño **todavía no ha guardado**: escribir a ciegas y guardar para ver qué
+ * pasa era justo lo que hacía difícil llenar una hoja.
+ */
+export function elegirHojaEntre(
+  hojas: HojaDeCategoria[],
+  texto: string
+): { hoja: HojaDeCategoria; palabra: string } | null {
+  const plano = normalizar(texto || '').replace(/[^a-z0-9ñ]+/g, ' ');
+  if (!plano.trim()) return null;
+
+  let mejor: { hoja: HojaDeCategoria; palabra: string } | null = null;
+  const vistas = new Set<string>();
+  for (const hoja of hojas || []) {
+    for (const palabra of terminos(hoja?.dice_el_cliente)) {
+      // Manda la primera hoja que reclame la palabra, igual que la caché.
+      if (vistas.has(palabra)) continue;
+      vistas.add(palabra);
+      const suelta = new RegExp(`(^| )${palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(es|s)?( |$)`);
+      if (!suelta.test(plano)) continue;
+      if (!mejor || palabra.length > mejor.palabra.length) mejor = { hoja, palabra };
+    }
+  }
+  return mejor;
 }
 
 /** Quita tildes sin tocar el resto, para comparar y sustituir. */

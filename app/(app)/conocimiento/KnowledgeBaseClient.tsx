@@ -35,6 +35,7 @@ import {
   contarProductosPorCategoria,
   buscarProductoParaOferta,
   diagnosticoDeHojas,
+  probarHoja,
 } from './actions';
 import { CatalogTable, type CatalogProduct, type SortField, type SortDir } from './components/CatalogTable';
 import { BulkActionsBar } from './components/BulkActionsBar';
@@ -1871,6 +1872,8 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                   onProducto={(v: string) => set('ofrecer_al_cerrar', v)}
                   onFrase={(v: string) => set('frase_al_cerrar', v)}
                 />
+
+                <ProbarEstaHoja hojas={hojas} />
                 </>
                 )}
               </div>
@@ -2696,6 +2699,116 @@ function OfertaAlCerrar({
         <p className="text-[11px] text-slate-500">
           Si deja esto vacío no pasa nada malo: el bot simplemente no ofrece nada extra.
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * PROBAR LA HOJA SIN GUARDARLA — el botón que contesta «¿esto funciona?».
+ *
+ * El dueño, 11-ago-2026: «crear estas hojas es mucho más difícil de lo que
+ * esperaba; dado que tuviste problemas, no me quiero ni imaginar cómo voy a
+ * hacer yo para crear una hoja de estas».
+ *
+ * La hoja no es difícil: es que se llenaba A CIEGAS. Escribir, guardar, irse a
+ * WhatsApp, hacerse pasar por cliente, esperar medio minuto y adivinar qué
+ * campo lo rompió. Así, escribir la hoja de sellos costó tres intentos incluso
+ * sabiendo cómo funciona por dentro.
+ *
+ * Aquí se escribe lo que diría un cliente y se ve, en dos segundos, las tres
+ * cosas que deciden si la hoja sirve: **qué hoja se activó**, **con qué palabra
+ * termina buscando** y **qué productos encuentra**. Sin guardar nada: prueba lo
+ * que hay escrito en pantalla, así que se puede corregir y volver a probar.
+ *
+ * Números y resultados, no explicaciones: es lo único que el dueño pidió que se
+ * añadiera al panel.
+ */
+function ProbarEstaHoja({ hojas }: { hojas: any[] }) {
+  const [texto, setTexto] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [r, setR] = useState<any>(null);
+
+  const probar = async () => {
+    if (!texto.trim()) return;
+    setCargando(true);
+    setR(null);
+    try {
+      setR(await probarHoja(texto, hojas));
+    } catch {
+      setR({ error: 'No se pudo probar. Intente de nuevo.' });
+    }
+    setCargando(false);
+  };
+
+  const pesos = (n: number) => '$' + Math.round(n).toLocaleString('es-CO');
+
+  return (
+    <div className="rounded-xl border border-primary-500/30 bg-primary-950/20 p-3 space-y-2">
+      <label className="block text-[10px] font-bold text-primary-300 uppercase">
+        Pruébela: escriba lo que le diría un cliente
+      </label>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={texto}
+          onChange={e => setTexto(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); probar(); } }}
+          className="input text-sm flex-1"
+          placeholder="necesito un timbre para mi empresa"
+        />
+        <button
+          type="button"
+          onClick={probar}
+          disabled={cargando || !texto.trim()}
+          className="btn-primary text-xs shrink-0"
+        >
+          {cargando ? 'Probando…' : 'Probar'}
+        </button>
+      </div>
+
+      {r && (
+        <div className="space-y-2 pt-1">
+          {r.error && <p className="text-[11px] text-rose-300">{r.error}</p>}
+
+          {!r.error && (
+            <>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                <span className={r.hoja ? 'text-emerald-300' : 'text-amber-300'}>
+                  {r.hoja ? (
+                    <>Usa la hoja <strong>«{r.hoja}»</strong>, por la palabra «{r.palabra}»</>
+                  ) : (
+                    <>⚠️ Ninguna hoja reconoce esta frase</>
+                  )}
+                </span>
+                <span className="text-slate-400">
+                  Busca en su lista: <strong className="text-slate-200">{r.seBuscaCon}</strong>
+                </span>
+              </div>
+
+              {r.productos.length === 0 ? (
+                <p className="text-[11px] text-rose-300">
+                  No encontró ningún producto. Revise «¿Con qué nombre lo tiene guardado usted?».
+                </p>
+              ) : (
+                <div className="rounded-lg bg-slate-950/50 border border-white/10 divide-y divide-white/5">
+                  {r.productos.map((p: any, k: number) => (
+                    <div key={k} className="flex items-center gap-2 px-2 py-1.5 text-[11px]">
+                      <span className="text-slate-500 w-4 shrink-0">{k + 1}</span>
+                      <span className="text-slate-200 flex-1 truncate">{p.name}</span>
+                      <span className="font-mono text-slate-500 shrink-0 hidden sm:inline">
+                        {p.reference}
+                      </span>
+                      <span className={`shrink-0 ${p.precio ? 'text-emerald-300' : 'text-rose-300'}`}>
+                        {p.precio ? pesos(p.precio) : 'sin precio'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   );

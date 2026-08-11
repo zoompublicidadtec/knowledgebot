@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { embedText } from '@/lib/embeddings';
 import { logger } from '@/lib/logger';
 import { revalidatePath } from 'next/cache';
+// El botón «Probar» del panel usa el MISMO código que el bot, no una copia.
+import { elegirHojaEntre, traducirConEstaHoja } from '@/lib/agent/hojas';
 
 // Helper to get organization_id for current user
 async function getOrgId() {
@@ -1631,6 +1633,110 @@ export async function buscarProductoParaOferta(
   } catch (error: any) {
     logger.error('buscarProductoParaOferta', { error: error.message });
     return [];
+  }
+}
+
+/**
+ * PROBAR UNA HOJA ANTES DE GUARDARLA.
+ *
+ * POR QUÉ EXISTE, TEXTUAL DEL DUEÑO (11-ago-2026): «el problema con los sellos
+ * me indica que crear estas hojas es mucho más difícil de lo que esperaba, dado
+ * que tuviste problemas no me quiero ni imaginar cómo voy a hacer yo para crear
+ * una hoja de estas».
+ *
+ * Tenía razón, y la causa no es que la hoja sea complicada: es que **se llena a
+ * ciegas**. Escribir, guardar, irse a WhatsApp, escribir como un cliente,
+ * esperar medio minuto y deducir del resultado qué campo lo rompió. Así se
+ * tarda tres intentos en acertar aunque uno sepa cómo funciona por dentro —
+ * exactamente lo que costó la hoja de sellos, con tres despliegues de por
+ * medio.
+ *
+ * Esto contesta la única pregunta que importa —«¿esto funciona?»— en dos
+ * segundos y **sin guardar**: se prueba lo que hay escrito en pantalla.
+ *
+ * Y usa el MISMO código que el bot (`elegirHojaEntre`, `traducirConEstaHoja`) y
+ * el MISMO buscador. Una copia parecida se desincroniza, y un botón que dice
+ * que la hoja sirve cuando no sirve es peor que no tener botón.
+ */
+export async function probarHoja(
+  texto: string,
+  hojasEnPantalla: any[]
+): Promise<{
+  hoja: string | null;
+  palabra: string | null;
+  seBuscaCon: string;
+  productos: Array<{ reference: string; name: string; precio: number | null; categoria: string }>;
+  error?: string;
+}> {
+  const vacio = { hoja: null, palabra: null, seBuscaCon: '', productos: [] };
+  try {
+    const escrito = String(texto || '').trim();
+    if (!escrito) return { ...vacio, error: 'Escriba lo que le diría un cliente.' };
+
+    const hojas = (Array.isArray(hojasEnPantalla) ? hojasEnPantalla : []).map(limpiarHoja);
+    const cual = elegirHojaEntre(hojas as any, escrito);
+
+    // Sin hoja que reconozca la frase, el bot busca tal cual la escribió el
+    // cliente. Se prueba eso mismo: es lo que de verdad va a pasar.
+    const seBuscaCon = cual ? traducirConEstaHoja(cual.hoja, cual.palabra, escrito) : escrito;
+
+    const RAG = process.env.RAG_SERVICE_URL || 'http://127.0.0.1:8001';
+    const r = await fetch(`${RAG}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: seBuscaCon, top_k: 5 }),
+    });
+    if (!r.ok) {
+      return { ...vacio, hoja: cual?.hoja?.nombre || null, palabra: cual?.palabra || null,
+        seBuscaCon, error: 'El buscador no respondió. Intente de nuevo.' };
+    }
+    const data = (await r.json()) as any;
+    const encontrados = (data?.products || []).slice(0, 5);
+    if (encontrados.length === 0) {
+      return { hoja: cual?.hoja?.nombre || null, palabra: cual?.palabra || null,
+        seBuscaCon, productos: [] };
+    }
+
+    const supabase = await createClient();
+    const ids = encontrados.map((p: any) => p.product_id).filter(Boolean);
+    const { data: tarifas, error: errT } = await (supabase as any)
+      .from('price_tiers')
+      .select('product_id, price, min_qty, max_qty, price_basis')
+      .in('product_id', ids);
+    // Una consulta rota devuelve vacío sin avisar: mirar SIEMPRE el error.
+    if (errT) logger.error('probarHoja: tarifas', { error: errT.message });
+
+    const productos = encontrados.map((p: any) => {
+      const suyas = (tarifas || []).filter((t: any) => {
+        if (t.product_id !== p.product_id) return false;
+        if (String(t.price_basis || 'unitario').toLowerCase() !== 'unitario') return false;
+        const v = Number(t.price);
+        return Number.isFinite(v) && v > 0 && v <= 1e9;
+      });
+      const precios: number[] = suyas
+        .filter((t: any) => (t.min_qty || 0) <= 1 && (t.max_qty == null || t.max_qty >= 1))
+        .map((t: any) => Number(t.price));
+      const distintos = precios.filter((v, i) => precios.indexOf(v) === i);
+      const todos: number[] = suyas.map((t: any) => Number(t.price));
+      return {
+        reference: String(p.reference || ''),
+        name: String(p.name || ''),
+        categoria: String(p.category || ''),
+        // El precio de UNA unidad si es inequívoco; si no, el más bajo que
+        // tenga, que es lo que el dueño quiere ver para saber si acertó.
+        precio: distintos.length === 1 ? distintos[0] : (todos.length ? Math.min(...todos) : null),
+      };
+    });
+
+    return {
+      hoja: cual?.hoja?.nombre || null,
+      palabra: cual?.palabra || null,
+      seBuscaCon,
+      productos,
+    };
+  } catch (error: any) {
+    logger.error('probarHoja', { error: error.message });
+    return { ...vacio, error: 'No se pudo probar. Intente de nuevo.' };
   }
 }
 

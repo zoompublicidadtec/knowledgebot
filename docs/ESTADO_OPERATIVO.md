@@ -662,6 +662,84 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### Probar una hoja antes de guardarla — el botón que contesta «¿esto funciona?»
+`app/(app)/conocimiento/actions.ts` (`probarHoja`) y `ProbarEstaHoja` dentro de
+cada hoja del panel.
+
+El dueño, 11-ago-2026: «crear estas hojas es mucho mas dificil de lo que
+esperaba; dado que tuviste problemas, no me quiero ni imaginar como voy a hacer
+yo para crear una hoja de estas».
+
+**La hoja no es dificil: se llenaba A CIEGAS.** El ciclo era escribir, guardar,
+irse a WhatsApp, hacerse pasar por cliente, esperar medio minuto y deducir del
+resultado que campo lo rompio. Escribir la hoja de sellos costo TRES intentos
+sabiendo como funciona por dentro; sin saberlo es inabordable.
+
+Ahora se escribe lo que diria un cliente y se ven las tres cosas que deciden si
+la hoja sirve:
+
+1. **Que hoja se activa y por que palabra.** Si no se activa ninguna, el aviso
+   lo dice: es el fallo mas comun (vocabulario en singular).
+2. **Con que termina buscando en el catalogo.** Es donde se ven las traducciones
+   raras, que es lo que rompio la hoja de sellos dos veces.
+3. **Los cinco productos que encuentra, con precio.** Si salen los que no son,
+   la hoja no sirve, y se ve sin salir de la pantalla.
+
+**No guarda nada**: prueba lo que hay escrito, asi que se corrige y se vuelve a
+probar. Y usa `elegirHojaEntre` y `traducirConEstaHoja`, el mismo codigo que el
+bot — no una copia parecida, que se desincroniza y acaba diciendo que la hoja
+sirve cuando no sirve.
+
+
+### La preposicion huerfana que dejaba la traduccion
+`lib/agent/hojas.ts` (`limpiarConsulta`).
+
+El dueño pone «sellos automaticos» en el vocabulario y «caucho» en las palabras
+vetadas. El cliente escribe «sellos automaticos de caucho». Al catalogo le
+llegaba **«sello de»**: la frase entera se sustituye por la palabra del catalogo
+y despues el veto se come lo que quedaba detras, dejando el «de» colgando.
+
+Nadie puede prever eso al llenar un formulario, **y no tiene por que**: es el
+codigo el que arma la consulta, asi que es el codigo el que la deja limpia. Se
+quitan los conectores sueltos por los dos extremos, nunca en medio, para no
+romper «juego de mesa» ni «bolsa de tela».
+
+Probado aparte: **17/17**.
+
+
+### Cuantos productos hay de verdad — 8.623 renglones son 2.332 productos
+Medido el 11-ago-2026 sobre la base de produccion.
+
+El dueño creia que tiene «mas de 8.000 productos» y que el bot solo ve 2.228.
+Las dos cifras son ciertas y la conclusion no: **6.291 de esos renglones son el
+mismo producto repetido**. «Destapador Rectangular - Produccion Nacional», ref
+HO-282, esta 13 veces; la Nevera Cooler Trendy, 13; el Set Escolar, 12.
+
+| | |
+|---|---|
+| renglones en la tabla | 8.623 |
+| productos distintos (nombre + referencia) | **2.332** |
+| los que el bot ve | 2.228 = **95,5 %** |
+| los que le faltan al bot | **104** (71 con precio y foto) |
+
+**Salud de los 2.228 que el bot ve:** 2.035 sanos (**91 %**). Las tres averias,
+por separado: 116 sin ninguna tarifa, 50 con el nombre de la variante roto
+(texto pegado del encabezado del Excel) y 28 con **dos precios para la misma
+cantidad y la misma variante** — los peores, porque la calculadora no elige a
+dedo y el producto parece que esta bien.
+
+**Precios disparatados: 545 tarifas y NINGUNA en un producto activo.** El unico
+activo con el precio mal es `OF-371`, y su historia explica el mecanismo: su
+fila encendida tiene cinco tarifas «desde 1», dos «Estandar» con precios
+distintos ($4.180 y $145.000) y tres con nombres que son pedazos del encabezado
+del Excel; sus seis copias apagadas tienen el precio limpio de $2.290. **La
+deduplicacion se quedo con la fila mala.**
+
+> Cuidado con el atajo evidente. Las copias apagadas de los otros averiados
+> traen casi todas **$1.000**, que es relleno de la importacion y no un precio:
+> encenderlas cambiaria «sin precio» por «miente por $1.000», que es peor.
+
+
 ### El precio especial por volumen — «llevando mas, le sale mas barato»
 `lib/agent/precio-por-volumen.ts`, llamado desde `lib/agent/index.ts` justo
 despues de la venta cruzada.
