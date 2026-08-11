@@ -1,3 +1,43 @@
+> # 🔴 ALTO. LEER ANTES DE HACER NADA.
+>
+> ## Desde el **11-ago-2026, 10:00 (Bogotá)**, las líneas conectadas son las **LÍNEAS OFICIALES DE LA EMPRESA**.
+>
+> `linea_1` y `linea_3` son los números con los que ZOOM Publicidad atiende a sus
+> clientes. **Ya no hay líneas de prueba.** Lo que pase en ellas le pasa a un
+> cliente de verdad.
+>
+> ### QUEDA PROHIBIDO:
+>
+> - **Tocar, modificar o alterar la estabilidad de las líneas.** No reiniciar el
+>   puente de WhatsApp. No desconectar ni reconectar una línea. No escanear QR.
+>   No tocar `wa-server-baileys/` ni sus sesiones en disco.
+> - **Tocar o alterar la interacción del bot.** No cambiar lo que responde, ni
+>   cuándo responde, ni el prompt, ni los guardrails, sin que el dueño lo pida.
+> - **Enviar un solo mensaje por WhatsApp para probar algo.** Ni a un número
+>   propio, ni a uno inventado.
+>
+> ### EL BOT ESTÁ EN SILENCIO A PROPÓSITO
+>
+> El interruptor general (`agent_configs.bot_globally_enabled`) está en **false**.
+> El bot **recibe y guarda todo, y no responde nada**. Es la decisión del dueño:
+> primero acumular conversaciones de verdad, y **después** trabajar en las
+> respuestas. **No lo encienda nadie sin que él lo pida.**
+>
+> ### CÓMO SE PRUEBA AHORA
+>
+> `POST /api/agent/test` — ejecuta el mismo agente **sin enviar nada por
+> WhatsApp**. Y `scripts/bateria_bot.py`, que usa esa misma puerta. Los contactos
+> de prueba empiezan por `5739` y se borran con `scripts/limpiar_pruebas.py`.
+>
+> ### POR QUÉ ESTÁ ESCRITO ASÍ DE GRANDE
+>
+> El 11-ago-2026, con clientes ya en la línea, el bot contestó **por encima de
+> las personas del equipo** —repitiendo párrafos y contradiciéndolas— y el
+> interruptor del panel **no lo apagaba** porque nunca estuvo conectado a nada.
+> El dueño tuvo que pedir de urgencia que se callara. Ese día se acabó el
+> margen de error.
+
+
 # ESTADO OPERATIVO — KnowledgeBot SaaS (ZOOM Publicidad)
 
 > **Fuente de verdad sobre el estado actual del sistema.**
