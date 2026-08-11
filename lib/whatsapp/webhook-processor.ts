@@ -727,6 +727,39 @@ export async function processInboundMessage(
         .eq('organization_id', orgId)
         .single();
 
+      /**
+       * EL INTERRUPTOR GENERAL — QUE HASTA EL 11-AGO-2026 NO APAGABA NADA.
+       *
+       * EL FALLO. El dueño apagó el interruptor del panel, el tablero decía
+       * «Pausado — solo recibiendo mensajes»… y **el bot siguió contestando a
+       * los clientes**. Sus palabras: «se ve desconectado pero el bot está
+       * respondiendo y lo está haciendo todo mal».
+       *
+       * LA CAUSA, buscada en el repo entero: `bot_globally_enabled` se ESCRIBÍA
+       * (`/api/agent/toggle`) y se MOSTRABA (el tablero y `/api/health`), pero
+       * **ningún punto del camino del mensaje lo leía**. El interruptor era un
+       * dibujo. No es que fallara a veces: no estuvo conectado nunca.
+       *
+       * Es la peor forma del fallo de siempre —la pantalla dice una cosa y el
+       * código hace otra— porque aquí la pantalla decía que el bot estaba
+       * callado mientras hablaba con clientes.
+       *
+       * DÓNDE VA, Y POR QUÉ AQUÍ. Después de guardar el mensaje y antes de
+       * llamar al agente, que es exactamente lo que el panel promete: «los
+       * mensajes se reciben y guardan, pero el bot no responde». Apagar el
+       * puente dejaría de recibirlos; parar la aplicación tumbaría el panel.
+       *
+       * `=== false` a propósito: si la columna viniera vacía o la consulta
+       * fallara, el bot sigue trabajando. Un interruptor que se apaga solo por
+       * un error de red sería peor que el que había.
+       */
+      if (agentConfig?.bot_globally_enabled === false) {
+        logger.warn('Interruptor general APAGADO: el mensaje se guarda y el bot no responde', {
+          orgId, conversationId, lineKey,
+        });
+        return { success: true, conversationId };
+      }
+
       if (agentConfig) {
         const agentResponse = await runAgent({
           orgId,
