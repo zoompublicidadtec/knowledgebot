@@ -197,6 +197,43 @@ CASOS = [
         lambda r: "$" in r[-1] and not alguna(r[-1], "filtro uv", "guardas", "insertos"),
         "debe cotizar y NO ofrecer insertos ni guardas antes de cerrar",
     ),
+    # ── SELLOS. La familia mas descubierta del catalogo hasta el 11-ago-2026:
+    #    106 productos activos y ninguna hoja que los reconociera.
+    (
+        "sello_ref",
+        ["cuanto vale 1 sello S-841"],
+        lambda r: "23.800" in r[-1] or "23800" in r[-1],
+        "una referencia de una sola letra debe cotizarse: $23.800",
+    ),
+    (
+        "sello_medida",
+        ["cuanto cuesta un sello de 10x8"],
+        # El fallo que cierra: buscaba «sello» a secas, perdia la medida y
+        # contestaba «no manejamos sellos de 10x8». Existe y vale $32.500.
+        lambda r: ("32.500" in r[-1] or "32500" in r[-1] or "10x8" in r[-1].lower())
+        and not alguna(r[-1], "no manejamos", "no lo manejamos", "no tenemos sellos"),
+        "debe encontrar el Sello 10x8 y nunca decir que no lo maneja",
+    ),
+    (
+        "sello_fechador",
+        ["quiero un sello con fecha"],
+        lambda r: alguna(r[-1], "fechador", "fecha") and "$" in r[-1],
+        "debe ofrecer un fechador con precio",
+    ),
+    (
+        "sello_timbre",
+        ["necesito un timbre para mi empresa"],
+        # «timbre» sin traducir devuelve un *Timbre Bike* (timbre de bicicleta).
+        lambda r: alguna(r[-1], "sello") and not alguna(r[-1], "bike", "no lo manejamos", "no manejamos"),
+        "«timbre» debe entenderse como sello, nunca como timbre de bicicleta",
+    ),
+    (
+        "sello_almohadilla",
+        ["necesito una almohadilla para sello"],
+        # Guardia de no-regresion: la hoja de sellos NO puede robarse esta.
+        lambda r: alguna(r[-1], "almohadilla") and "$" in r[-1],
+        "debe seguir ofreciendo almohadillas, no sellos",
+    ),
 ]
 
 

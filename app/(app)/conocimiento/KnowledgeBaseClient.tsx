@@ -207,6 +207,17 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
   const [conteoPorCategoria, setConteoPorCategoria] = useState<Record<string, number>>({});
   // El tablero: que hay, que falta y que esta repetido. Ver diagnosticoDeHojas.
   const [diag, setDiag] = useState<any>(null);
+  /**
+   * UNA HOJA ABIERTA A LA VEZ. El dueño, 11-ago-2026: «todas las hojas parecen
+   * estar unidas en una sola, no hay separación alguna y se puede confundir
+   * muy fácil». Tenía razón: quince fichas idénticas de pantalla y media cada
+   * una, pegadas, sin nada que dijera dónde acaba una y empieza la otra.
+   *
+   * No se arregla con más marco ni con más texto: se arregla no enseñando
+   * quince a la vez. Cerradas son quince renglones con su número, su nombre y
+   * cuánto le falta a cada una; abierta, solo la que se está editando.
+   */
+  const [hojaAbierta, setHojaAbierta] = useState<string | null>(null);
 
   // Categories State
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -1251,13 +1262,15 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
                     // La hoja nueva va PRIMERA, no al final. Antes se agregaba abajo del
                     // todo y, con una hoja larga ya en pantalla, el dueño hacia clic y no
                     // veia nada: creyo que el boton no funcionaba.
+                    const nuevaId = 'hoja_' + Date.now();
+                    setHojaAbierta(nuevaId);   // y nace ABIERTA, lista para escribir
                     setHojas([
                       {
-                        id: 'hoja_' + Date.now(),
+                        id: nuevaId,
                         nombre: '',
                         categorias: [],
                         general: false,
@@ -1275,8 +1288,8 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                         frase_al_cerrar: '',
                       },
                       ...hojas,
-                    ])
-                  }
+                    ]);
+                  }}
                   className="btn-secondary text-xs"
                 >
                   <Plus size={14} /> Agregar hoja
@@ -1354,9 +1367,11 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                         key={f.palabra}
                         type="button"
                         onClick={() => {
+                          const nuevaId = 'hoja_' + Date.now();
+                          setHojaAbierta(nuevaId);
                           setHojas([
                             {
-                              id: 'hoja_' + Date.now(),
+                              id: nuevaId,
                               nombre: f.palabra.charAt(0).toUpperCase() + f.palabra.slice(1),
                               categorias: [], general: false,
                               preguntar: '', no_preguntar: '', como_preguntar: '',
@@ -1459,8 +1474,83 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
               ? null
               : catsElegidas.reduce((n: number, id: string) => n + (conteoPorCategoria[id] || 0), 0);
 
+            // ── Plegado ───────────────────────────────────────────────────────
+            // Cuánto le falta a esta hoja, en un número. Son los mismos doce
+            // campos que se editan abajo: si el número no es 12/12, algo quedó
+            // sin escribir y se ve sin abrirla.
+            const CAMPOS_DE_LA_HOJA = [
+              'preguntar', 'como_preguntar', 'no_preguntar', 'dice_el_cliente',
+              'buscar_como', 'nunca_buscar', 'adicionales', 'marcacion',
+              'marcacion_nota', 'notas', 'ofrecer_al_cerrar', 'frase_al_cerrar',
+            ];
+            const llenos = CAMPOS_DE_LA_HOJA.filter(
+              (c) => String(h[c] ?? '').trim() !== ''
+            ).length;
+            const clave = String(h.id || i);
+            const abierta = hojaAbierta === clave;
+            const hayAviso = Boolean(nombreRepetido) || chocan.length > 0;
+
             return (
-              <div key={h.id || i} className="card space-y-4">
+              <div
+                key={h.id || i}
+                className={
+                  abierta
+                    ? 'card space-y-4 ring-2 ring-primary-500/60 border-primary-500/40'
+                    : 'card !py-0 !px-0 overflow-hidden'
+                }
+              >
+                {/* EL RENGLÓN. Cerrado es lo único que se ve de la hoja. */}
+                <div
+                  className={`flex items-center gap-3 px-4 py-3 ${
+                    abierta ? '-mx-6 -mt-6 mb-0 border-b border-white/10 bg-white/5' : 'hover:bg-white/5'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setHojaAbierta(abierta ? null : clave)}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  >
+                    <span className="text-sm font-mono text-slate-500 w-6 shrink-0">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span className="text-sm font-bold text-white truncate">
+                      {String(h.nombre || '').trim() || 'Sin nombre'}
+                    </span>
+                    {h.general && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 shrink-0">
+                        para todo lo demás
+                      </span>
+                    )}
+                    <span
+                      className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${
+                        llenos >= 12
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : llenos <= 2
+                          ? 'bg-rose-500/15 text-rose-300'
+                          : 'bg-amber-500/15 text-amber-300'
+                      }`}
+                    >
+                      {llenos}/12
+                    </span>
+                    {!h.general && (
+                      <span className="text-[11px] text-slate-500 shrink-0 hidden sm:inline">
+                        {productosCubiertos} prod.
+                      </span>
+                    )}
+                    {hayAviso && <span className="text-amber-400 shrink-0">⚠️</span>}
+                    <span className="ml-auto text-slate-500 shrink-0">{abierta ? '▲' : '▼'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHojas(hojas.filter((_: any, j: number) => j !== i))}
+                    className="text-[11px] text-red-400 hover:text-red-300 px-2 shrink-0"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+
+                {abierta && (
+                <>
                 <div className="flex flex-col md:flex-row md:items-end gap-3">
                   <div className="flex-1">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
@@ -1504,18 +1594,12 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                         general: false,
                       };
                       setHojas([copia, ...hojas]);
+                      setHojaAbierta(copia.id);
                       setMsgHojas('Copia creada arriba, con todo lo de «' + (h.nombre || 'la hoja') + '» ya escrito.');
                     }}
                     className="text-xs text-primary-300 hover:text-primary-200 px-2 py-2 shrink-0 mb-6"
                   >
                     Duplicar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setHojas(hojas.filter((_: any, j: number) => j !== i))}
-                    className="text-xs text-red-400 hover:text-red-300 px-2 py-2 shrink-0 mb-6"
-                  >
-                    Eliminar
                   </button>
                 </div>
 
@@ -1572,15 +1656,30 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                         );
                       })}
                     </div>
+                    {/*
+                      EL AVISO SOLO SALTA SI DE VERDAD NO LLEGA A NADA.
+                      Antes se disparaba con solo no tener grupos marcados, y
+                      desde el 10-ago-2026 eso es falso: la hoja también se
+                      encuentra por lo que escribe el cliente. Once de las doce
+                      hojas veían esa alarma sin tener nada roto.
+                    */}
                     <p
                       className={`text-[11px] mt-2 ${
-                        productosCubiertos === 0 ? 'text-amber-300' : 'text-slate-400'
+                        productosCubiertos === 0 && !String(h.dice_el_cliente || '').trim()
+                          ? 'text-amber-300'
+                          : 'text-slate-400'
                       }`}
                     >
-                      {productosCubiertos === 0 ? (
+                      {productosCubiertos === 0 && !String(h.dice_el_cliente || '').trim() ? (
                         <>
                           ⚠️ <strong>Esta hoja no llega a ningún producto.</strong> No marcó ningún
-                          grupo, o los que marcó están vacíos. Así, el bot nunca la va a usar.
+                          grupo y tampoco escribió cómo lo pide el cliente. Así, el bot nunca la va
+                          a usar.
+                        </>
+                      ) : productosCubiertos === 0 ? (
+                        <>
+                          El bot la encuentra por lo que escribe el cliente. Si además marca un
+                          grupo, se la aplica también a esos productos.
                         </>
                       ) : (
                         <>
@@ -1772,6 +1871,8 @@ export default function KnowledgeBaseClient({ initialCategories }: KnowledgeBase
                   onProducto={(v: string) => set('ofrecer_al_cerrar', v)}
                   onFrase={(v: string) => set('frase_al_cerrar', v)}
                 />
+                </>
+                )}
               </div>
             );
           })}

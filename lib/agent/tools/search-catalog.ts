@@ -248,6 +248,64 @@ function normalizarCodigo(s: string): string {
 }
 
 /**
+ * LA MEDIDA QUE DIO EL CLIENTE NO SE PIERDE.
+ *
+ * EL FALLO, MEDIDO EL 11-AGO-2026. El cliente escribe «cuanto cuesta un sello
+ * de 10x8» y el registro de produccion muestra que al buscador le llego
+ * **«sello»** a secas: el modelo se quedo con la familia y solto la medida. Con
+ * «sello» el catalogo devuelve los mismos cinco de siempre (puntaje 2,790
+ * empatado) y el bot contesto **«No manejamos sellos de 10x8 cm»** — falso: el
+ * producto existe, se llama «Sello 10x8» y vale $32.500.
+ *
+ * No es un fallo de los sellos: es la clase entera de «el cliente da una medida
+ * y la busqueda la tira». El catalogo tiene la medida DENTRO del nombre en
+ * cientos de productos (Sello 10x8, Roll Up 2x1m, Almohadilla 45x65mm), asi que
+ * perderla es perder el unico dato que distingue un producto de sus hermanos.
+ *
+ * NO SE LE PIDE AL MODELO QUE NO LA SUELTE. Regla 1 del proyecto. Se le vuelve
+ * a poner en la consulta desde el codigo, y solo si falta.
+ *
+ * PEGADA, NO SEPARADA, y esto esta medido: «sello 10x8» encuentra *Sello 10x8*
+ * de primero con 2,970; «sello 10 x 8» **no lo encuentra** y devuelve los cinco
+ * de siempre. El catalogo escribe las medidas sin espacios.
+ *
+ * Y NO ESTORBA cuando la medida no distingue nada: medido el mismo dia,
+ * «banner laminado» y «banner laminado 200x100» devuelven *Banner Laminado* de
+ * primero; «cuaderno argollado» y «cuaderno argollado 120 hojas», los mismos
+ * tres. Anadir un dato que el catalogo no usa no cambia el orden.
+ */
+const MEDIDA_EN_EL_TEXTO = /(\d{1,4})\s*[x×]\s*(\d{1,4})(?:\s*[x×]\s*(\d{1,4}))?/gi;
+
+export function medidasDelCliente(texto: string): string[] {
+  const out: string[] = [];
+  const rx = new RegExp(MEDIDA_EN_EL_TEXTO.source, 'gi');
+  let m: RegExpExecArray | null;
+  while ((m = rx.exec(String(texto || ''))) !== null) {
+    const pegada = [m[1], m[2], m[3]].filter(Boolean).join('x');
+    if (pegada && out.indexOf(pegada) === -1) out.push(pegada);
+  }
+  return out.slice(0, 2);
+}
+
+/** Le devuelve a la consulta la medida que el cliente dio y el modelo solto. */
+export function conLaMedidaDelCliente(consulta: string, mensajeDelCliente?: string): string {
+  const medidas = medidasDelCliente(mensajeDelCliente || '');
+  if (medidas.length === 0) return consulta;
+
+  // Ya escrita de cualquier forma («10x8», «10 x 8») no se repite.
+  const yaEsta = (m: string) => {
+    const [a, b, c] = m.split('x');
+    const suelta = c
+      ? new RegExp(`${a}\\s*[x×]\\s*${b}\\s*[x×]\\s*${c}`, 'i')
+      : new RegExp(`${a}\\s*[x×]\\s*${b}`, 'i');
+    return suelta.test(consulta);
+  };
+
+  const faltan = medidas.filter((m) => !yaEsta(m));
+  return faltan.length === 0 ? consulta : `${consulta} ${faltan.join(' ')}`.trim();
+}
+
+/**
  * Palabras que van pegadas a un número en el habla normal. Sin esta lista,
  * «el precio de 10» se leía como la referencia «DE10» y «cuánto valen 20» como
  * «VALEN20» (visto en los registros del 10-ago, en cada mensaje con cantidad).
@@ -468,10 +526,18 @@ export async function runCatalogSearch(
       // palabra del cliente: medido el 10-ago, buscando «esferos» el motor
       // devuelve una *Alcancía Esfera* entre las tres primeras.
       const traducida = await traducirConsulta(orgId, pedido);
-      const rawQuery = traducida.consulta;
       if (traducida.cambio) {
         logger.info('La hoja del panel tradujo la búsqueda', {
-          escribio: pedido, seBuscoCon: rawQuery, hoja: traducida.hoja,
+          escribio: pedido, seBuscoCon: traducida.consulta, hoja: traducida.hoja,
+        });
+      }
+
+      // Y la medida que dio el cliente vuelve a la consulta si el modelo la
+      // solto por el camino. Ver `conLaMedidaDelCliente`.
+      const rawQuery = conLaMedidaDelCliente(traducida.consulta, mensajeDelCliente);
+      if (rawQuery !== traducida.consulta) {
+        logger.info('Se le devolvió a la búsqueda la medida del cliente', {
+          buscabaEl_modelo: traducida.consulta, seBuscoCon: rawQuery,
         });
       }
 

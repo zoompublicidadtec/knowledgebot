@@ -116,6 +116,7 @@
       Toca una tarjeta para empezar. Puedes seguir el orden o saltar al tema que necesites.
     </p>
     <div class="cards-grid">
+      <button class="card" onclick="goTo('hojas')"><span class="cnum">HOJAS</span><span class="cicon">📋</span><span class="ctitle">Hojas de categoría</span><span class="cdesc">Cómo se le explica al bot la forma de vender cada familia de productos.</span></button>
       <button class="card" onclick="goTo('p0')"><span class="cnum">PASO 0</span><span class="cicon">🧭</span><span class="ctitle">Antes de empezar</span><span class="cdesc">Qué es esto y por qué importa. 2 minutos que te ahorran horas.</span></button>
       <button class="card" onclick="goTo('p1')"><span class="cnum">PASO 1</span><span class="cicon">🔑</span><span class="ctitle">Ingresar al panel</span><span class="cdesc">Cómo entrar a la pantalla donde se administran los productos.</span></button>
       <button class="card" onclick="goTo('p2')"><span class="cnum">PASO 2</span><span class="cicon">📁</span><span class="ctitle">Categorías y sinónimos</span><span class="cdesc">Lo primero que se crea. Ningún producto puede quedar suelto.</span></button>
@@ -128,6 +129,228 @@
     </div>
     <footer style="margin-top:28px;">Manual de la Base de Conocimiento · KnowledgeBot · Zoom Publicidad</footer>
   </div>
+
+  <!-- ===================== HOJAS DE CATEGORÍA ===================== -->
+  <div class="screen" id="screen-hojas"><section class="step-card">
+    <div class="step-header"><span class="step-num">H</span> Hojas de categoría</div>
+    <p class="step-intro">Dónde se le explica al bot cómo se vende cada familia de productos. Es la pestaña que más cambia lo que el cliente recibe.</p>
+
+    <h3>¿Qué es una hoja?</h3>
+    <p>Una hoja es la <strong>ficha de instrucciones de una familia de productos</strong>. En ella se escribe cuatro cosas:
+    cómo llama el cliente a esos productos, con qué palabra están guardados en su lista, qué hace falta saber para poder
+    dar un precio, y qué puede afirmar el bot sin tener que consultarlo con usted.</p>
+    <p>El catálogo dice <em>qué vende</em> y <em>a qué precio</em>. La hoja dice <em>cómo se vende</em>.
+    Son dos cosas distintas y viven en pestañas distintas.</p>
+
+    <div class="callout why">
+      <span class="ctitle">🤖 Por qué el bot la necesita</span>
+      El bot busca en su lista con las palabras que usted escribió en el catálogo. El cliente, en cambio, escribe con
+      las suyas. Un cliente que pide un <strong>«timbre»</strong> quiere un sello — pero en la lista no existe ningún
+      producto llamado «timbre», así que el bot le ofrecía un <strong>Timbre Bike</strong>, que es un timbre de
+      bicicleta. La hoja es lo que traduce «timbre» a «sello» antes de buscar.
+    </div>
+
+    <h3>Cuándo hacer una hoja nueva y cuándo no</h3>
+    <p>Las hojas <strong>no se agrupan por lo que el producto es, sino por cómo se cotiza</strong>. La pregunta que hay
+    que hacerse es una sola: <em>«¿a estos productos les pregunto lo mismo antes de dar un precio?»</em></p>
+    <table>
+      <tr><th>Caso</th><th>¿Una hoja o dos?</th><th>Por qué</th></tr>
+      <tr><td>Mug y termo</td><td><strong>Una sola</strong></td><td>A los dos se les pregunta lo mismo: cuántos y qué logo lleva.</td></tr>
+      <tr><td>Gorra y camiseta</td><td><strong>Dos</strong></td><td>A la camiseta hay que preguntarle las tallas; a la gorra no.</td></tr>
+      <tr><td>Cuaderno y libreta</td><td><strong>Dos</strong></td><td>El cuaderno se arma por partes (hojas, argollado, insertos); la libreta tiene un precio y ya.</td></tr>
+      <tr><td>Sello, fechador y numerador</td><td><strong>Una sola</strong></td><td>A los tres se les pregunta el tamaño y si lleva fecha.</td></tr>
+    </table>
+    <div class="callout tip">
+      <span class="ctitle">💡 Regla corta</span>
+      Si a dos productos les hace <strong>las mismas preguntas</strong>, van en la misma hoja. Si a uno le pregunta algo
+      que al otro no, van en hojas separadas.
+    </div>
+
+    <h3>Cómo se abre una hoja</h3>
+    <ol class="steps">
+      <li>Entre a <strong>«Base de Conocimiento»</strong> y arriba elija la pestaña <strong>«Hojas de categoría»</strong>.</li>
+      <li>Cada hoja es <strong>un renglón</strong>: su número, su nombre, cuánto le falta por llenar y a cuántos productos llega.</li>
+      <li><strong>Haga clic en el renglón</strong> y la hoja se abre. Al abrir una, la anterior se cierra sola: siempre hay una a la vista, nunca quince encimadas.</li>
+      <li>Cuando termine, pulse <strong>«Guardar hojas»</strong>. Hasta que no lo pulse, <strong>nada se guarda</strong>: si se equivocó, recargue la página y todo vuelve como estaba.</li>
+    </ol>
+    <div class="callout info">
+      <span class="ctitle">🔢 El número del renglón: 12/12</span>
+      Al lado del nombre hay un número como <span class="code">12/12</span>. Son los doce campos de la hoja y cuántos
+      tiene escritos. En <span style="color:var(--ok)"><strong>verde</strong></span> está completa, en
+      <span style="color:var(--highlight)"><strong>amarillo</strong></span> va a medias y en
+      <span style="color:var(--danger)"><strong>rojo</strong></span> solo tiene el vocabulario.
+      Así sabe cuál le falta sin abrir ninguna.
+    </div>
+
+    <h3>Campo por campo</h3>
+    <p>Vamos con los doce campos, con un ejemplo real de su propio catálogo en cada uno. El ejemplo es la
+    <strong>hoja de Sellos</strong>, que cubre 105 productos.</p>
+
+    <div class="field">
+      <div class="fname">1. ¿Cómo quiere llamar a esta hoja?</div>
+      <div class="fdesc">Una etiqueta suya, para reconocerla en la lista. <strong>El bot no la lee.</strong>
+      <span class="example">Ej.: Sellos.</span></div>
+    </div>
+
+    <div class="field">
+      <div class="fname">2. ¿Para qué productos sirve esta hoja?</div>
+      <div class="fdesc">Marque los grupos del catálogo que se venden preguntando lo mismo. Al lado de cada grupo va
+      el número de productos que tiene: si dice <span class="code">0</span>, ese grupo está vacío y marcarlo no sirve de nada.
+      <span class="example">Ej.: Sellos (63) · Sellos - Cuadrados/Redondos (14) · Sellos - Rectangulares (15).</span></div>
+    </div>
+
+    <div class="field">
+      <div class="fname">3. ¿Cómo lo pide el cliente, con sus propias palabras? <span style="color:var(--danger)">★ el más importante</span></div>
+      <div class="fdesc">Todas las formas en que un cliente puede nombrar esa familia, <strong>separadas por comas</strong> y
+      con los plurales incluidos. Es lo que hace que el bot entienda a quien no habla como usted.
+      <span class="example">Ej.: sello, sellos, sellito, sellitos, timbre, timbres, sellado.</span>
+      <br><strong>Escriba también los plurales y las formas conjugadas.</strong> Un cliente escribió
+      «mugs que cambien de color» y la hoja decía «mug que cambia de color»: no coincidió por una letra, y el bot
+      ofreció el producto equivocado.</div>
+    </div>
+
+    <div class="field">
+      <div class="fname">4. ¿Con qué nombre lo tiene guardado usted?</div>
+      <div class="fdesc">La palabra que <strong>sí existe</strong> en su pestaña «Catálogo de Productos». Cuando el
+      cliente use cualquiera de las palabras del campo 3, el bot buscará con esta.
+      <span class="example">Ej.: sello.</span>
+      <br>Ponga <strong>una sola palabra</strong>, la más corta que distinga la familia. Si pone una frase larga,
+      el bot pierde el resto de lo que dijo el cliente.</div>
+    </div>
+
+    <div class="field">
+      <div class="fname">5. Palabras que el cliente usa y usted NO tiene guardadas</div>
+      <div class="fdesc">Palabras que no aparecen en el nombre de ningún producto suyo. El bot las quita de la
+      búsqueda para no buscarlas en vano.
+      <span class="example">Ej.: en la hoja de Cuadernos, «agenda» — porque en su lista no existe ninguna agenda.</span>
+      <br><strong>Úselo poco.</strong> Cada palabra que quita es una palabra menos para acertar. Déjelo vacío si duda.</div>
+    </div>
+
+    <div class="field">
+      <div class="fname">6. ¿Qué necesita saber usted para poder dar un precio?</div>
+      <div class="fdesc">Los datos sin los cuales usted tampoco podría cotizar.
+      <span class="example">Ej.: el tamaño, solo si el cliente no lo dijo ya · si lo quiere con fecha.</span>
+      <br><strong>Cuidado con este campo: todo lo que escriba aquí se convierte en una pregunta que frena la venta.</strong>
+      Cuando decía «cuántos», a «quiero un sello con fecha» el bot contestaba «¿cuántos sellos necesitas?» y se quedaba
+      sin dar precio. Al quitarlo, cotiza por unidad y sigue. <strong>Escriba solo lo imprescindible.</strong></div>
+    </div>
+
+    <div class="field">
+      <div class="fname">7. ¿Y cómo se lo pregunta a un cliente?</div>
+      <div class="fdesc">Escríbalo tal como se lo diría por WhatsApp. El cliente no sabe qué es un troquel ni una tinta
+      directa. Si empieza con «solo si…», el bot solo pregunta cuando de verdad falta el dato.
+      <span class="example">Ej.: Solo si no te dijo el tamaño: pásame el texto o el logo que va a llevar el sello y dime de qué tamaño lo necesitas; con el texto yo te digo cuál te sirve. Y cuéntame si lo quieres con fecha.</span></div>
+    </div>
+
+    <div class="field">
+      <div class="fname">8. ¿Hay algo que NO haga falta preguntar?</div>
+      <div class="fdesc">Lo que usted ya da por hecho. Sirve para que el bot no interrogue al cliente por cosas que ya sabe.
+      <span class="example">Ej.: no preguntes cuántos para dar el precio: cotiza por unidad y sigue. Si el cliente ya dio la medida (10x8, 4 cm, 42x42mm) cotiza con esa. Si no pide fecha, es un sello sin fechador.</span></div>
+    </div>
+
+    <div class="field">
+      <div class="fname">9. ¿Qué extras se le pueden agregar?</div>
+      <div class="fdesc">Cosas que se suman al precio y que usted ya tiene cargadas con su valor en el catálogo.
+      <span class="example">Ej.: almohadilla, tinta, repuesto.</span>
+      <br>El bot <strong>no los enumera por su cuenta</strong>: solo los menciona si el cliente pregunta por agregar algo.</div>
+    </div>
+
+    <div class="field">
+      <div class="fname">10. Lo que se imprime en el producto, ¿ya va en el precio?</div>
+      <div class="fdesc">Cuatro opciones, y cada una cambia lo que el bot responde:
+      <table>
+        <tr><th>Lo que elija</th><th>Lo que hace el bot</th></tr>
+        <tr><td>Sí, ya está incluido</td><td>Confirma que sí le ponen su logo y <strong>sigue cotizando</strong>, sin preguntar nada técnico.</td></tr>
+        <tr><td>No, se cobra aparte</td><td>Avisa que la marcación se cotiza por separado.</td></tr>
+        <tr><td>A estos productos no se les imprime nada</td><td>Dice que ese producto no se personaliza.</td></tr>
+        <tr><td>No sé / depende</td><td><strong>No afirma nada</strong> y ofrece consultarlo con el equipo.</td></tr>
+      </table>
+      Si no está seguro, deje «No sé / depende». <strong>Vale más que consulte a que invente.</strong></div>
+    </div>
+
+    <div class="field">
+      <div class="fname">11. ¿Algo más sobre lo que se imprime?</div>
+      <div class="fdesc">Una aclaración corta, si hace falta.
+      <span class="example">Ej.: en la hoja de Cuadernos, «el diseño ya está en la lista de extras: no hay que preguntar técnica ni tintas».</span></div>
+    </div>
+
+    <div class="field">
+      <div class="fname">12. ¿Algo más que deba saber quien atienda?</div>
+      <div class="fdesc">Mínimos, medidas, cosas que cuestan aparte. Escríbalo como se lo diría a un empleado nuevo.
+      <span class="example">Ej.: Mínimo 20 unidades. Medida estándar hasta 6 x 4 cm; más grande tiene un costo adicional que se confirma con producción.</span></div>
+    </div>
+
+    <h3>Los dos campos del cierre: qué ofrecer de más</h3>
+    <p>Al final de la hoja hay dos campos que trabajan juntos. Sirven para que, <strong>una vez cerrada la venta</strong>,
+    el bot ofrezca una sola cosa más — con el precio ya calculado.</p>
+    <div class="field">
+      <div class="fname">Qué producto ofrecer al cerrar</div>
+      <div class="fdesc">Escriba el nombre y <strong>elíjalo de la lista que aparece</strong>. No lo escriba a mano: el
+      panel guarda la referencia para que no haya dudas de cuál es.
+      <span class="example">Ej.: en la hoja de Sellos, «Tinta 28ml» (ZM-S-61/65).</span></div>
+    </div>
+    <div class="field">
+      <div class="fname">Con qué frase se lo ofrece</div>
+      <div class="fdesc">La frase, en sus palabras. Donde vaya una cifra, escriba una de estas cuatro y el sistema la
+      rellena solo:
+      <table>
+        <tr><th>Si escribe</th><th>El bot pone</th></tr>
+        <tr><td><span class="code">{precio}</span></td><td>El precio de una unidad.</td></tr>
+        <tr><td><span class="code">{total}</span></td><td>El precio de todas las unidades juntas.</td></tr>
+        <tr><td><span class="code">{cantidad}</span></td><td>Cuántas unidades compró el cliente.</td></tr>
+        <tr><td><span class="code">{producto}</span></td><td>El nombre del producto que se ofrece.</td></tr>
+      </table>
+      <span class="example">Ej.: «Una cosa más: te sumo {cantidad} {producto} de repuesto por {total}, para que el sello no se te quede sin tinta. ¿Te sirve?»</span></div>
+    </div>
+    <div class="callout rule">
+      <span class="ctitle">⚠️ Sin frase escrita, no hay oferta</span>
+      La frase tiene que llevar <span class="code">{precio}</span> o <span class="code">{total}</span>. Si no lleva
+      ninguna de las dos, el bot <strong>no ofrece nada</strong>: una oferta sin precio obliga al cliente a preguntar,
+      y preguntar en el cierre reabre una venta que ya estaba hecha.
+    </div>
+
+    <h3>Lo que NO hay que poner en la hoja</h3>
+    <div class="callout warn">
+      <span class="ctitle">🚫 Los precios por cantidad</span>
+      Los descuentos por volumen —«12 pad mouse a $18.200 cada uno, 30 a $12.350»— <strong>no van aquí</strong>.
+      Ya están cargados en cada producto, en sus rangos de precio, y el bot los ofrece solo. Copiarlos a la hoja
+      sería escribir a mano miles de cifras que quedarían mintiendo el día que cambie un precio.
+    </div>
+
+    <h3>Cómo saber si la hoja está funcionando</h3>
+    <ol class="steps">
+      <li><strong>Los tres números de arriba.</strong> Cuántas hojas tiene, qué porcentaje de sus productos reconoce el bot, y cuántas hojas están a medio llenar. El porcentaje es el que hay que subir.</li>
+      <li><strong>Los botones amarillos.</strong> Son las palabras que el bot todavía no reconoce, con cuántos productos deja fuera cada una. Haga clic en una y le queda la hoja creada, con el vocabulario ya puesto.</li>
+      <li><strong>El aviso rojo de palabras repetidas.</strong> Si la misma palabra está en dos hojas, el bot usa una sola y descarta la otra sin avisar. Manda la que esté más arriba en la lista.</li>
+      <li><strong>Pruébelo.</strong> Escríbale al bot como le escribiría un cliente y mire qué contesta. Los cambios de una hoja tardan <strong>un minuto</strong> en aplicarse.</li>
+    </ol>
+
+    <h3>Los tres errores que ya se cometieron</h3>
+    <div class="callout warn">
+      <span class="ctitle">1. Dejar el vocabulario en singular</span>
+      «mug que cambia de color» no coincide con «mugs que cambien de color». Escriba <strong>todas las formas</strong>:
+      singular, plural y como lo diría un cliente apurado.
+    </div>
+    <div class="callout warn">
+      <span class="ctitle">2. Poner dos hojas sobre el mismo grupo de productos</span>
+      El bot usa una sola y <strong>tira la otra sin decir nada</strong>. Si el panel le muestra el aviso naranja de
+      «dos hojas para los mismos productos», quítele el grupo a una de las dos.
+    </div>
+    <div class="callout warn">
+      <span class="ctitle">3. Llenar solo el vocabulario y dejar el resto vacío</span>
+      Es el más común: <strong>once de las doce primeras hojas estaban así</strong>. Con solo el vocabulario, el bot
+      encuentra el producto pero no sabe qué preguntar ni qué puede afirmar. El renglón lo delata: dice
+      <span class="code">2/12</span> en rojo.
+    </div>
+
+    <div class="callout tip">
+      <span class="ctitle">💡 Si no sabe por dónde empezar</span>
+      Abra una hoja que ya funcione, pulse <strong>«Duplicar»</strong> y cámbiele lo que difiera. La copia nace arriba
+      con todo escrito, así no tiene que llenar una hoja en blanco mirando al techo.
+    </div>
+
+    <div class="nav-buttons"><button class="nav-btn" onclick="goHome()">🏠 Inicio</button><button class="nav-btn next" onclick="goTo('p0')">Siguiente: Antes de empezar →</button></div>
+  </section></div>
 
   <!-- ===================== PASO 0 ===================== -->
   <div class="screen" id="screen-p0"><section class="step-card">
@@ -757,9 +980,9 @@
 </div>
 
 <script>
-  const ORDER = ['home','p0','p1','p2','p3','p4','p5','p6','anexo','faq','resumen'];
+  const ORDER = ['home','hojas','p0','p1','p2','p3','p4','p5','p6','anexo','faq','resumen'];
   const TITLES = {
-    home:'Inicio', p0:'Antes de empezar', p1:'Ingresar al panel', p2:'Categorías y sinónimos',
+    home:'Inicio', hojas:'Hojas de categoría', p0:'Antes de empezar', p1:'Ingresar al panel', p2:'Categorías y sinónimos',
     p3:'Crear un producto', p4:'Editar, pausar y eliminar', p5:'Carga masiva por Excel',
     p6:'Reglas del negocio', anexo:'Glosario y Precios', faq:'Preguntas frecuentes', resumen:'Resumen'
   };

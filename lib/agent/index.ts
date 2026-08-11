@@ -31,6 +31,7 @@ import { buildQuoteTool } from './tools/build-quote';
 import { updatePipelineStageTool } from './tools/update-pipeline-stage';
 import { etapaPorHechos, moverEtapaSiAvanza } from './pipeline-automatico';
 import { ofertaDespuesDelCierre } from './venta-cruzada';
+import { avisoDeMejorPrecioPorVolumen } from './precio-por-volumen';
 import { extrasDeLoQuePidio } from './hojas';
 
 /**
@@ -2086,6 +2087,34 @@ ${resueltas}`;
       // El cliente ya tiene su respuesta ganada: esto no puede quitársela.
       logger.error('No se pudo ofrecer la venta cruzada', {
         error: String(errOferta), orgId, conversationId,
+      });
+    }
+
+    /**
+     * EL PRECIO ESPECIAL POR VOLUMEN, mientras se cotiza.
+     *
+     * Va aquí por lo mismo que la venta cruzada: después del candado de salida
+     * —o `applyOutputGuardrail` vería una cifra que ninguna herramienta del
+     * modelo devolvió y bloquearía la respuesta entera— y después de mover la
+     * tarjeta.
+     *
+     * Y va con `!== 'sold'` a propósito: en el turno del cierre ya habla la
+     * venta cruzada, y dos ofertas pegadas en el mismo mensaje vuelven a ser la
+     * lista que el dueño prohibió. Ver lib/agent/precio-por-volumen.ts.
+     */
+    try {
+      if (destinoDelTurno !== 'sold') {
+        const aviso = await avisoDeMejorPrecioPorVolumen({
+          contactId,
+          conversationId,
+          respuestaDelBot: finalResponse,
+          pasos: pasosDelTurno,
+        });
+        if (aviso) finalResponse = `${finalResponse}\n\n${aviso}`;
+      }
+    } catch (errVolumen) {
+      logger.error('No se pudo avisar del mejor precio por volumen', {
+        error: String(errVolumen), orgId, conversationId,
       });
     }
 

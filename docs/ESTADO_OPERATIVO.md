@@ -662,6 +662,117 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### El precio especial por volumen — «llevando mas, le sale mas barato»
+`lib/agent/precio-por-volumen.ts`, llamado desde `lib/agent/index.ts` justo
+despues de la venta cruzada.
+
+El dueño lo echo en falta el 11-ago-2026: «lo hacia muy bien y no lo volvi a
+ver». **Nunca hubo nada que lo obligara**: `getProductPrice` le entrega al
+modelo la tabla entera de rangos y el modelo decide si la menciona. Por eso
+funcionaba unos dias y otros no. Regla 1 por octava vez.
+
+**No va en las hojas** —fue lo que el dueño pregunto—: el dato ya esta cargado
+en cada producto y lo tienen **191 de los 2.228 activos**. La hoja guarda lo que
+el codigo no puede deducir; esto si lo deduce.
+
+- Solo el escalon **alcanzable**: el mas cercano hacia arriba, no el mas barato
+  de todos. Decirle a quien pide 12 que a partir de 1.000 le sale a la mitad no
+  es una oferta.
+- Solo precios **por unidad**: un precio por m2 o por lote no se multiplica por
+  unidades sin mentir. Misma regla que `buildQuote`.
+- Si a esa cantidad le corresponden dos tarifas distintas, es ambiguo y **no se
+  elige a dedo**.
+- Con varios productos cotizados en el turno se avisa de **uno solo**, el del
+  ahorro mas grande: una lista de rebajas es otra vez la lista que el dueño
+  prohibio.
+- **Nunca en el turno del cierre** (`destinoDelTurno !== 'sold'`): ahi ya habla
+  la venta cruzada, y dos ofertas pegadas son una lista.
+
+Medido: antes, «12 Pad Mouse Ergonomico — $218.400 COP» y nada mas. Despues,
+«**Un dato que te sirve: si en vez de 12 llevas 30 *Pad Mouse Plano*, cada uno
+te queda en $10.400 y el pedido completo en $312.000**».
+
+
+### La medida que dio el cliente no se pierde
+`lib/agent/tools/search-catalog.ts` (`medidasDelCliente`,
+`conLaMedidaDelCliente`).
+
+A «cuanto cuesta un sello de 10x8» el bot contestaba «No manejamos sellos de
+10x8 cm». El registro de produccion mostro que al buscador le llegaba **«sello»
+a secas**: el modelo se quedo con la familia y solto la medida.
+
+Es la clase entera de «el cliente da una medida y la busqueda la tira», y el
+catalogo lleva la medida DENTRO del nombre en cientos de productos (*Sello
+10x8*, *Roll Up 2x1m*, *Almohadilla 45x65mm*).
+
+- **Pegada, no separada**, y esto es lo que decide: «sello 10x8» encuentra
+  *Sello 10x8* de primero con 2,970; «sello 10 x 8» **no lo encuentra**.
+- **No estorba** cuando la medida no distingue nada: «banner laminado» y «banner
+  laminado 200x100» devuelven *Banner Laminado* de primero.
+- Solo se añade si falta: si la consulta ya la trae escrita de cualquier forma,
+  no se toca.
+
+Probado aparte antes de desplegar: **16/16**, con casos que deben arreglarse y
+casos que no se pueden tocar.
+
+
+### La hoja plegada — quince fichas identicas eran una sola pared
+`app/(app)/conocimiento/KnowledgeBaseClient.tsx`, pestaña «Hojas de categoria».
+
+El dueño, 11-ago-2026: «todas las hojas parecen estar unidas en una sola, no hay
+separacion alguna y se puede confundir muy facil al usuario».
+
+**No se arreglaba con mas marco ni con mas texto** —pidio expresamente menos
+texto—: se arregla no enseñando quince a la vez. Cada hoja es un renglon con su
+numero, su nombre, cuanto le falta y a cuantos productos llega; al abrir una se
+cierra la anterior. Las hojas nuevas y las copias nacen abiertas.
+
+El `12/12` del renglon son los doce campos y cuantos tiene escritos: verde
+completa, ambar a medias, rojo solo el vocabulario. Es el mismo dato que el
+tablero da en total, pero puesto donde se decide.
+
+Y se corrigio un **aviso falso**: «esta hoja no llega a ningun producto» saltaba
+con solo no tener categorias marcadas. Desde el 10-ago eso es mentira —la hoja
+tambien se encuentra por lo que escribe el cliente— y **once de las doce hojas**
+veian esa alarma sin tener nada roto.
+
+
+### La hoja de sellos, y las tres formas en que una hoja hace DEJAR de cotizar
+`agent_configs.metadata.hojas`. Es un dato del panel, no codigo.
+
+Los sellos eran la familia mas descubierta: 106 productos activos y ninguna hoja.
+A «necesito un timbre para mi empresa» el bot contestaba «Eso puntual no lo
+manejamos» y ofrecia mugs — porque «timbre» sin traducir devuelve un *Timbre
+Bike*, un timbre de bicicleta.
+
+Lo que se aprendio escribiendola vale para **todas** las hojas:
+
+1. **El vocabulario, en palabras sueltas.** Con frases largas, «sellos
+   automaticos de caucho» se tradujo a **«sello de»** —un «de» suelto—: la
+   frase entera se sustituye por la palabra del catalogo y despues los vetos se
+   comen lo que queda.
+2. **`nunca_buscar` casi nunca hace falta.** Medido: «sello de caucho» y «sello»
+   devuelven los mismos cinco productos con el mismo puntaje (2,790). Vetar
+   «caucho» no ganaba nada y si rompia la frase. Cada palabra que se veta es una
+   palabra menos para acertar.
+3. **Todo lo que se escriba en «que necesita saber para dar un precio» se
+   convierte en una pregunta que FRENA la venta.** Con «cuantos» en la lista, a
+   «quiero un sello con fecha» el bot pedia la cantidad y se quedaba sin
+   cotizar. Con «el tamaño» sin condicionar, dejaba de cotizar «un sello de
+   10x8» donde el cliente YA habia dado la medida, y llego a contestar «no
+   manejamos sellos de 10x8». Lo que va ahi tiene que ser lo imprescindible, y
+   condicionado con «solo si el cliente no lo dijo ya».
+
+La marcacion queda **sin definir** por decision del dueño: el bot no afirma nada
+y ofrece consultarlo. La venta cruzada del cierre es la **Tinta 28ml**
+(ZM-S-61/65), que es el repuesto de un autoentintable — no la Tinta Flash, que
+es para los preentintados.
+
+**Lo que sigue sin resolverse:** «sello redondo» no distingue nada, porque la
+palabra «redondo» no aparece en el nombre de ningun producto. Los redondos se
+llaman *Sello Ø38mm*. Es un hueco del CATALOGO, no de la hoja.
+
+
 ### El tablero de las hojas — que hay, que falta y que esta repetido
 `app/(app)/conocimiento/actions.ts` (`diagnosticoDeHojas`) y el bloque de tres
 numeros al principio de la pestaña «Hojas de categoria».
