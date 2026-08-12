@@ -111,6 +111,10 @@ const {
     // son las MISMAS que usa Baileys por dentro, no una copia nuestra.
     getAllBinaryNodeChildren,
     getErrorCodeFromStreamError,
+    // Para reconocer la copia ilegible de un mensaje propio y acusarle
+    // recibo (ver `acusarCopiaPropiaIlegible`).
+    proto,
+    isJidUser,
 } = require('@whiskeysockets/baileys');
 // Baileys reporta el motivo del corte como un Boom, y `connection.update` lee
 // `lastDisconnect.error.output.statusCode`. Con un Error pelado se perderia.
@@ -180,6 +184,11 @@ const metrics = {
     // conexion. Si este numero sube y las lineas siguen conectadas, el arreglo
     // esta trabajando. Se ve en GET /metrics.
     acuses_ignorados: 0,
+    // Copias ilegibles de mensajes propios a las que se les acuso recibo
+    // para que WhatsApp dejara de reenviarlas. Si este numero sube y los
+    // cortes cada ~50 min desaparecen, el arreglo esta trabajando.
+    copias_propias_acusadas: 0,
+    copias_propias_sin_acusar: 0,
     webhooks_sent: 0,
     webhooks_suppressed_shadow: 0,
     webhooks_failed: 0,
@@ -1472,6 +1481,10 @@ async function startSession(line, motivo = 'inicial') {
             if (type !== 'notify') return;
             for (const msg of messages) {
                 try {
+                    // Antes que nada: si es la copia ilegible de un mensaje
+                    // propio, se le acusa recibo y no sigue. Es lo que
+                    // tumbaba la linea cada ~50 min.
+                    if (await acusarCopiaPropiaIlegible(line, msg, sock)) continue;
                     await handleIncoming(line, msg, sock);
                 } catch (e) {
                     logger.error({ err: e.message, line }, 'Error procesando un mensaje');
@@ -1638,6 +1651,98 @@ function cicloVigente(st) {
         return null;
     }
     return st.cicloDeCortes;
+}
+
+/**
+ * LA COPIA ILEGIBLE DE UN MENSAJE PROPIO ES LO QUE TUMBA LA LINEA.
+ *
+ * EL FALLO (medido el 12-ago-2026 sobre 40 h de registro)
+ * ------------------------------------------------------
+ * Cuando una persona del equipo le contesta a un cliente DESDE SU CELULAR,
+ * WhatsApp manda una copia de ese mensaje a todos los aparatos vinculados,
+ * incluido este puente. El puente NO puede abrirla: va cifrada para la sesion
+ * del telefono y la llave no es suya. Nunca lo va a poder. No es un fallo
+ * pasajero, es como funciona el multi-dispositivo.
+ *
+ * Baileys, al no poder descifrar, hace lo unico que sabe: PEDIR EL REENVIO
+ * (`messages-recv.js:655-661`, hasta `maxMsgRetryCount` = 5 veces). El mensaje
+ * nunca se resuelve, se queda PENDIENTE del lado de WhatsApp, y al rato
+ * WhatsApp termina el flujo entero de esa linea.
+ *
+ * LOS NUMEROS QUE LO PRUEBAN (40 h, linea_1 y linea_3, ambas oficiales):
+ *   - 691 mensajes distintos no se pudieron descifrar; 946 intentos.
+ *   - El 95 % eran `fromMe` (copias de lo que mando el propio equipo).
+ *   - SE RECUPERARON: 0. Ni uno.
+ *   - 16 cortes de linea. En los 16, el mensaje que llegaba en el
+ *     `stream:error` del instante exacto del corte era uno de esos
+ *     ilegibles, y `fromMe` en los 16. **16 de 16, el 100 %.**
+ *   - De noche, sin nadie escribiendo a mano: 14 h seguidas sin un corte.
+ *
+ * LO QUE ESTABA ESCRITO Y ERA FALSO
+ * ---------------------------------
+ * El comentario de `CB:stream:error` (mas arriba) concluia que el mensaje
+ * atascado era SIEMPRE EL MISMO y vivia en la cola de esa sesion, asi que
+ * «se arregla re-vinculando esa linea... no hay nada que tocar aqui».
+ * Medido el 12-ago: **el id es DISTINTO en cada uno de los 16 cortes**, y
+ * caen LAS DOS lineas. No hay un mensaje atascado: hay una fabrica de
+ * mensajes ilegibles, alimentada por el equipo contestando a mano. Seguir
+ * ese consejo habria significado desvincular y re-escanear las dos lineas
+ * OFICIALES —lo que el proyecto tiene prohibido— para nada, porque a la hora
+ * siguiente vuelve a pasar con otro mensaje.
+ *
+ * EL ARREGLO, Y POR QUE ESTE
+ * --------------------------
+ * El mismo principio que ya funciono el 03-ago con los estados y los grupos:
+ * a lo que no se puede abrir se le ACUSA RECIBO en vez de pedirlo otra vez.
+ * Un mensaje acusado deja de estar pendiente y WhatsApp no vuelve a mandarlo,
+ * asi que nunca llega a terminar el flujo. Se usa el MISMO `sendReceipt` con
+ * el MISMO tipo `sender` que usa Baileys en su camino de exito para un
+ * mensaje propio (`messages-recv.js:679-690`): no es un mensaje inventado.
+ *
+ * NO SE PIERDE NADA, Y ESTA MEDIDO. De esas copias hoy no llega ninguna
+ * (0 de 691) y `handleIncoming` ya las descarta en su `if (!msg.message)`.
+ * Acusarlas no le quita al panel nada que hoy tenga.
+ *
+ * SOLO SE TOCA LO PROPIO. Un mensaje de CLIENTE que no se pudo abrir se deja
+ * seguir su camino normal y conserva sus reintentos: puede curarse, y
+ * callarlo seria perder un cliente en silencio — el error que este proyecto
+ * ya cometio enumerando las lineas una por una.
+ *
+ * @returns {boolean} true si era una copia propia ilegible y ya se atendio.
+ */
+async function acusarCopiaPropiaIlegible(line, msg, sock) {
+    // CIPHERTEXT: llego cifrado y no se pudo abrir.
+    if (msg?.messageStubType !== proto.WebMessageInfo.StubType.CIPHERTEXT) return false;
+    // Solo las copias de lo que enviamos nosotros.
+    if (msg?.key?.fromMe !== true) return false;
+
+    const jid = msg?.key?.remoteJid;
+    const id = msg?.key?.id;
+    if (!jid || !id) return false;
+
+    try {
+        // Igual que Baileys en su camino de exito: en un chat de persona el
+        // participante es el autor; en los demas, el que traiga la clave.
+        const participante = isJidUser(jid)
+            ? (msg.key.participant || sock?.user?.id)
+            : msg.key.participant;
+        await sock.sendReceipt(jid, participante, [id], 'sender');
+        metrics.copias_propias_acusadas++;
+        logger.info(
+            { line, id, jid },
+            'Copia propia ilegible: se le acusa recibo a WhatsApp para que deje de reenviarla'
+        );
+    } catch (e) {
+        // Que falle el acuse no puede tumbar nada: se anota y se sigue.
+        metrics.copias_propias_sin_acusar++;
+        logger.warn(
+            { line, id, err: e?.message },
+            'No se pudo acusar la copia propia ilegible'
+        );
+    }
+    // Sin `message` no hay nada que reenviar a la app: `handleIncoming` la
+    // descartaria igual en su `if (!msg.message)`.
+    return true;
 }
 
 async function handleIncoming(line, msg, sock) {
