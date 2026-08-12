@@ -334,5 +334,14 @@ export function resumirMensaje(
     return { icono: '🎤', texto: !texto || esMarcaInterna ? 'Nota de voz' : texto };
   }
 
+  if (media.esDocumento) {
+    // En la lista de chats un PDF salia como «[Archivo adjunto]», el texto
+    // crudo, igual que un ZIP y que una foto sin pie: desde la bandeja no habia
+    // forma de saber que le habian mandado. El nombre de verdad no se puede
+    // usar —el puente lo guarda como `document_<id>.bin`— pero el TIPO si es
+    // fiable, y es lo que de verdad distingue un archivo de otro de un vistazo.
+    return { icono: '📄', texto: media.etiquetaArchivo === 'ARCHIVO' ? 'Archivo' : media.etiquetaArchivo };
+  }
+
   return { icono: '', texto };
 }

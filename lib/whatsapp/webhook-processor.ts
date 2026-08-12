@@ -821,6 +821,61 @@ export async function processInboundMessage(
         return { success: true, conversationId };
       }
 
+      /**
+       * SI UNA PERSONA YA ESTA ATENDIENDO ESTE CHAT, EL BOT SE CALLA.
+       *
+       * QUE PASO (11-ago-2026). Con clientes ya en la linea, el bot contesto
+       * POR ENCIMA de Oscar y Adriana: repitio parrafos y los contradijo, y el
+       * dueno tuvo que pedir de urgencia que se callara. No fue que el bot
+       * ignorara una senal: **la senal no existia**. Ningun punto del camino
+       * miraba si un humano estaba respondiendo.
+       *
+       * COMO SE SABE QUE LO ESCRIBIO UNA PERSONA, Y POR QUE ASI. Se miran DOS
+       * cosas, no una:
+       *   - `sender === 'human'`, que es lo correcto de aqui en adelante.
+       *   - `raw.data.message.fromMe === true`, que funciona TAMBIEN sobre los
+       *     mensajes ya guardados. Ese dato dice que el mensaje entro por el
+       *     webhook, o sea que salio de la linea desde OTRO aparato: un
+       *     celular. Lo que manda el bot no pasa por ahi —se guarda por su
+       *     propio camino— asi que no puede confundirse consigo mismo.
+       * Se usan las dos porque hasta hoy TODO saliente se firmaba 'bot'
+       * (617 mensajes, cero 'human', con el interruptor apagado). La segunda
+       * senal es la que hace que esto funcione desde el primer minuto, sin
+       * depender de que alguien corra una correccion del historial.
+       *
+       * LIMITE HONESTO: solo ve lo que el sistema recibio. Las respuestas que
+       * el equipo manda desde su celular llegan como una copia cifrada que el
+       * puente a veces no puede abrir (691 en 40 h, medido el 12-ago). Esas no
+       * estan en la base y este freno no las ve. Es una razon mas para
+       * resolver esa perdida, no un motivo para no poner el freno: con las que
+       * SI llegan —531 de ellas— ya evita la mayoria de los pisotones.
+       *
+       * FALLA HACIA EL LADO SEGURO. Si la consulta falla, `humanoAtendiendo`
+       * queda en false y el bot responde: un error de red no puede dejar mudo
+       * al bot. Y si acierta, el que se calla es el bot, nunca la persona.
+       */
+      const VENTANA_HUMANO_MIN = 15;
+      const desdeCuando = new Date(Date.now() - VENTANA_HUMANO_MIN * 60_000).toISOString();
+      const { data: salientesRecientes } = await (supabase as any)
+        .from('messages')
+        .select('created_at, sender, raw')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'outbound')
+        .gte('created_at', desdeCuando)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      const humanoAtendiendo = (salientesRecientes || []).some(
+        (m: any) => m?.sender === 'human' || m?.raw?.data?.message?.fromMe === true,
+      );
+
+      if (humanoAtendiendo) {
+        logger.warn('Un humano esta atendiendo este chat: el bot no responde', {
+          orgId, conversationId, lineKey, ventanaMin: VENTANA_HUMANO_MIN,
+        });
+        return { success: true, conversationId };
+      }
+
       if (agentConfig) {
         const agentResponse = await runAgent({
           orgId,
