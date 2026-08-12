@@ -702,6 +702,59 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### El portero del bot — lo que dicen los datos, y las tres hipótesis que ya se cayeron
+Diagnóstico del 12-ago-2026 sobre 72 conversaciones reales leídas enteras.
+Todavía **no hay código**: esto es la base sobre la que se diseñará.
+
+**LA REGLA QUE PIDIÓ EL DUEÑO, en sus palabras:** el bot cotiza a un cliente
+nuevo **si el producto que busca es específico** o el chat trae una
+característica clara (nombre exacto del producto, cantidad). Y si el cliente
+pide algo —«agendas»— y **a los 3 o 4 minutos nadie contesta**, el bot **pide
+los datos que faltan** («¿qué cantidad?») para que el cliente no se vaya y la
+venta no se enfríe. No es solo responder: es **sostener la conversación**.
+
+**LAS DOS CONDICIONES QUE HABILITAN AL BOT** (las dos, no una):
+1. Nadie del equipo contestó en unos minutos.
+2. La respuesta está en el catálogo del panel (precio, mínimo, medida, foto).
+Si falta una, el bot se calla. Y si el cliente pregunta algo que no está en el
+catálogo, se calla también.
+
+**POR QUÉ ESTO NO PUEDE REPETIR EL 11-AGO:** aquel día el bot habló *mientras*
+Oscar y Adriana escribían. Este solo abre la boca cuando lleva minutos sin que
+nadie conteste.
+
+**TRES HIPÓTESIS QUE SE CAYERON, y hay que no volver a levantarlas:**
+- *«El 58 % de los chats los abre ZOOM, ahí el bot no pinta nada.»* Falsa dos
+  veces: las conversaciones **vienen cortadas** (las líneas llevan un día), y
+  que ZOOM abra un chat no impide que el cliente pregunte algo respondible.
+- *«La brecha grande es el relevo entre asesores.»* Falsa: ese día Adriana
+  faltó por salud. Un día excepcional no es un patrón.
+- *«Solo el 8 % de los primeros mensajes es accionable.»* Inválida: el «primer
+  mensaje» medido es el primero **grabado**, no el real.
+
+**DÓNDE EL BOT NO SE METE** (42 de los 153 momentos): fechas de entrega
+(cola de producción), **existencias** —las agendas «aparecían en sistema» y no
+estaban en bodega—, artes de trabajos viejos, y precios negociados.
+
+**EL DATO QUE MÁS DUELE:** un cliente escribió *«Es un metro y Adri me lo cobra
+8 mil para que puedas hacer la orden»*. El cliente le dictó la tarifa a ZOOM.
+
+### Cómo son los mensajes de los clientes de ZOOM
+Medido el 12-ago-2026 sobre 822 mensajes de clientes.
+
+- **1 de cada 5 no es texto**: 9 % fotos, 8 % notas de voz, 3 % documentos.
+- **Escriben cortísimo**: mediana de **29 letras**; el 31 % no pasa de 15.
+- **60 % son afirmaciones, no preguntas.** Un portero que espere un signo de
+  interrogación se pierde seis de cada diez mensajes.
+- **Las palabras que mandan** son logo, color, diseño, muestra, material, tela,
+  DTF — el negocio es de **personalización**, no de escoger de una lista.
+- **Le escriben a una persona**: «laura» (23), «adriana» (22), «adri» (14). Si
+  el bot contesta, tiene que ser esa asesora, no «el asistente».
+- Solo el **26 %** de los mensajes de texto nombra algo que exista en el
+  catálogo, y de esas coincidencias buena parte son palabras sueltas
+  («metro», «unidades»), no productos.
+
+
 ### La copia ilegible del propio equipo — lo que tumbaba las líneas cada 50 minutos
 `wa-server-baileys/server.js` (`acusarCopiaPropiaIlegible`).
 
