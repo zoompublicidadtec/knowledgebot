@@ -496,7 +496,10 @@ export async function processInboundMessage(
               .filter((m: any) => String(m.id) !== String(message.messageId))
               .map((m: any) => {
               const direction = m.fromMe ? 'outbound' : 'inbound';
-              const sender = m.fromMe ? 'bot' : 'contact';
+              // Historial de ANTES de conectar la linea: son conversaciones que
+              // atendio el equipo a mano. Firmarlas como del bot era falso de
+              // plano; 'human' es lo cierto en la practica totalidad.
+              const sender = m.fromMe ? 'human' : 'contact';
               
               let content = m.body || '';
               if (!content && m.type && m.type !== 'chat') {
@@ -683,7 +686,34 @@ export async function processInboundMessage(
 
     // 4. Insert message (idempotent)
     const direction = message.fromMe ? 'outbound' : 'inbound';
-    const sender = message.fromMe ? 'bot' : 'contact';
+
+    /**
+     * SI LLEGA POR AQUI Y SALIO DE NUESTRA LINEA, LO ESCRIBIO UNA PERSONA.
+     *
+     * EL FALLO QUE ESTO CIERRA (medido el 12-ago-2026)
+     * -----------------------------------------------
+     * Aqui decia `message.fromMe ? 'bot' : 'contact'`, asi que TODO mensaje
+     * saliente quedaba firmado por el bot. Contado en la base ese dia:
+     * **617 mensajes firmados 'bot' y CERO firmados 'human'** — con el
+     * interruptor general APAGADO desde el 11-ago. El bot no escribio ni uno:
+     * los escribieron Oscar y Adriana a mano desde su celular.
+     *
+     * POR QUE IMPORTA, Y NO ES UN DETALLE:
+     *   1. El historial es el material con el que se va a entrenar el bot, y
+     *      le estaba diciendo que 617 respuestas humanas eran suyas.
+     *   2. Sin saber quien escribio, es IMPOSIBLE la regla que falta antes de
+     *      encender: «no contestes si un humano ya esta atendiendo este chat».
+     *      El codigo creia que el bot escribia todo.
+     *
+     * POR QUE 'human' ES CORRECTO AQUI. Este camino es el del webhook: son
+     * mensajes que WhatsApp nos reenvia porque salieron de la linea desde OTRO
+     * aparato. Lo que manda el bot NO pasa por aqui: se guarda en su propio
+     * sitio con su `wa_message_id` (mas abajo, y en el reparto de fotos), y si
+     * WhatsApp devuelve el eco de ese mismo mensaje, el upsert choca por
+     * `wa_message_id` y NO lo pisa. O sea: el bot conserva su firma, y lo que
+     * llega por aqui es de una persona.
+     */
+    const sender = message.fromMe ? 'human' : 'contact';
 
     // `ignoreDuplicates` no devuelve error ante conflicto, así que pedimos la
     // fila de vuelta: si llega vacía, este mensaje ya se procesó antes y el
