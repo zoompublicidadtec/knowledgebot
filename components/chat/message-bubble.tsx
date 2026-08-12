@@ -53,7 +53,7 @@ export function MessageBubble({
   const time = horaDelMensaje(message.created_at);
 
   const media = leerMedia(message);
-  const { esImagen, esAudio, esVideo, esSticker, mimeType, declaredType, sizeKB, r2Key, directUrl, mediaError } =
+  const { esImagen, esAudio, esVideo, esSticker, esDocumento, etiquetaArchivo, mimeType, declaredType, sizeKB, r2Key, directUrl, mediaError } =
     media;
 
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
@@ -95,6 +95,7 @@ export function MessageBubble({
   const hayImagen = esImagen && !!src;
   const hayAudio = esAudio && !!src;
   const hayVideo = esVideo && !!src;
+  const hayDocumento = esDocumento && !!src;
 
   // El puente incrusta la cita dentro del texto porque el agente necesita el
   // referente; aqui se quita, que la cita ya se pinta arriba en su propia caja.
@@ -280,6 +281,31 @@ export function MessageBubble({
               Tu navegador no soporta la reproducción de audio.
             </audio>
           </div>
+        )}
+
+        {/* Documento: PDF, ZIP, Excel…
+            El archivo siempre estuvo descargado y guardado —los 48 de la base
+            tienen su clave—, pero el panel no tenía rama para documento, así
+            que en pantalla no aparecía nada que se pudiera abrir. Mismo fallo
+            que tuvo el video. Se pinta como un botón, no como un párrafo. */}
+        {hayDocumento && (
+          <a
+            href={src!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 mb-2 flex items-center gap-2.5 px-2.5 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors no-underline"
+          >
+            <span className="text-lg leading-none">📄</span>
+            <span className="flex flex-col leading-tight">
+              <span className="text-xs font-semibold tracking-wide">{etiquetaArchivo}</span>
+              {sizeKB ? (
+                <span className="text-[10px] opacity-60">
+                  {sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}
+                </span>
+              ) : null}
+            </span>
+            <span className="ml-auto text-[10px] uppercase tracking-wider opacity-70">Abrir</span>
+          </a>
         )}
 
         {/* Transcripción del audio */}

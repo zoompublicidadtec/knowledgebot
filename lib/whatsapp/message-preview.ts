@@ -32,6 +32,21 @@ export interface MediaDelMensaje {
    * como una foto y no lo es.
    */
   esSticker: boolean;
+  /**
+   * PDF, ZIP, Excel… todo lo que no es imagen, audio ni video.
+   *
+   * EL FALLO QUE ESTO CIERRA (medido el 12-ago-2026)
+   * ------------------------------------------------
+   * El puente descarga los documentos y los guarda bien: los **48** que hay en
+   * la base tienen su clave de descarga, cero perdidos, y hasta con la
+   * extension correcta (`media/2026/08/xxxx.pdf`). Pero el panel solo sabia
+   * clasificar imagen, audio y video: un PDF no era NADA, asi que la burbuja no
+   * pintaba nada y el dueno veia «[Archivo adjunto]» sin forma de abrirlo.
+   * Es el MISMO fallo que ya paso con el video, una casilla mas abajo.
+   */
+  esDocumento: boolean;
+  /** Etiqueta corta para la burbuja: «PDF», «ZIP», «EXCEL»… */
+  etiquetaArchivo: string;
   mimeType: string;
   /** El tipo que declara el puente: `image`, `ptt`, `audio`… */
   declaredType: string;
@@ -95,6 +110,31 @@ export function citaDesdeMensaje(
   };
 }
 
+/**
+ * Etiqueta corta de un archivo, para la burbuja del chat.
+ *
+ * Se mira primero el mimetype, que es el dato fiable. Si no dice nada util se
+ * cae a la extension de la clave guardada, que SI la conserva. El nombre que
+ * trae el puente no sirve para esto: guarda todo como `document_<id>.bin`.
+ *
+ * Pura a proposito: la usan la burbuja y la vista previa, y asi no se
+ * desincronizan dos copias parecidas.
+ */
+export function etiquetaDeArchivo(mimeType: string, claveOnombre: string): string {
+  const m = (mimeType || '').toLowerCase();
+  if (m.includes('pdf')) return 'PDF';
+  if (m.includes('zip') || m.includes('compressed') || m.includes('rar')) return 'ZIP';
+  if (m.includes('spreadsheet') || m.includes('excel')) return 'EXCEL';
+  if (m.includes('wordprocessing') || m.includes('msword')) return 'WORD';
+  if (m.includes('presentation') || m.includes('powerpoint')) return 'PPT';
+  if (m.startsWith('text/')) return 'TEXTO';
+
+  const punto = (claveOnombre || '').lastIndexOf('.');
+  const ext = punto > -1 ? (claveOnombre || '').slice(punto + 1).toUpperCase() : '';
+  if (ext && ext !== 'BIN' && ext.length <= 5) return ext;
+  return 'ARCHIVO';
+}
+
 /** Clasifica el adjunto de un mensaje. No decide nada de como se pinta. */
 export function leerMedia(message: Pick<Message, 'raw'>): MediaDelMensaje {
   const rawObj = message.raw as any;
@@ -107,9 +147,18 @@ export function leerMedia(message: Pick<Message, 'raw'>): MediaDelMensaje {
   const mimeType: string = media?.mimetype || '';
   const declaredType: string = inbound?.mediaType || inbound?.type || outboundMedia?.type || '';
 
+  const esImagen = mimeType.startsWith('image/') || declaredType === 'image' || declaredType === 'sticker';
+  const esAudio = mimeType.startsWith('audio/') || declaredType === 'ptt' || declaredType === 'audio';
+  const esVideo = mimeType.startsWith('video/') || declaredType === 'video';
+  // Documento = hay archivo y no es ninguno de los tres de arriba. Se define
+  // por descarte a proposito: asi un formato nuevo que nadie previo aparece
+  // como archivo descargable en vez de desaparecer de la pantalla.
+  const hayArchivo = !!media || !!outboundMedia;
+  const esDocumento = hayArchivo && !esImagen && !esAudio && !esVideo;
+
   return {
-    esImagen: mimeType.startsWith('image/') || declaredType === 'image' || declaredType === 'sticker',
-    esAudio: mimeType.startsWith('audio/') || declaredType === 'ptt' || declaredType === 'audio',
+    esImagen,
+    esAudio,
     /**
      * EL FALLO QUE ESTO CIERRA
      * ------------------------
@@ -119,7 +168,9 @@ export function leerMedia(message: Pick<Message, 'raw'>): MediaDelMensaje {
      * almacenamiento… y en pantalla no aparecía nada. El dueño veía la
      * burbuja y no entendía qué le habían mandado.
      */
-    esVideo: mimeType.startsWith('video/') || declaredType === 'video',
+    esVideo,
+    esDocumento,
+    etiquetaArchivo: etiquetaDeArchivo(mimeType, media?.r2_key || media?.filename || ''),
     esSticker: declaredType === 'sticker' || mimeType === 'image/webp',
     mimeType,
     declaredType,
