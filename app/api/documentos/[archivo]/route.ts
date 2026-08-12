@@ -37,7 +37,7 @@ const DOCUMENTOS: Record<string, { archivo: string; soloDueño: boolean }> = {
 const RAIZ = '/data/documentos';
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ archivo: string }> },
 ) {
   try {
@@ -68,8 +68,9 @@ export async function GET(
     }
 
     const ruta = path.join(RAIZ, doc.archivo);
+    let info;
     try {
-      await stat(ruta);
+      info = await stat(ruta);
     } catch {
       logger.warn('Documento del panel no encontrado en disco', { archivo: doc.archivo, ruta });
       return new NextResponse(
@@ -82,12 +83,37 @@ export async function GET(
       );
     }
 
+    /**
+     * SE VUELVE A PEDIR SIEMPRE, PERO SOLO SE BAJA SI CAMBIO.
+     *
+     * Aqui decia `Cache-Control: no-store`, que significa «no guardes nada»:
+     * **cada visita se bajaba el archivo entero otra vez**. Para el manual eso
+     * son 4 MB por visita, y estaba pasando 19 veces por cada 4.000 peticiones.
+     *
+     * `no-store` se puso por el grafo, que se regenera con cada cambio de
+     * codigo y no puede quedarse viejo. Pero esa preocupacion se resuelve mejor
+     * con una **huella**: se calcula con el tamano y la fecha del archivo, y el
+     * navegador la manda de vuelta en la siguiente visita. Si el archivo no
+     * cambio, la respuesta son ~200 bytes en vez de 4 MB. Si cambio —el grafo
+     * regenerado, el manual reescrito— la huella es otra y se baja entero.
+     *
+     * `private` porque el documento va detras de una sesion: se guarda en el
+     * navegador del dueno, nunca en un intermediario.
+     */
+    const huella = `"${info.size}-${Math.round(info.mtimeMs)}"`;
+    if (req.headers.get('if-none-match') === huella) {
+      return new NextResponse(null, {
+        status: 304,
+        headers: { ETag: huella, 'Cache-Control': 'private, no-cache' },
+      });
+    }
+
     const html = await readFile(ruta, 'utf-8');
     return new NextResponse(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        // Sin caché: el grafo cambia con cada regeneración.
-        'Cache-Control': 'no-store',
+        ETag: huella,
+        'Cache-Control': 'private, no-cache',
       },
     });
   } catch (err) {

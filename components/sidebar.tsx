@@ -102,17 +102,54 @@ export function Sidebar({ orgName }: { orgName?: string }) {
           {navItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                target={(item as any).externo ? '_blank' : undefined}
-                rel={(item as any).externo ? 'noreferrer' : undefined}
-                className={`sidebar-link ${isActive ? 'active' : ''}`}
-                onClick={() => setMobileOpen(false)}
-              >
-                <item.icon size={20} weight={isActive ? 'fill' : 'regular'} />
-                {item.label}
-              </Link>
+              /**
+               * UN DOCUMENTO NO ES UNA PANTALLA: VA CON <a>, NUNCA CON <Link>.
+               *
+               * EL FALLO QUE ESTO CIERRA (medido el 12-ago-2026)
+               * -----------------------------------------------
+               * `Manual` apunta a `/api/documentos/manual`, que devuelve un
+               * archivo de **4.104.295 bytes**. Estaba pintado con `<Link>`, y
+               * Next.js **precarga** los `<Link>` solo: con pasar el raton por
+               * encima —y en el celular, con que el boton este a la vista— el
+               * navegador se bajaba los 4 MB **sin que nadie hiciera clic**.
+               *
+               * En el registro de nginx: **19 descargas de esa ruta en las
+               * ultimas 4.000 peticiones = unos 76 MB**, por el mismo cable
+               * HTTP/2 que usa todo el panel. Con eso ocupado, entrar a un chat
+               * se siente colgado, y la consola no dice nada porque no hay
+               * ningun error: las peticiones estan haciendo fila. Es el mismo
+               * mecanismo del 04-ago-2026 (precarga del menu + una pagina
+               * pesada), solo que la pagina pesada ahora es **seis veces mas
+               * grande** que aquella de 675 KB.
+               *
+               * Con `<a>` no hay precarga posible: el navegador solo lo pide
+               * cuando el dueno hace clic, que es lo que siempre se quiso.
+               * Un `<Link>` a una ruta de API que ademas abre en otra pestana
+               * no aportaba nada: no hay navegacion de cliente que acelerar.
+               */
+              (item as any).externo ? (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`sidebar-link ${isActive ? 'active' : ''}`}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <item.icon size={20} weight={isActive ? 'fill' : 'regular'} />
+                  {item.label}
+                </a>
+              ) : (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`sidebar-link ${isActive ? 'active' : ''}`}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <item.icon size={20} weight={isActive ? 'fill' : 'regular'} />
+                  {item.label}
+                </Link>
+              )
             );
           })}
         </nav>
