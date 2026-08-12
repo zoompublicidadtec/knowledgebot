@@ -209,6 +209,33 @@ async function dispatchRequestedPhotos(params: {
   }
 }
 
+/**
+ * UN NOMBRE DE PANTALLA NO ES EL NOMBRE DE UN CLIENTE.
+ *
+ * EL FALLO QUE ESTO CIERRA (medido el 12-ago-2026: 38 de 73 contactos).
+ * `lib/whatsapp/adapter.ts` ponia el literal 'Tú' como `customerName` de todo
+ * mensaje SALIENTE, y aqui se guardaba como nombre del CONTACTO. El resultado:
+ * 38 conversaciones llamadas «Tú» en la bandeja, sin forma de saber de quien
+ * era cada una.
+ *
+ * Y se quedaba pegado PARA SIEMPRE, que es la mitad peor del fallo: el nombre
+ * solo se actualizaba «si estaba vacio», y 'Tú' no esta vacio. El nombre real
+ * llegaba en el siguiente mensaje del cliente y se descartaba.
+ *
+ * La raiz ya esta cerrada en el adapter. Esta guarda existe para que las fichas
+ * YA rotas se curen solas en cuanto el cliente vuelva a escribir.
+ *
+ * NO es una lista negra de palabras: es UN literal que este sistema escribio a
+ * proposito y que hay que desaprender. El nombre de un cliente puede ser
+ * cualquier cosa —hay uno que se llama «⚙️⚙️»— y no se juzga ninguno mas.
+ */
+function esNombreDeVerdad(n: unknown): boolean {
+  const t = String(n ?? '').trim();
+  if (!t) return false;
+  const bajo = t.toLowerCase();
+  return bajo !== 'tú' && bajo !== 'tu';
+}
+
 export async function processInboundMessage(
   orgId: string,
   message: NormalizedMessage,
@@ -302,13 +329,17 @@ export async function processInboundMessage(
 
     if (existingContact) {
       contactId = existingContact.id;
-      contactName = existingContact.full_name || message.customerName || null;
+      contactName = (esNombreDeVerdad(existingContact.full_name) ? existingContact.full_name : null)
+        || (esNombreDeVerdad(message.customerName) ? String(message.customerName).trim() : null);
       contactPhoneKey = existingContact.wa_phone || message.from;
 
       const cambios: Record<string, unknown> = {};
       // Update name if it was empty but we have it now
-      if (!existingContact.full_name && message.customerName) {
-        cambios.full_name = message.customerName;
+      // Un nombre de verdad reemplaza a un 'Tú' heredado. Antes decia
+      // `!existingContact.full_name`, y como 'Tú' no esta vacio, el nombre real
+      // no entraba nunca.
+      if (!esNombreDeVerdad(existingContact.full_name) && esNombreDeVerdad(message.customerName)) {
+        cambios.full_name = String(message.customerName).trim();
       }
       if (telefonoReal && (existingContact.metadata as any)?.telefono !== telefonoReal) {
         cambios.metadata = { ...((existingContact.metadata as any) || {}), telefono: telefonoReal };
@@ -322,7 +353,7 @@ export async function processInboundMessage(
         .insert({
           organization_id: orgId,
           wa_phone: message.from,
-          full_name: message.customerName || null,
+          full_name: esNombreDeVerdad(message.customerName) ? String(message.customerName).trim() : null,
           metadata: telefonoReal ? { telefono: telefonoReal } : {},
         })
         .select('id')
@@ -333,7 +364,7 @@ export async function processInboundMessage(
         return { success: false };
       }
       contactId = newContact.id;
-      contactName = message.customerName || null;
+      contactName = esNombreDeVerdad(message.customerName) ? String(message.customerName).trim() : null;
     }
 
     // 2. Resolver la conversación, que es por contacto Y POR LÍNEA.

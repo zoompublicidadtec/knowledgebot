@@ -165,7 +165,9 @@ export function mostrarContacto(contacto: ContactRow | null | undefined): {
   const brutoEsTelefono = !bruto.includes('@lid') && /^\d{7,15}$/.test(digitosBrutos);
 
   const telefono = real || (brutoEsTelefono ? digitosBrutos : '');
-  const nombre = contacto?.full_name?.trim() || telefono || 'Desconocido';
+  // «Desconocido» suena a que el sistema fallo. No fallo: es un contacto del
+  // que todavia no sabemos como se llama, y en cuanto escriba se sabra.
+  const nombre = contacto?.full_name?.trim() || telefono || 'Sin nombre';
 
   return { nombre, telefono };
 }

@@ -197,7 +197,25 @@ export function createOpenWAAdapter(config: WhatsAppConfig, lineKey?: string | n
           timestamp: Date.now(),
           raw: body,
           media: media || null,
-          customerName: fromMe ? 'Tú' : (message.customerName as string || ''),
+          /**
+           * EL «Tú» ES DE LA PANTALLA, NO DEL CONTACTO.
+           *
+           * Aqui decia `fromMe ? 'Tú' : ...`, asi que TODO mensaje saliente
+           * —los que escriben Oscar, Adriana o el bot desde la linea— traia el
+           * literal 'Tú' como nombre del cliente, y el webhook lo guardaba en su
+           * ficha. Medido el 12-ago-2026: **38 de 73 contactos** se llamaban
+           * «Tú» en la bandeja y el dueno no sabia de quien era cada chat.
+           *
+           * El «Tú» del globo del chat sale de otro sitio y no se toca:
+           * `app/(app)/conversaciones/[id]/client-page.tsx:291`
+           * (`botActive ? 'IA' : 'Tú'`). Comprobado que nadie mas lee
+           * `customerName` para pintar: solo lo usa el webhook para la ficha.
+           *
+           * En un mensaje SALIENTE no hay nombre de cliente que aprender: el
+           * `pushName` que llega es el de NUESTRA linea. Vacio es la respuesta
+           * honesta, y el webhook ya sabe no pisar un nombre bueno con vacio.
+           */
+          customerName: fromMe ? '' : (message.customerName as string || ''),
           // Solo tiene sentido para mensajes entrantes: en los salientes el
           // "remitente" somos nosotros.
           senderPhone: fromMe ? '' : ((message.senderPhone as string) || ''),
