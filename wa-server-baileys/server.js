@@ -189,6 +189,11 @@ const metrics = {
     // cortes cada ~50 min desaparecen, el arreglo esta trabajando.
     copias_propias_acusadas: 0,
     copias_propias_sin_acusar: 0,
+    // Cuantas copias ilegibles se VIERON, se hayan podido acusar o no. Separar
+    // «vistas» de «acusadas» es lo que permite distinguir «no llegan a mi
+    // funcion» de «llegan y el acuse falla». Sin esa separacion, el 12-ago el
+    // contador marcaba 0 y no habia forma de saber cual de las dos pasaba.
+    copias_propias_vistas: 0,
     webhooks_sent: 0,
     webhooks_suppressed_shadow: 0,
     webhooks_failed: 0,
@@ -1478,13 +1483,36 @@ async function startSession(line, motivo = 'inicial') {
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (esViejo()) return;
-            if (type !== 'notify') return;
+
+            /**
+             * EL FILTRO DE `type` IBA ANTES, Y POR ESO EL FRENO NO SERVIA.
+             *
+             * Primera version, desplegada el 12-ago a las 09:19: el acuse se
+             * llamaba DESPUES de `if (type !== 'notify') return`. A los 82
+             * minutos el contador seguia en **0 acusadas** mientras los fallos
+             * de descifrado subian de 11 a 51 y caia una linea. El arreglo no
+             * estaba mal escrito: **no se estaba ejecutando**.
+             *
+             * Baileys emite `messages.upsert` con `type = 'append'` para lo que
+             * WhatsApp REENVIA (`upsertMessage(msg, node.attrs.offline ?
+             * 'append' : 'notify')`, `messages-recv.js`), y una copia de un
+             * mensaje que mando el equipo desde su celular es exactamente eso.
+             * El filtro de 'notify' —que esta bien para no procesar historial
+             * como si fuera un cliente escribiendo— dejaba fuera justo los
+             * mensajes que hay que acusar.
+             *
+             * Ahora el acuse corre para TODOS los tipos y el filtro se aplica
+             * despues, solo a lo que va al agente. Acusar una copia ilegible es
+             * seguro en cualquier tipo: no la abre, no la reenvia y no la
+             * guarda; solo le dice a WhatsApp que deje de mandarla.
+             */
             for (const msg of messages) {
                 try {
-                    // Antes que nada: si es la copia ilegible de un mensaje
-                    // propio, se le acusa recibo y no sigue. Es lo que
-                    // tumbaba la linea cada ~50 min.
-                    if (await acusarCopiaPropiaIlegible(line, msg, sock)) continue;
+                    if (await acusarCopiaPropiaIlegible(line, msg, sock, type)) continue;
+                    // El resto del camino sigue siendo solo para lo que llega
+                    // en vivo: el historial no se atiende como si fuera un
+                    // cliente escribiendo ahora.
+                    if (type !== 'notify') continue;
                     await handleIncoming(line, msg, sock);
                 } catch (e) {
                     logger.error({ err: e.message, line }, 'Error procesando un mensaje');
@@ -1710,7 +1738,7 @@ function cicloVigente(st) {
  *
  * @returns {boolean} true si era una copia propia ilegible y ya se atendio.
  */
-async function acusarCopiaPropiaIlegible(line, msg, sock) {
+async function acusarCopiaPropiaIlegible(line, msg, sock, tipoDeEvento) {
     // CIPHERTEXT: llego cifrado y no se pudo abrir.
     if (msg?.messageStubType !== proto.WebMessageInfo.StubType.CIPHERTEXT) return false;
     // Solo las copias de lo que enviamos nosotros.
@@ -1719,6 +1747,12 @@ async function acusarCopiaPropiaIlegible(line, msg, sock) {
     const jid = msg?.key?.remoteJid;
     const id = msg?.key?.id;
     if (!jid || !id) return false;
+
+    // Se cuenta ANTES de intentar el acuse: asi «vistas» dice cuantas llegaron
+    // hasta aqui y «acusadas» cuantas se pudieron atender. Si vistas sube y
+    // acusadas no, el problema es el acuse; si no sube ninguna, es que estos
+    // mensajes no llegan a esta funcion y hay que buscar mas arriba.
+    metrics.copias_propias_vistas++;
 
     try {
         // Igual que Baileys en su camino de exito: en un chat de persona el
@@ -1729,7 +1763,7 @@ async function acusarCopiaPropiaIlegible(line, msg, sock) {
         await sock.sendReceipt(jid, participante, [id], 'sender');
         metrics.copias_propias_acusadas++;
         logger.info(
-            { line, id, jid },
+            { line, id, jid, tipoDeEvento },
             'Copia propia ilegible: se le acusa recibo a WhatsApp para que deje de reenviarla'
         );
     } catch (e) {
