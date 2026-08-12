@@ -702,6 +702,95 @@ ls /root/knowledgebot/backups/products_*.json
 
 ## 12. Índice de mecanismos — qué existe, para qué sirve y qué se midió
 
+### La copia ilegible del propio equipo — lo que tumbaba las líneas cada 50 minutos
+`wa-server-baileys/server.js` (`acusarCopiaPropiaIlegible`).
+
+Cuando una persona del equipo contesta **desde su celular**, WhatsApp manda una
+copia de ese mensaje a todos los aparatos vinculados, incluido el puente. El
+puente **no puede abrirla**: va cifrada para la sesión del teléfono. No es un
+fallo pasajero, es como funciona el multi-dispositivo.
+
+Baileys, al no descifrar, pide el reenvío hasta 5 veces. El mensaje nunca se
+resuelve, se queda pendiente del lado de WhatsApp, y al rato WhatsApp **termina
+el flujo entero de esa línea**.
+
+Medido el 12-ago-2026 sobre 40 h: 946 fallos, **95 % `fromMe`**, **0
+recuperados**, y **16 de 16 cortes** causados por uno de ellos.
+
+El arreglo es el mismo principio del 03-ago con los estados: **acusar recibo**
+en vez de pedir otra vez. Solo se toca lo propio; un mensaje de cliente que no
+se pueda abrir conserva sus reintentos.
+
+**Cuidado con lo que decía el código antes:** que el mensaje atascado era
+siempre el mismo y se arreglaba re-vinculando la línea. El id es **distinto en
+cada corte** y caen las dos líneas. Esa creencia llevaba directo a escanear el
+QR de las líneas oficiales, que está prohibido, y no habría servido.
+
+### El nombre que no era del cliente — el «Tú» en la bandeja
+`lib/whatsapp/adapter.ts`, `esNombreDeVerdad` en `lib/whatsapp/webhook-processor.ts`.
+
+El «Tú» es un concepto de **pantalla**: quién habla en el globo del chat. Lo
+pinta `client-page.tsx:291` y no tiene nada que ver con la ficha del contacto.
+El adapter lo escribía como `customerName` de todo saliente y el webhook lo
+guardaba como el nombre del cliente: **38 de 73 contactos** se llamaban «Tú».
+
+Y se quedaba pegado, porque el nombre solo se actualizaba «si estaba vacío» y
+`Tú` no está vacío.
+
+Regla que queda: **un nombre de pantalla nunca se escribe en los datos.** Y el
+nombre real, cuando llega, tiene que poder reemplazar a uno malo heredado.
+
+### El archivo que el panel no sabía nombrar — 48 documentos invisibles
+`esDocumento` y `etiquetaDeArchivo` en `lib/whatsapp/message-preview.ts`,
+`components/chat/message-bubble.tsx`.
+
+El panel clasificaba imagen, audio, video y sticker. Un PDF no era ninguna de
+las cuatro, así que **no era nada**: se pedía su URL firmada, llegaba con
+código 200, y se descartaba sin pintar ni el enlace ni un aviso.
+
+Es el mismo fallo que tuvo el video, repetido. Por eso `esDocumento` se define
+**por descarte** —hay archivo y no es ninguno de los tres— para que un formato
+nuevo que nadie previó aparezca como archivo descargable en vez de desaparecer.
+
+### El freno del humano atendiendo — el bot se calla si ya hay alguien
+`lib/whatsapp/webhook-processor.ts`, justo después del interruptor general.
+
+Antes de llamar al agente se mira si hay un mensaje **saliente escrito por una
+persona** en los últimos 15 minutos de esa conversación. Si lo hay, el bot no
+responde.
+
+Se miran **dos** señales: `sender === 'human'` (lo correcto de aquí en
+adelante) y `raw.data.message.fromMe === true` (que funciona también sobre lo
+ya guardado, porque dice que el mensaje entró por el webhook, o sea desde un
+celular). Lo que manda el bot no pasa por ahí, así que no puede confundirse
+consigo mismo.
+
+Falla hacia responder: si la consulta falla, el bot contesta. Un error de red
+no puede dejarlo mudo.
+
+**Límite conocido:** solo ve lo que el sistema recibió. Las respuestas que el
+equipo manda desde su celular y el puente no puede descifrar no están en la
+base, y este freno no las ve.
+
+### Quién escribió cada mensaje — y por qué no era un detalle
+`lib/whatsapp/webhook-processor.ts`, columna `messages.sender`.
+
+Decía `sender = message.fromMe ? 'bot' : 'contact'`: **todo** saliente quedaba
+firmado por el bot. Contado el 12-ago: **617 firmados `bot`, cero `human`**,
+con el bot apagado desde el día anterior.
+
+Rompía dos cosas a la vez: el historial de entrenamiento atribuía al bot 617
+respuestas humanas, y el freno del párrafo anterior era imposible de construir.
+
+Los tres caminos por los que se guarda un mensaje, que hay que distinguir:
+1. **Webhook** — trae `raw.data.message`; salió de la línea desde un celular →
+   lo escribió una **persona**.
+2. **Historial sincronizado** — no trae `raw`; son mensajes anteriores a que
+   existiera la conversación en el CRM → también de una **persona**.
+3. **Envío del propio bot** — se guarda en su propio sitio con su
+   `wa_message_id`; si WhatsApp devuelve el eco, el upsert choca y no lo pisa.
+
+
 ### Probar una hoja antes de guardarla — el botón que contesta «¿esto funciona?»
 `app/(app)/conocimiento/actions.ts` (`probarHoja`) y `ProbarEstaHoja` dentro de
 cada hoja del panel.
