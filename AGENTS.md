@@ -174,7 +174,7 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
    - **Baileys, puerto 3005** (`wa-server-baileys/`) es el único puente.
      Envía, recibe y **descarga audio e imagen**: imagen de 22 KB en 59 ms,
      audio de 11 KB en 154 ms, medido en producción.
-   - **`whatsapp-web.js`, puerto 3004** (`wa-server/`) está **detenido**. Su
+   - **`whatsapp-web.js`, puerto 3004** (`wa-server/`) está **APAGADO DE VERDAD desde el 12-ago-2026** (⚠️ hasta ese día esta línea decía «detenido» y era **falso**: `docker ps` lo mostraba **Up 11 horas** con `restart: always`, y **del 7 al 11-ago emitió un QR para `linea_1` cada 20-60 s** que se escribía en `whatsapp_lines` — escanearlo habría movido el número oficial a este puente y expulsado la sesión de Baileys; su `autoload` (`wa-server/server.js:990-1004`) además abre sesión rival sobre toda línea `connected` con carpeta en `wwebjs_sessions/`. Ahora lleva `profiles: ["desactivado"]` en `docker-compose.yml`, así que `docker compose up -d` **no** lo levanta. **Lección: «está detenido» en un documento no apaga nada — compruébelo con `docker ps`.**). Su
      almacén interno quedó desfasado de la versión actual de WhatsApp Web:
      fallan `downloadMedia()` **y `getChats()`** con un `[Error] r` ilegible.
      Fijar la versión de WhatsApp Web **no lo arregla** (se pidió la

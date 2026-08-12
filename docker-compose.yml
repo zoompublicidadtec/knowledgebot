@@ -38,14 +38,42 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ==========================================================================
+  # APAGADO A PROPOSITO el 12-ago-2026, con permiso del duenio.
+  #
+  # Este es el PUENTE VIEJO (whatsapp-web.js, puerto 3004). La documentacion
+  # lo daba por detenido desde el 31-jul, pero seguia corriendo con
+  # restart: always, y eso es lo que casi cuesta un numero:
+  #
+  #   - Del 7 al 11-ago genero un QR para linea_1 cada 20-60 s y lo escribio
+  #     en whatsapp_lines (wa-server/server.js:423-432 ->
+  #     app/api/whatsapp-lines/qr/route.ts:16-19). Si alguien escanea ese QR
+  #     desde el panel, WhatsApp mueve el numero oficial a ESTE puente y
+  #     expulsa la sesion de Baileys.
+  #   - Su autoload (wa-server/server.js:990-1004) reconecta toda linea
+  #     'connected' que tenga sesion en wwebjs_sessions/ (existe
+  #     session-linea_1), y escribe status='disconnected' sobre las que no la
+  #     tienen (linea_3). O sea: sesion rival sobre una linea viva, y una
+  #     escritura mentirosa en la tabla de produccion.
+  #   - El 11-ago a las 02:00 no hizo daño solo por casualidad: ninguna linea
+  #     estaba conectada en ese momento ('0 linea(s) para reconectar').
+  #
+  # El perfil "desactivado" hace que `docker compose up -d` NO lo levante.
+  # Revivirlo tiene que ser una decision explicita:
+  #   docker compose --profile desactivado up -d whatsapp-bridge
+  #
+  # NO CONFUNDIR con whatsapp-bridge-baileys (puerto 3005), que es el unico
+  # puente vigente y atiende TODAS las lineas.
+  # ==========================================================================
   whatsapp-bridge:
+    profiles: ["desactivado"]
     build:
       context: ./wa-server
       dockerfile: Dockerfile
     container_name: knowledgebot-wa-bridge
     init: true
     network_mode: "host"
-    restart: always
+    restart: "no"
     env_file:
       - .env.production
     environment:
