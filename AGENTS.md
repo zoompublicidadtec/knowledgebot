@@ -25,9 +25,10 @@
 >
 > ### CÓMO SE PRUEBA AHORA
 >
-> `POST /api/agent/test` — ejecuta el mismo agente **sin enviar nada por
-> WhatsApp**. Y `scripts/bateria_bot.py`, que usa esa misma puerta. Los contactos
-> de prueba empiezan por `5739` y se borran con `scripts/limpiar_pruebas.py`.
+> `POST /api/agent/test` — ejecuta el mismo `runAgentForMessage` que el webhook,
+> **sin enviar nada por WhatsApp**. Y `scripts/bateria_bot.py`, que usa esa misma
+> puerta. Los contactos de prueba empiezan por `5739` y se borran con
+> `scripts/limpiar_pruebas.py`.
 >
 > ### POR QUÉ ESTÁ ESCRITO ASÍ DE GRANDE
 >
@@ -46,21 +47,19 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # KnowledgeBot — punto de entrada obligatorio
 
-> Verificado contra el VPS de producción el **2026-08-02**.
+> Verificado contra el VPS de producción el **2026-08-13**.
 > `CLAUDE.md` solo contiene `@AGENTS.md`: este archivo es la puerta de entrada.
 
 ## 0. Knowledge Graph del código (LEER PRIMERO)
 
-El proyecto tiene un **grafo de conocimiento del código real** generado con
-Graphify. Antes de asumir cómo funciona el sistema o de buscar archivos a
-ciegas, **consultá el grafo**: cada conexión es literal del código (marcada
-`EXTRACTED`) o derivada (`INFERRED`), con su archivo y línea.
-
-El grafo vive en el VPS (fuente de verdad), en `/root/knowledgebot/graphify-out/`.
-Está generado contra el commit **`300d602`** (12-ago-2026). **Si el código cambió desde
-entonces, el grafo está desactualizado y miente** → regeneralo antes de confiar.
-
-### Cómo consultarlo (por SSH al VPS)
+Antes de asumir cómo funciona el sistema o de buscar archivos a ciegas,
+**consultá el grafo**: cada conexión es literal del código (`EXTRACTED`) o
+derivada (`INFERRED`), con su archivo y línea. Vive en el VPS, en
+`/root/knowledgebot/graphify-out/` — `graph.json` (consultable),
+`GRAPH_REPORT.md` (resumen humano) y `graph.html` (visualización interactiva).
+Generado contra el commit **`300d602`** (12-ago-2026): **si el código cambió
+desde entonces, el grafo está desactualizado y miente** → regeneralo antes de
+confiar.
 
 ```bash
 # El binario NO está en el PATH por defecto. Exportar SIEMPRE antes:
@@ -74,11 +73,8 @@ git diff --stat 300d602..HEAD -- '*.ts' '*.tsx' '*.js' '*.py'
 
 # 2) Entender un símbolo / concepto / archivo:
 graphify explain "processInboundMessage"
-graphify explain "applyOutputGuardrail"
-graphify explain "api_service"
 
 # 3) Trazar la ruta entre dos partes del sistema:
-graphify path "processInboundMessage" "getProductPrice"
 graphify path "runAgentForMessage" "searchCatalog"
 
 # 4) Regenerar el grafo tras cambios de código (~30s, sin costo, sin LLM):
@@ -93,44 +89,32 @@ python3 scripts/aplicar_tema_grafo.py   # SIEMPRE despues de regenerar
 graphify diagnose multigraph
 ```
 
-### Qué contiene el grafo
-
-- `graph.json` — grafo consultable. Al 12-ago-2026: **1.534 nodos y 2.752 aristas**, `graphify diagnose multigraph` sin duplicados ni variantes
-  contradictorias.
-- `GRAPH_REPORT.md` (24 KB) — resumen humano: comunidades, god-nodes, conexiones.
-- `graph.html` (1 MB) — visualización interactiva (abrir en navegador).
-
 **Regla:** para entender arquitectura, dependencias o "qué rompe si cambio X",
 consultá el grafo antes de leer código suelto. Para datos vivos (estado real de
 servicios, catálogo, logs), el VPS sigue siendo la fuente de verdad (ver §4).
 
 ### Lo que el grafo NO tiene, y dónde está
 
-**El grafo tiene la estructura del código, no el porqué.** Medido el
-03-ago-2026: de sus 102 nodos de razonamiento, **93 salen de Python y solo 4 de
-TypeScript**, y este sistema es TypeScript en un 95 %. `lib/agent/index.ts`
-—1.400 líneas, con los comentarios más importantes del proyecto— aporta al grafo
-**solo nombres**: sabe que `photosByConversation` existe, no sabe para qué sirve.
+**El grafo tiene la estructura del código, no el porqué.** Es 100 % extracción:
+convierte los *docstrings* de Python en nodos de razonamiento, pero no hace lo
+mismo con los comentarios de bloque de TypeScript — y este sistema es TypeScript
+en un 95 %. `lib/agent/index.ts` —1.400 líneas, con los comentarios más
+importantes del proyecto— aporta al grafo **solo nombres**: sabe que
+`photosByConversation` existe, no sabe para qué sirve.
 
-El motivo es que el extractor convierte los *docstrings* de Python en nodos de
-razonamiento, pero no hace lo mismo con los comentarios de bloque de TypeScript.
-La capa semántica (la que sí lo haría, con LLM) **nunca se ha corrido aquí**: el
-grafo es 100 % extracción de estructura.
+**El porqué está en `docs/ESTADO_OPERATIVO.md` §12, «Índice de mecanismos».**
+Cada título de ese archivo **sí** se vuelve un nodo del grafo, así que
+`graphify explain "el repartidor de fotos"` o `graphify explain "la cotización
+armada"` los encuentran.
 
-**Dónde está entonces el porqué:** en `docs/ESTADO_OPERATIVO.md` §12, «Índice de
-mecanismos». Cada título de ese archivo **sí** se vuelve un nodo del grafo (47
-nodos salen de ahí), así que `graphify explain "el repartidor de fotos"` o
-`graphify explain "la cotización armada"` los encuentran.
-
-**Regla para quien trabaje aquí:** cuando descubras cómo funciona algo por
-dentro, no lo dejes solo en un comentario del código — **añade su título en §12
-de ESTADO_OPERATIVO**, o el siguiente que llegue va a tener que releer 1.400
-líneas para saber lo mismo.
+**Regla:** cuando descubras cómo funciona algo por dentro, no lo dejes solo en
+un comentario del código — **añadí su título en §12 de ESTADO_OPERATIVO**, o el
+siguiente que llegue va a tener que releer 1.400 líneas para saber lo mismo.
 
 ## 1. Mapa de la documentación, y quién gana cuando se contradicen
 
-Hay 6 archivos `.md` en el proyecto (eran 9; tres se borraron por muertos). Este es el
-orden de autoridad: si dos documentos dicen cosas distintas, manda el de arriba.
+Son 6 archivos `.md`, en este orden de autoridad: si dos dicen cosas distintas,
+manda el de arriba. **No crear nuevos** (ver §3.5).
 
 | # | Documento | Qué es | Fiabilidad |
 |---|---|---|---|
@@ -141,19 +125,12 @@ orden de autoridad: si dos documentos dicen cosas distintas, manda el de arriba.
 | 5 | `README.md` | Instalación y stack, en inglés | ⚠️ Parcialmente obsoleto |
 | 6 | `data/README_BASE_DE_DATOS.md` y `catalogo_catalogospromocionales/README.md` | Describen el catálogo **de origen** de los importados (junio 2026) | Solo origen de datos |
 
-> **El 02-ago-2026 se borraron tres documentos muertos**, por orden del dueño:
-> `knowledgebot_memoria_tecnica.md` (31 KB de relato con datos falsos ya
-> desmentidos: decía que el modelo era DeepSeek y que se usaba Meta Cloud API),
-> `docs/planes/` (planes cerrados) y la copia duplicada
-> `catalogo_catalogospromocionales/BASE_DE_DATOS/README_BASE_DE_DATOS.md`.
-> Quedan **6 documentos**. No crear nuevos: mantener estos.
-
 ## 2. Los siete datos que la documentación vieja tiene mal
 
 Si un documento afirma lo contrario de esto, el documento está equivocado:
 
 1. **El modelo del bot es `google/gemini-2.5-flash`** vía OpenRouter. **No es
-   DeepSeek** (la memoria técnica dice "DeepSeek-v4-flash": es falso).
+   DeepSeek**, por más que algún documento viejo lo diga.
 2. **Hay DOS sistemas de vectores distintos**, y confundirlos es el error más
    frecuente. Las dos cifras son correctas, cada una en su sitio:
    - **Catálogo de productos** → **3072D multimodal** (texto + foto), en archivo
@@ -174,22 +151,30 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
    - **Baileys, puerto 3005** (`wa-server-baileys/`) es el único puente.
      Envía, recibe y **descarga audio e imagen**: imagen de 22 KB en 59 ms,
      audio de 11 KB en 154 ms, medido en producción.
-   - **`whatsapp-web.js`, puerto 3004** (`wa-server/`) está **APAGADO DE VERDAD desde el 12-ago-2026** (⚠️ hasta ese día esta línea decía «detenido» y era **falso**: `docker ps` lo mostraba **Up 11 horas** con `restart: always`, y **del 7 al 11-ago emitió un QR para `linea_1` cada 20-60 s** que se escribía en `whatsapp_lines` — escanearlo habría movido el número oficial a este puente y expulsado la sesión de Baileys; su `autoload` (`wa-server/server.js:990-1004`) además abre sesión rival sobre toda línea `connected` con carpeta en `wwebjs_sessions/`. Ahora lleva `profiles: ["desactivado"]` en `docker-compose.yml`, así que `docker compose up -d` **no** lo levanta. **Lección: «está detenido» en un documento no apaga nada — compruébelo con `docker ps`.**). Su
-     almacén interno quedó desfasado de la versión actual de WhatsApp Web:
-     fallan `downloadMedia()` **y `getChats()`** con un `[Error] r` ilegible.
-     Fijar la versión de WhatsApp Web **no lo arregla** (se pidió la
-     `2.3000.1040516757-alpha` y se cargó igual la `2.3000.1044236315`), y la
-     librería ya está en su última versión publicada. No es recuperable.
+   - **`whatsapp-web.js`, puerto 3004** (`wa-server/`) está **APAGADO DE VERDAD
+     desde el 12-ago-2026**: lleva `profiles: ["desactivado"]` en
+     `docker-compose.yml`, así que `docker compose up -d` **no** lo levanta.
+
+     ⚠️ Hasta ese día aquí decía «detenido» y era **falso**: `docker ps` lo
+     mostraba **Up 11 horas** con `restart: always`, y del 7 al 11-ago emitió un
+     QR para `linea_1` cada 20-60 s que se escribía en `whatsapp_lines`.
+     Escanearlo habría movido el número oficial a este puente y expulsado la
+     sesión de Baileys. Su `autoload` (`wa-server/server.js:990-1004`) abre
+     además sesión rival sobre toda línea `connected` con carpeta en
+     `wwebjs_sessions/`. **Lección: «está detenido» en un documento no apaga
+     nada — compruébelo con `docker ps`.**
+
+     Tampoco es recuperable: su almacén interno quedó desfasado de la versión
+     actual de WhatsApp Web y fallan `downloadMedia()` **y `getChats()`** con un
+     `[Error] r` ilegible. Fijar la versión **no lo arregla** (se pidió la
+     `2.3000.1040516757-alpha` y se cargó igual la `2.3000.1044236315`) y la
+     librería ya está en su última versión publicada.
    - **Ninguna línea se enumera en ninguna parte.** `BRIDGE_LINES` y
      `FORWARD_INBOUND_LINES` se quitaron de `docker-compose.yml`: al nombrar
      las líneas una por una, cualquier línea nueva quedaba fuera **en
      silencio**. Vacías = todas. El puente descubre las líneas de la tabla
      `whatsapp_lines` más las sesiones en disco (`arrancarLineas()`).
-   - Para sumar una línea: registrarla y escanear su QR. Nada más. La ranura
-     (`linea_1`, `linea_2`, …) es independiente del número: cualquier teléfono,
-     de cualquier país, puede ir en cualquier ranura.
-4. **Nunca Meta Cloud API.** La memoria técnica menciona "Meta Cloud API
-   (Producción)": está prohibido y no existe en el sistema.
+4. **Nunca Meta Cloud API.** Está prohibida y no existe en el sistema (ver §3.1).
 5. **El despliegue es Docker sobre un VPS Hostinger** (2.25.169.103). El README
    habla de Railway: quedó de una etapa anterior.
 6. **El error 463 NO es culpa del `@lid` ni de Baileys: es la CUENTA.** Esto se
@@ -214,11 +199,6 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
    > **Regla de diagnóstico.** Ante un 463, **probar el mismo envío desde otra
    > línea antes de tocar código**. Si la otra entrega, el problema es la cuenta.
    > No hay nada que arreglar en el sistema.
-   >
-   > **No anotar aquí qué número está bloqueado.** Es un estado pasajero: se
-   > levanta solo, y los números de prueba se conectan y desconectan a voluntad.
-   > Dejarlo escrito solo sirve para que alguien lo lea meses después y crea que
-   > hay una línea rota.
 
    **Corregir el documento no corrige el código.** El 01-ago-2026 se descubrió
    que la causa falsa seguía viva dentro del puente: `resolveSendJid()` se
@@ -227,7 +207,6 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
    código escrito el 30 nunca se revisó, y dejó sin respuesta a un cliente real.
    Al corregir una causa falsa, **buscar dónde quedó programada**, no solo
    dónde quedó escrita.
-
 7. **Ningún dato del negocio se escribe en el código.** Medios de pago,
    condiciones, cuenta bancaria, garantía, tiempos de entrega, sitio web y los
    datos que se piden al cerrar **viven en el panel** (Personalización). Los
@@ -244,30 +223,29 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
 
 ## 3. Reglas estrictas del proyecto
 
-1. **Conexión de WhatsApp**: el puente local propio es la arquitectura
+1. **Conexión de WhatsApp**: el puente local propio (Baileys) es la arquitectura
    definitiva. **Prohibido sugerir, recomendar o intentar Meta Cloud API.**
-   Migrar el puente a Baileys sí está autorizado (29-jul-2026) para desbloquear
-   el audio y las imágenes entrantes, que hoy no se descargan.
 2. **Entorno del dueño**: Windows con PowerShell, sin VS Code. Los comandos que
    se le entreguen deben ser directos para PowerShell.
 3. **El VPS es la fuente de verdad.** Ni el repo local ni GitHub están al día.
    Todo el desarrollo se hace por SSH sobre `/root/knowledgebot`.
-4. **Líneas**: las conectadas hoy son **de prueba** y el dueño las conecta y
-   desconecta libremente. **No anotar aquí qué número está en qué ranura ni cuál
-   está caída**: cambia de un día para otro y esas notas envejecen mal. El estado
-   real se consulta en `/lineas` del panel o con
-   `curl -s http://localhost:3005/diagnostic`.
+4. **Líneas**: el estado real se consulta en `/lineas` del panel o con
+   `curl -s http://localhost:3005/diagnostic`. **No anotar en ningún documento
+   qué número está en qué ranura, ni cuál está caída o bloqueada**: cambia de un
+   día para otro y esas notas envejecen mal — alguien las lee meses después y
+   cree que hay una línea rota.
 
    La ranura (`linea_1`, `linea_2`, …) es **independiente del número**: cualquier
    teléfono, de cualquier país, puede ir en cualquier ranura. El nombre visible
    se edita desde el panel («WhatsApp de Juanita», «Local 211»); la ranura no se
    toca, porque es la clave con la que se enrutan los mensajes y se agrupan las
-   conversaciones.
+   conversaciones. Para sumar una línea —**solo si el dueño lo pide**, ver el
+   ALTO de arriba— basta registrarla y escanear su QR.
 
    La meta son **8 líneas** centralizadas en el CRM: diseñar todo pensando en eso.
-5. **No crear archivos `.md` nuevos.** Mantener sincronizados solo los 6 que ya
-   existen, y hacerlo **en el VPS y en el repo local a la vez**. Esa divergencia
-   fue la causa de la confusión: `CLAUDE.md` existía solo en el VPS y
+5. **No crear archivos `.md` nuevos.** Mantener sincronizados solo los 6 de §1,
+   y hacerlo **en el VPS y en el repo local a la vez**. Esa divergencia fue la
+   causa de la confusión: `CLAUDE.md` existía solo en el VPS y
    `docs/planes/` solo en la copia local.
 6. **Git en el VPS**: commit antes y después de cada cambio. Punto de
    restauración previo a la auditoría del 29-jul-2026: **`92276ac`**. Respaldos
@@ -278,16 +256,16 @@ Si un documento afirma lo contrario de esto, el documento está equivocado:
 8. **Regla del prompt**: no agregar reglas al `system-prompt.ts`. Cargar el
    prompt de instrucciones induce alucinaciones (ver *Mitigación de
    Alucinaciones en RAG.pdf* en la raíz). Lo que funciona son **guardrails
-   deterministas** de entrada, recuperación y salida.
-   - Medido el 2026-07-29: la plantilla del prompt bajó de **314 a 199 líneas**
-     mientras el código determinista creció **+1.305 líneas**. Ese es el sentido
-     correcto del cambio.
-   - Distinguir tres cosas al escribir en el contexto del modelo:
-     **instrucciones de comportamiento** (a evitar), **datos de recuperación**
-     (correcto, es la R de RAG) y **compuertas en código** (lo único que de
-     verdad obliga). Ejemplo: para que el bot ofrezca producto propio no se le
-     pide en el prompt — `searchCatalog` simplemente no le entrega importados
-     cuando hay tres propios cotizables.
+   deterministas** de entrada, recuperación y salida. Medido el 2026-07-29: la
+   plantilla del prompt bajó de **314 a 199 líneas** mientras el código
+   determinista creció **+1.305 líneas**. Ese es el sentido correcto del cambio.
+
+   Distinguir tres cosas al escribir en el contexto del modelo: **instrucciones
+   de comportamiento** (a evitar), **datos de recuperación** (correcto, es la R
+   de RAG) y **compuertas en código** (lo único que de verdad obliga). Ejemplo:
+   para que el bot ofrezca producto propio no se le pide en el prompt —
+   `searchCatalog` simplemente no le entrega importados cuando hay tres propios
+   cotizables.
 9. **Filosofía del dueño**: no entregar la corrección de un síntoma. Buscar el
    mecanismo que produce la clase entera de fallos y dejarlo visible y
    controlable desde el panel.
@@ -316,6 +294,4 @@ tail -30 /var/log/nginx/error.log
 
 El **Centro de Control** del panel (`/control-room`, alimentado por
 `/api/health`) muestra lo mismo con causa y acción de reparación por cada punto.
-
-Para probar el agente sin molestar a clientes: `POST /api/agent/test`, que
-ejecuta el mismo `runAgentForMessage` que el webhook de WhatsApp.
+Para probar el agente sin tocar WhatsApp: `POST /api/agent/test` (ver el ALTO).
